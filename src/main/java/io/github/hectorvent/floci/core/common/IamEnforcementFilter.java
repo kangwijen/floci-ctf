@@ -6,6 +6,7 @@ import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
+import io.github.hectorvent.floci.core.common.RegionResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -58,6 +59,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final IamPolicyEvaluator evaluator;
     private final IamActionRegistry actionRegistry;
     private final ResourceArnBuilder arnBuilder;
+    private final RegionResolver regionResolver;
 
     @Inject
     public IamEnforcementFilter(EmulatorConfig config,
@@ -65,13 +67,15 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 IamService iamService,
                                 IamPolicyEvaluator evaluator,
                                 IamActionRegistry actionRegistry,
-                                ResourceArnBuilder arnBuilder) {
+                                ResourceArnBuilder arnBuilder,
+                                RegionResolver regionResolver) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
         this.evaluator = evaluator;
         this.actionRegistry = actionRegistry;
         this.arnBuilder = arnBuilder;
+        this.regionResolver = regionResolver;
     }
 
     @Override
@@ -130,7 +134,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        String region = config.defaultRegion();
+        String region = regionResolver.resolveRegionFromAuth(auth);
         String accountId = accountResolver.resolve(auth);
         String resource = arnBuilder.build(credentialScope, ctx, region, accountId);
 

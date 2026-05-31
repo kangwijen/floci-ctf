@@ -215,6 +215,27 @@ docker compose up
 
 Under strict enforcement, the legacy `test`/`test` credential pair and other unregistered keys are rejected. Only IAM-registered identities with policies that allow the action (or the configured root pair) succeed.
 
+### AWS CLI version compatibility
+
+The `floci:local` Docker image installs **AWS CLI v1** via pip on Alpine Linux (`pip3 install awscli`). When `FLOCI_AUTH_VALIDATE_SIGNATURES=true`, AWS CLI v1 frequently produces `SignatureDoesNotMatch` errors, even with correct credentials. The root cause is that v1 defaults to older signing behaviour in some configurations.
+
+Use **boto3** (pre-installed in the image) or **AWS CLI v2** for operator provisioning scripts when signature validation is enabled:
+
+```python
+import boto3
+
+client = boto3.client(
+    "ssm",
+    endpoint_url="http://localhost:4566",
+    region_name="us-east-1",
+    aws_access_key_id="...",
+    aws_secret_access_key="...",
+    config=boto3.session.Config(signature_version="v4"),
+)
+```
+
+AWS CLI v2 does not install cleanly on Alpine (glibc vs musl mismatch); pin operator scripts to boto3 for CTF use.
+
 See also [Docker Compose](../configuration/docker-compose.md) and [Environment Variables](../configuration/environment-variables.md).
 
 ## Configuration

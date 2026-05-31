@@ -156,4 +156,83 @@ class IamEnforcementIntegrationTest {
                 "arn:aws:s3:::my-bucket/*",
                 "arn:aws:s3:::other-bucket/file.txt"));
     }
+
+    // =========================================================================
+    // Scoped ARN matching — SSM and STS with non-default account
+    // =========================================================================
+
+    @Test
+    void allowSsmGetParameterWithExactAccountScopedArn() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"ssm:GetParameter",
+               "Resource":"arn:aws:ssm:us-east-1:987654321098:parameter/polaris/starbase/counter"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "ssm:GetParameter",
+                "arn:aws:ssm:us-east-1:987654321098:parameter/polaris/starbase/counter"));
+    }
+
+    @Test
+    void denySsmGetParameterWithDifferentParameterInExactPolicy() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"ssm:GetParameter",
+               "Resource":"arn:aws:ssm:us-east-1:987654321098:parameter/polaris/starbase/counter"}
+            ]}""";
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "ssm:GetParameter",
+                "arn:aws:ssm:us-east-1:987654321098:parameter/capella/landing"));
+    }
+
+    @Test
+    void allowSsmGetParameterWithPrefixWildcard() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"ssm:GetParameter",
+               "Resource":"arn:aws:ssm:*:*:parameter/polaris/starbase/*"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "ssm:GetParameter",
+                "arn:aws:ssm:us-east-1:987654321098:parameter/polaris/starbase/counter"));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "ssm:GetParameter",
+                "arn:aws:ssm:us-east-1:987654321098:parameter/orion/comm"));
+    }
+
+    @Test
+    void allowStsAssumeRoleWithExactRoleArn() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"sts:AssumeRole",
+               "Resource":"arn:aws:iam::987654321098:role/polaris-admin-access"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "sts:AssumeRole",
+                "arn:aws:iam::987654321098:role/polaris-admin-access"));
+    }
+
+    @Test
+    void denyStsAssumeRoleWithDifferentRoleInExactPolicy() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"sts:AssumeRole",
+               "Resource":"arn:aws:iam::987654321098:role/polaris-admin-access"}
+            ]}""";
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "sts:AssumeRole",
+                "arn:aws:iam::987654321098:role/capella-readonly"));
+    }
+
+    @Test
+    void allowStsAssumeRoleWithRoleWildcard() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"sts:AssumeRole",
+               "Resource":"arn:aws:iam::987654321098:role/*"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "sts:AssumeRole",
+                "arn:aws:iam::987654321098:role/polaris-admin-access"));
+    }
 }
