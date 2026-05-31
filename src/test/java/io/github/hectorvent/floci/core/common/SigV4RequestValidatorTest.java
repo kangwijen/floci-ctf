@@ -59,7 +59,8 @@ class SigV4RequestValidatorTest {
                 "",
                 headers,
                 signed.authorization(),
-                secretKey);
+                secretKey,
+                payload);
 
         assertEquals(SigV4RequestValidator.Result.VALID, result);
     }
@@ -95,7 +96,100 @@ class SigV4RequestValidatorTest {
                 "",
                 headers,
                 signed.authorization(),
-                "wrong-secret");
+                "wrong-secret",
+                new byte[0]);
+
+        assertEquals(SigV4RequestValidator.Result.INVALID_SIGNATURE, result);
+    }
+
+    /**
+     * AWS CLI v2 standard SigV4 for JSON-protocol services (e.g. SSM, STS) computes
+     * the payload hash and includes it only as the last line of the canonical request.
+     * It does NOT send x-amz-content-sha256 as a header or include it in SignedHeaders.
+     * Floci must compute the hash from the buffered body in this case.
+     */
+    @Test
+    void validate_acceptsStandardV4WithoutContentSha256Header() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        Instant now = Instant.parse("2026-05-31T12:00:00Z");
+        String host = "127.0.0.1:4566";
+        String path = "/";
+        String body = "{\"Name\":\"/nimbus/challenge/escalation\"}";
+        byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+        String payloadHash = sha256Hex(payload);
+
+        SignedRequest signed = signHeaderAuthNoContentSha256(
+                "POST",
+                path,
+                "",
+                host,
+                "application/x-amz-json-1.1",
+                accessKeyId,
+                secretKey,
+                "us-east-1",
+                "ssm",
+                payloadHash,
+                now);
+
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.putSingle("Host", host);
+        headers.putSingle("Content-Type", "application/x-amz-json-1.1");
+        headers.putSingle("X-Amz-Date", signed.amzDate());
+        // x-amz-content-sha256 intentionally absent from headers and SignedHeaders
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validate(
+                "POST",
+                path,
+                "",
+                headers,
+                signed.authorization(),
+                secretKey,
+                payload);
+
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validate_rejectsWrongBodyWhenNoContentSha256Header() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        Instant now = Instant.parse("2026-05-31T12:00:00Z");
+        String host = "127.0.0.1:4566";
+        String path = "/";
+        String body = "{\"Name\":\"/nimbus/challenge/escalation\"}";
+        byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+        String payloadHash = sha256Hex(payload);
+
+        SignedRequest signed = signHeaderAuthNoContentSha256(
+                "POST",
+                path,
+                "",
+                host,
+                "application/x-amz-json-1.1",
+                accessKeyId,
+                secretKey,
+                "us-east-1",
+                "ssm",
+                payloadHash,
+                now);
+
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.putSingle("Host", host);
+        headers.putSingle("Content-Type", "application/x-amz-json-1.1");
+        headers.putSingle("X-Amz-Date", signed.amzDate());
+
+        // Tampered body: different content than what was signed
+        byte[] tamperedPayload = "{\"Name\":\"/nimbus/flag\"}".getBytes(StandardCharsets.UTF_8);
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validate(
+                "POST",
+                path,
+                "",
+                headers,
+                signed.authorization(),
+                secretKey,
+                tamperedPayload);
 
         assertEquals(SigV4RequestValidator.Result.INVALID_SIGNATURE, result);
     }
@@ -141,6 +235,60 @@ class SigV4RequestValidatorTest {
                         .map(name -> name + ":" + trimHeaderValue(headerValues.get(name)))
                         .reduce((a, b) -> a + "\n" + b)
                         .orElse("") + "\n";
+
+        String canonicalRequest = method.toUpperCase(Locale.ROOT) + "\n"
+                + SigV4RequestValidator.canonicalUri(path) + "\n"
+                + SigV4RequestValidator.canonicalQueryString(query) + "\n"
+                + canonicalHeaders + "\n"
+                + signedHeaders + "\n"
+                + payloadHash;
+
+        String stringToSign = "AWS4-HMAC-SHA256\n"
+                + amzDate + "\n"
+                + credentialScope + "\n"
+                + sha256Hex(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+
+        byte[] signingKey = deriveSigningKey(secretKey, date, region, service);
+        String signature = hexEncode(hmacSha256(signingKey, stringToSign));
+        String authorization = "AWS4-HMAC-SHA256 Credential=" + credential
+                + ", SignedHeaders=" + signedHeaders
+                + ", Signature=" + signature;
+        return new SignedRequest(authorization, amzDate);
+    }
+
+    /**
+     * Signs a request WITHOUT x-amz-content-sha256 in SignedHeaders, matching the
+     * behaviour of AWS CLI v2 and standard boto3 for non-S3 services.
+     */
+    private static SignedRequest signHeaderAuthNoContentSha256(
+            String method,
+            String path,
+            String query,
+            String host,
+            String contentType,
+            String accessKeyId,
+            String secretKey,
+            String region,
+            String service,
+            String payloadHash,
+            Instant timestamp
+    ) throws Exception {
+        String date = DateTimeFormatter.BASIC_ISO_DATE.withZone(ZoneOffset.UTC).format(timestamp);
+        String amzDate = DATETIME_FMT.format(timestamp);
+        String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+        String credential = accessKeyId + "/" + credentialScope;
+        String signedHeaders = "content-type;host;x-amz-date";
+
+        Map<String, String> headerValues = new LinkedHashMap<>();
+        headerValues.put("content-type", contentType);
+        headerValues.put("host", host);
+        headerValues.put("x-amz-date", amzDate);
+
+        String canonicalHeaders = Arrays.stream(signedHeaders.split(";"))
+                .sorted()
+                .map(name -> name + ":" + trimHeaderValue(headerValues.get(name)))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("") + "\n";
 
         String canonicalRequest = method.toUpperCase(Locale.ROOT) + "\n"
                 + SigV4RequestValidator.canonicalUri(path) + "\n"

@@ -13,6 +13,9 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.jboss.logging.Logger;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -89,13 +92,16 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
+        byte[] body = bufferBody(ctx);
+
         SigV4RequestValidator.Result result = SigV4RequestValidator.validate(
                 ctx.getMethod(),
                 ctx.getUriInfo().getRequestUri().getRawPath(),
                 ctx.getUriInfo().getRequestUri().getRawQuery(),
                 ctx.getHeaders(),
                 auth,
-                secret.get());
+                secret.get(),
+                body);
 
         switch (result) {
             case VALID -> {
@@ -188,5 +194,23 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
 
     private static String escapeJson(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /**
+     * Reads the full entity stream and restores it so downstream handlers (IAM
+     * enforcement, resource methods) can still consume the body.
+     */
+    private static byte[] bufferBody(ContainerRequestContext ctx) {
+        InputStream in = ctx.getEntityStream();
+        if (in == null) {
+            return new byte[0];
+        }
+        try {
+            byte[] body = in.readAllBytes();
+            ctx.setEntityStream(new ByteArrayInputStream(body));
+            return body;
+        } catch (IOException e) {
+            return new byte[0];
+        }
     }
 }

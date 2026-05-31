@@ -43,12 +43,21 @@ public final class SigV4RequestValidator {
         EXPIRED
     }
 
+    /**
+     * Validates an inbound SigV4 Authorization header.
+     *
+     * @param body the raw request body bytes, used to compute the payload hash when
+     *             the client did not include {@code x-amz-content-sha256} as a signed
+     *             header (standard AWS SDK v4 behaviour for non-S3 services). Pass an
+     *             empty array for bodyless requests (GET, DELETE, etc.).
+     */
     public static Result validate(String method,
                                   String rawPath,
                                   String rawQuery,
                                   MultivaluedMap<String, String> headers,
                                   String authorizationHeader,
-                                  String secretKey) {
+                                  String secretKey,
+                                  byte[] body) {
         try {
             Matcher auth = AUTH_HEADER_PATTERN.matcher(authorizationHeader.trim());
             if (!auth.matches()) {
@@ -81,7 +90,8 @@ public final class SigV4RequestValidator {
                     rawPath,
                     rawQuery,
                     headers,
-                    signedHeadersList);
+                    signedHeadersList,
+                    body);
 
             String stringToSign = "AWS4-HMAC-SHA256\n"
                     + amzDate + "\n"
@@ -117,7 +127,8 @@ public final class SigV4RequestValidator {
                                                 String rawPath,
                                                 String rawQuery,
                                                 MultivaluedMap<String, String> headers,
-                                                String signedHeadersList) throws Exception {
+                                                String signedHeadersList,
+                                                byte[] body) throws Exception {
         String canonicalUri = canonicalUri(rawPath);
         String canonicalQueryString = canonicalQueryString(rawQuery);
         String[] signedHeaderNames = signedHeadersList.split(";");
@@ -132,9 +143,20 @@ public final class SigV4RequestValidator {
         canonicalHeaderLines.sort(Comparator.naturalOrder());
         String canonicalHeaders = String.join("\n", canonicalHeaderLines) + "\n";
 
-        String payloadHash = headerValue(headers, "x-amz-content-sha256");
-        if (payloadHash == null || payloadHash.isBlank()) {
-            payloadHash = EMPTY_PAYLOAD_HASH;
+        String payloadHash;
+        if (signedHeadersList.contains("x-amz-content-sha256")) {
+            // Client signed the hash header: read it directly from headers.
+            payloadHash = headerValue(headers, "x-amz-content-sha256");
+            if (payloadHash == null || payloadHash.isBlank()) {
+                payloadHash = EMPTY_PAYLOAD_HASH;
+            }
+        } else {
+            // Standard SigV4 for non-S3 services (e.g. AWS CLI v2 signing SSM/STS):
+            // the payload hash is computed from the body and included only in the
+            // canonical request, not sent as a header.
+            payloadHash = (body != null && body.length > 0)
+                    ? sha256HexBytes(body)
+                    : EMPTY_PAYLOAD_HASH;
         }
 
         return method.toUpperCase(Locale.ROOT) + "\n"
@@ -239,6 +261,11 @@ public final class SigV4RequestValidator {
     private static String sha256Hex(String input) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         return hexEncode(digest.digest(input.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String sha256HexBytes(byte[] input) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return hexEncode(digest.digest(input));
     }
 
     private static String hexEncode(byte[] bytes) {
