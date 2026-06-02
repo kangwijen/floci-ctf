@@ -239,7 +239,7 @@ public class AwsQueryController {
             case "sqs" -> sqsQueryHandler.handle(action, formParams, region);
             case "sns" -> snsQueryHandler.handle(action, formParams, region);
             case "iam" -> iamQueryHandler.handle(action, formParams);
-            case "sts" -> stsQueryHandler.handle(action, formParams);
+            case "sts" -> stsQueryHandler.handle(action, formParams, authorization);
             case "elasticache" -> elastiCacheQueryHandler.handle(action, formParams);
             case "rds" -> {
                 // Neptune signs requests with "rds" credential scope (same wire protocol).

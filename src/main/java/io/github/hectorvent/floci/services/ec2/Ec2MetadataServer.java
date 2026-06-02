@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.ec2;
 
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.iam.IamService;
@@ -254,7 +255,13 @@ public class Ec2MetadataServer {
             String secretKey = randomSecret(40);
             String sessionToken = randomSecret(200);
             Instant expiration = Instant.now().plusSeconds(durationSeconds);
-            iamService.registerSession(accessKeyId, role.getArn(), expiration, null, secretKey);
+            String accountId = AwsArnUtils.accountOrDefault(role.getArn(), config.defaultAccountId());
+            String sessionName = inst.getInstanceId() != null ? inst.getInstanceId() : "ec2-instance";
+            String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId,
+                    "assumed-role/" + role.getRoleName() + "/" + sessionName).toString();
+            String assumedRoleId = role.getRoleId() + ":" + sessionName;
+            iamService.registerSession(accessKeyId, role.getArn(), expiration, null, secretKey,
+                    assumedRoleId, assumedRoleArn);
 
             String body = "{\"Code\":\"Success\","
                     + "\"LastUpdated\":\"" + now() + "\","

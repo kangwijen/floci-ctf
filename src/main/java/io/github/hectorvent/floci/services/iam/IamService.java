@@ -14,6 +14,7 @@ import io.github.hectorvent.floci.services.iam.model.IamUser;
 import io.github.hectorvent.floci.services.iam.model.InstanceProfile;
 import io.github.hectorvent.floci.services.iam.model.PolicyVersion;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
+import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.iam.model.SessionCredential;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
@@ -822,7 +823,7 @@ public class IamService {
      * Stores an assumed-role session so the enforcement filter can resolve its policies.
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration) {
-        registerSession(sessionAccessKeyId, roleArn, expiration, null, null);
+        registerSession(sessionAccessKeyId, roleArn, expiration, null, null, null, null);
     }
 
     /**
@@ -830,7 +831,7 @@ public class IamService {
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument) {
-        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, null);
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, null, null, null);
     }
 
     /**
@@ -838,10 +839,68 @@ public class IamService {
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument, String secretAccessKey) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                null, null);
+    }
+
+    /**
+     * Stores a session including optional {@code GetCallerIdentity} fields for temporary credentials.
+     */
+    public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
+                                String sessionPolicyDocument, String secretAccessKey,
+                                String callerIdentityUserId, String callerIdentityArn) {
         SessionCredential session = new SessionCredential(
                 sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument);
         session.setSecretAccessKey(secretAccessKey);
+        session.setCallerIdentityUserId(callerIdentityUserId);
+        session.setCallerIdentityArn(callerIdentityArn);
         sessions.put(sessionAccessKeyId, session);
+    }
+
+    /**
+     * Resolves the principal for {@code sts:GetCallerIdentity} from the signing access key id.
+     *
+     * @return empty when the key is unknown or expired; caller may fall back to account root
+     */
+    public java.util.Optional<CallerIdentity> resolveCallerIdentity(String accessKeyId, String defaultAccountId,
+                                                                    java.util.Optional<String> rootAccessKeyId) {
+        if (accessKeyId == null || accessKeyId.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        if (accessKeyId.matches("\\d{12}")) {
+            return java.util.Optional.of(CallerIdentity.root(accessKeyId));
+        }
+        if (rootAccessKeyId.filter(accessKeyId::equals).isPresent()) {
+            return java.util.Optional.of(CallerIdentity.root(defaultAccountId));
+        }
+        java.util.Optional<AccessKey> akOpt = accessKeys.get(accessKeyId);
+        if (akOpt.isPresent()) {
+            IamUser user = getUser(akOpt.get().getUserName());
+            String account = accountFromArn(user.getArn(), defaultAccountId);
+            return java.util.Optional.of(new CallerIdentity(user.getUserId(), account, user.getArn()));
+        }
+        java.util.Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        if (sessionOpt.isPresent()) {
+            SessionCredential session = sessionOpt.get();
+            if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
+                sessions.delete(accessKeyId);
+                return java.util.Optional.empty();
+            }
+            if (session.getCallerIdentityUserId() != null && session.getCallerIdentityArn() != null) {
+                String account = accountFromArn(session.getCallerIdentityArn(), defaultAccountId);
+                return java.util.Optional.of(new CallerIdentity(
+                        session.getCallerIdentityUserId(), account, session.getCallerIdentityArn()));
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private static String accountFromArn(String arn, String defaultAccountId) {
+        if (arn == null) {
+            return defaultAccountId;
+        }
+        String account = AwsArnUtils.accountOrDefault(arn, defaultAccountId);
+        return account != null && !account.isBlank() ? account : defaultAccountId;
     }
 
     /**

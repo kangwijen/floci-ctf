@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.services.iam.model.IamGroup;
 import io.github.hectorvent.floci.services.iam.model.IamPolicy;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.github.hectorvent.floci.services.iam.model.IamUser;
+import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.iam.model.InstanceProfile;
 import io.github.hectorvent.floci.services.iam.model.PolicyVersion;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -389,6 +391,40 @@ class IamServiceTest {
 
         iamService.deleteAccessKey("alice", key.getAccessKeyId());
         assertTrue(iamService.listAccessKeys("alice").isEmpty());
+    }
+
+    @Test
+    void resolveCallerIdentityForIamUserAccessKey() {
+        iamService.createUser("nimbus-analyst", "/");
+        AccessKey key = iamService.createAccessKey("nimbus-analyst");
+
+        CallerIdentity identity = iamService.resolveCallerIdentity(
+                        key.getAccessKeyId(), "000000000000", Optional.empty())
+                .orElseThrow();
+
+        assertEquals("000000000000", identity.account());
+        assertTrue(identity.userId().startsWith("AIDA"));
+        assertEquals("arn:aws:iam::000000000000:user/nimbus-analyst", identity.arn());
+    }
+
+    @Test
+    void resolveCallerIdentityForRootAccessKeyId() {
+        CallerIdentity identity = iamService.resolveCallerIdentity(
+                        "AKIA8XM7KQ2WN5YL4RP9", "222222222222", Optional.of("AKIA8XM7KQ2WN5YL4RP9"))
+                .orElseThrow();
+
+        assertEquals("222222222222", identity.account());
+        assertEquals("arn:aws:iam::222222222222:root", identity.arn());
+    }
+
+    @Test
+    void resolveCallerIdentityForTwelveDigitAccountKey() {
+        CallerIdentity identity = iamService.resolveCallerIdentity(
+                        "222222222222", "000000000000", Optional.empty())
+                .orElseThrow();
+
+        assertEquals("222222222222", identity.account());
+        assertEquals("arn:aws:iam::222222222222:root", identity.arn());
     }
 
     // =========================================================================

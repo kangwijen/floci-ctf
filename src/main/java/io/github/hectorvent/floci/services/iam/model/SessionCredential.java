@@ -16,6 +16,9 @@ public class SessionCredential {
     private String sessionPolicyDocument;
     /** Secret access key returned with the session; used for SigV4 validation when enabled. */
     private String secretAccessKey;
+    /** Values returned by {@code sts:GetCallerIdentity} for this session, when set at issuance. */
+    private String callerIdentityUserId;
+    private String callerIdentityArn;
 
     public SessionCredential() {}
 
@@ -46,4 +49,14 @@ public class SessionCredential {
 
     public String getSecretAccessKey() { return secretAccessKey; }
     public void setSecretAccessKey(String secretAccessKey) { this.secretAccessKey = secretAccessKey; }
+
+    public String getCallerIdentityUserId() { return callerIdentityUserId; }
+    public void setCallerIdentityUserId(String callerIdentityUserId) {
+        this.callerIdentityUserId = callerIdentityUserId;
+    }
+
+    public String getCallerIdentityArn() { return callerIdentityArn; }
+    public void setCallerIdentityArn(String callerIdentityArn) {
+        this.callerIdentityArn = callerIdentityArn;
+    }
 }

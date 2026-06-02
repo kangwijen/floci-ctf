@@ -1,7 +1,10 @@
 package io.github.hectorvent.floci.services.iam;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.AwsQueryController;
 import io.github.hectorvent.floci.core.common.AwsQueryResponse;
@@ -30,20 +33,25 @@ public class StsQueryHandler {
 
     private final IamService iamService;
     private final RegionResolver regionResolver;
+    private final AccountResolver accountResolver;
+    private final EmulatorConfig config;
 
     @Inject
-    public StsQueryHandler(IamService iamService, RegionResolver regionResolver) {
+    public StsQueryHandler(IamService iamService, RegionResolver regionResolver,
+                           AccountResolver accountResolver, EmulatorConfig config) {
         this.iamService = iamService;
         this.regionResolver = regionResolver;
+        this.accountResolver = accountResolver;
+        this.config = config;
     }
 
-    public Response handle(String action, MultivaluedMap<String, String> params) {
+    public Response handle(String action, MultivaluedMap<String, String> params, String authorization) {
         action = IamUnrestrictedActions.canonicalQueryOperation("sts", action);
         LOG.debugv("STS action: {0}", action);
 
         return switch (action) {
             case "AssumeRole"                  -> handleAssumeRole(params);
-            case "GetCallerIdentity"           -> handleGetCallerIdentity(params);
+            case "GetCallerIdentity"           -> handleGetCallerIdentity(authorization);
             case "GetSessionToken"             -> handleGetSessionToken(params);
             case "AssumeRoleWithWebIdentity"   -> handleAssumeRoleWithWebIdentity(params);
             case "AssumeRoleWithSAML"          -> handleAssumeRoleWithSAML(params);
@@ -77,7 +85,8 @@ public class StsQueryHandler {
 
         // Register session so IAM enforcement can resolve the role's policies
         String sessionPolicy = getParam(params, "Policy");
-        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey);
+        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
+                assumedRoleId, assumedRoleArn);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -90,12 +99,16 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("AssumeRole", AwsNamespaces.STS, result)).build();
     }
 
-    private Response handleGetCallerIdentity(MultivaluedMap<String, String> params) {
-        String accountId = regionResolver.getAccountId();
+    private Response handleGetCallerIdentity(String authorization) {
+        String accessKeyId = accountResolver.extractAccessKeyId(authorization);
+        String defaultAccountId = accountResolver.resolve(authorization);
+        CallerIdentity identity = iamService.resolveCallerIdentity(
+                        accessKeyId, defaultAccountId, config.auth().rootAccessKeyId())
+                .orElseGet(() -> CallerIdentity.root(defaultAccountId));
         String result = new XmlBuilder()
-                .elem("UserId", accountId)
-                .elem("Account", accountId)
-                .elem("Arn", AwsArnUtils.Arn.of("iam", "", accountId, "root").toString())
+                .elem("UserId", identity.userId())
+                .elem("Account", identity.account())
+                .elem("Arn", identity.arn())
                 .build();
         return Response.ok(AwsQueryResponse.envelope("GetCallerIdentity", AwsNamespaces.STS, result)).build();
     }
@@ -109,7 +122,9 @@ public class StsQueryHandler {
 
         String accountId = regionResolver.getAccountId();
         String sessionArn = AwsArnUtils.Arn.of("sts", "", accountId, "federated-user/floci-session").toString();
-        iamService.registerSession(accessKeyId, sessionArn, expiration, null, secretKey);
+        String federatedUserId = accountId + ":floci-session";
+        iamService.registerSession(accessKeyId, sessionArn, expiration, null, secretKey,
+                federatedUserId, sessionArn);
 
         String result = credentialsXml(accessKeyId, secretKey, sessionToken, expiration);
         return Response.ok(AwsQueryResponse.envelope("GetSessionToken", AwsNamespaces.STS, result)).build();
@@ -137,7 +152,8 @@ public class StsQueryHandler {
         String provider = providerId != null && !providerId.isBlank() ? providerId : "accounts.google.com";
 
         String sessionPolicy = getParam(params, "Policy");
-        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey);
+        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
+                assumedRoleId, assumedRoleArn);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -172,7 +188,8 @@ public class StsQueryHandler {
         String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId, "assumed-role/" + roleName + "/" + sessionName).toString();
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
 
-        iamService.registerSession(accessKeyId, roleArn, expiration, null, secretKey);
+        iamService.registerSession(accessKeyId, roleArn, expiration, null, secretKey,
+                assumedRoleId, assumedRoleArn);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -208,7 +225,8 @@ public class StsQueryHandler {
 
         String sessionPolicy = getParam(params, "Policy");
         // Register federation token so enforcement can scope its policies via session policy
-        iamService.registerSession(accessKeyId, federatedUserArn, expiration, sessionPolicy, secretKey);
+        iamService.registerSession(accessKeyId, federatedUserArn, expiration, sessionPolicy, secretKey,
+                federatedUserId, federatedUserArn);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))

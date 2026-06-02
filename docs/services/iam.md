@@ -94,6 +94,8 @@ No other Floci-emulated service (S3, EC2, IAM, DynamoDB, Lambda, ...) has an AWS
 
 Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforcementFilter` after `IamActionRegistry` resolves the action.
 
+**GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`.
+
 ### Bypass rules
 
 These identities bypass enforcement:

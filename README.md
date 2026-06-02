@@ -23,8 +23,10 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | S3 pre-signed URLs | Default HMAC secret | Requires `FLOCI_AUTH_PRESIGN_SECRET` (do not use the default) |
 | Docker image defaults | `test`/`test` baked in | No default credentials in `docker/Dockerfile` |
 | Payload hashing | N/A | SigV4 validator hashes request bodies when `x-amz-content-sha256` is absent |
+| `sts:GetCallerIdentity` / `GetSessionToken` | Evaluated like any action | Policy-exempt (AWS parity): no Allow required; SigV4 and registered keys still apply |
+| `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
 
-New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `OperatorCredentialEnv`, and `SecurityBypassPaths` (health and internal endpoints only).
+New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, and `SecurityBypassPaths` (health and internal endpoints only).
 
 ## Quick start (operators)
 
@@ -52,6 +54,7 @@ All AWS services listen on `http://localhost:4566`. Use the root credentials onl
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | Operator access key (bypasses enforcement when paired with secret) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | Operator secret for the root access key |
 | `FLOCI_AUTH_PRESIGN_SECRET` | HMAC secret for Floci S3 pre-signed URLs |
+| `FLOCI_DEFAULT_ACCOUNT_ID` | Optional; account id in IAM ARNs and `GetCallerIdentity` (default `000000000000`) |
 
 These are set in [docker-compose.yml](./docker-compose.yml). Pass root and pre-sign values from the host as shown above.
 
@@ -72,8 +75,21 @@ aws iam create-access-key --user-name challenger
 
 3. Give participants IAM access keys from `CreateAccessKey`. They must sign every request with SigV4.
 4. Confirm enforcement: wrong secret or unregistered keys should return HTTP 403.
+5. Confirm identity shape (participant keys must **not** report account root unless that is intentional):
+
+```bash
+# As participant (briefing AKIA only — not operator root)
+aws sts get-caller-identity --endpoint-url "$AWS_ENDPOINT_URL"
+# Expect Arn like arn:aws:iam::ACCOUNT:user/challenger — not ...:root
+```
 
 Under strict mode, `test`/`test` and other unregistered keys are rejected. Only IAM identities allowed by policy (or the configured root pair) succeed.
+
+**STS notes for challenge authors**
+
+- Participants do **not** need `sts:GetCallerIdentity` or `sts:GetSessionToken` in their IAM policies (same as AWS).
+- Operator `FLOCI_AUTH_ROOT_*` and 12-digit account-style access keys still resolve to `arn:aws:iam::ACCOUNT:root`.
+- Set `FLOCI_DEFAULT_ACCOUNT_ID` (or `floci.default-account-id`) when labs use a non-default account id (e.g. `222222222222`); IAM user ARNs and `GetCallerIdentity` use that account.
 
 ## Client tooling notes
 
@@ -98,7 +114,8 @@ client = boto3.client(
 
 | Topic | Location |
 |---|---|
-| CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
+| CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) (policy-exempt STS actions, caller identity) |
+| Agent / implementation map | [AGENTS.md](./AGENTS.md) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |
 
