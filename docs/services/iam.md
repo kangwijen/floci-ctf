@@ -83,6 +83,17 @@ Policy evaluation follows the standard AWS precedence:
 2. An explicit **Allow** in any policy → request is allowed
 3. No matching statement → implicit deny (HTTP 403)
 
+**AWS parity (policy-exempt actions):** AWS documents only two STS operations that do not require identity-based IAM permissions. Floci skips `IamPolicyEvaluator` for these when the access key is registered (SigV4 and strict-mode rules still apply). This applies globally on port 4566 for every emulated service: exemption is keyed on the resolved IAM action string, not per handler.
+
+| IAM action | AWS documentation |
+|---|---|
+| `sts:GetCallerIdentity` | [GetCallerIdentity](https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html): no permissions required; explicit Deny does not block the call |
+| `sts:GetSessionToken` | [GetSessionToken](https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html): no permissions required; policies cannot control this authentication operation |
+
+No other Floci-emulated service (S3, EC2, IAM, DynamoDB, Lambda, ...) has an AWS-documented equivalent. Calls such as `ec2:DescribeRegions`, `s3:ListAllMyBuckets`, or `iam:GetUser` still need an explicit Allow (or root bypass). Temporary credentials from `GetSessionToken` inherit the IAM user's permissions for subsequent calls.
+
+Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforcementFilter` after `IamActionRegistry` resolves the action.
+
 ### Bypass rules
 
 These identities bypass enforcement:

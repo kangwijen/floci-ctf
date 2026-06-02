@@ -47,7 +47,7 @@ class IamActionRegistryTest {
                 new MultivaluedHashMap<>(),
                 MediaType.APPLICATION_FORM_URLENCODED_TYPE,
                 "Action=Get%2BCallerIdentity");
-        assertEquals("sts:Get+CallerIdentity", registry.resolve("sts", ctx));
+        assertEquals("sts:GetCallerIdentity", registry.resolve("sts", ctx));
     }
 
     @Test

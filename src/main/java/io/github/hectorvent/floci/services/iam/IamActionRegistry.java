@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -111,14 +112,15 @@ public class IamActionRegistry {
             queryAction = readFormAction(ctx);
         }
         if (queryAction != null && !queryAction.isBlank()) {
-            return credentialScope + ":" + queryAction;
+            String operation = IamUnrestrictedActions.canonicalQueryOperation(credentialScope, queryAction);
+            return credentialScope + ":" + operation;
         }
 
         // JSON 1.1: X-Amz-Target → service:OperationName
         String target = ctx.getHeaderString("X-Amz-Target");
         if (target != null && target.contains(".")) {
             String operationName = target.substring(target.lastIndexOf('.') + 1);
-            return credentialScope + ":" + operationName;
+            return IamUnrestrictedActions.canonicalAction(credentialScope + ":" + operationName);
         }
 
         // REST-JSON: match against rule table

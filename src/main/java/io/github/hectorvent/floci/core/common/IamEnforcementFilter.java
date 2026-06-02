@@ -134,6 +134,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
         String region = regionResolver.resolveRegionFromAuth(auth);
         String accountId = accountResolver.resolve(auth);
         String resource = arnBuilder.build(credentialScope, ctx, region, accountId);

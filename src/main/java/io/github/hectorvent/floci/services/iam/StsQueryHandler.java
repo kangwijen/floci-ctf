@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.iam;
 
+import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.AwsQueryController;
@@ -37,6 +38,7 @@ public class StsQueryHandler {
     }
 
     public Response handle(String action, MultivaluedMap<String, String> params) {
+        action = IamUnrestrictedActions.canonicalQueryOperation("sts", action);
         LOG.debugv("STS action: {0}", action);
 
         return switch (action) {
