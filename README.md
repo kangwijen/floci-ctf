@@ -40,7 +40,7 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Identity policy `Resource` matching | Most requests use `*` | `ResourceArnBuilder` resolves per-service ARNs for identity policies |
 | Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` and account `:root` supported |
 
-New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, and `SecurityBypassPaths` (health and internal endpoints only).
+New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, `SecurityBypassPaths` (health and internal endpoints only), and `CtfInternalEndpointFilter` (`FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS`: `false`, `true`, or `all`).
 
 ## Quick start (operators)
 

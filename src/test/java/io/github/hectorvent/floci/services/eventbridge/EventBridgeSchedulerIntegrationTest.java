@@ -303,6 +303,10 @@ class EventBridgeSchedulerIntegrationTest {
             @Override
             public AuthConfig auth() { return null; }
             @Override
+            public CtfConfig ctf() {
+                return () -> "true";
+            }
+            @Override
             public SecurityConfig security() { return null; }
             @Override
             public ServicesConfig services() { return null; }

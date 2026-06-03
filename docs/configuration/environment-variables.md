@@ -18,6 +18,12 @@ Floci is configured exclusively through environment variables. Every option belo
 
 ---
 
+## CTF hardening
+
+| Variable | Default | Description |
+|---|---|---|
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | `false`: expose Floci introspection routes. `true` (default): return HTTP 404 for `/_floci/*` and `/_localstack/*` (including `/_floci/ecr/gc`). `all`: also hide `/health` |
+
 ## Authentication
 
 | Variable | Default | Description |

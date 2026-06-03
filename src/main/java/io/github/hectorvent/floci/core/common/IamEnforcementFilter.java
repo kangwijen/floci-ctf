@@ -89,7 +89,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             if (Boolean.TRUE.equals(ctx.getProperty(PreSignedUrlFilter.PRESIGN_VERIFIED_PROPERTY))) {
                 enforcePresignedS3(ctx, strict);
             } else if (strict
-                    && !SecurityBypassPaths.isInternalHealthOrInfoPath(ctx.getUriInfo().getPath())
+                    && !SecurityBypassPaths.isInternalHealthOrInfoPath(
+                            ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())
                     && config.auth().validateSignatures()) {
                 LOG.infov("IAM strict enforcement DENY: unverified pre-signed URL on {0}",
                         ctx.getUriInfo().getPath());
@@ -100,7 +101,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String auth = ctx.getHeaderString("Authorization");
         if (auth == null) {
-            if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(ctx.getUriInfo().getPath())) {
+            if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(
+                    ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())) {
                 LOG.infov("IAM strict enforcement DENY: missing Authorization header on {0}",
                         ctx.getUriInfo().getPath());
                 ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
@@ -245,7 +247,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     }
 
     static boolean isInternalHealthOrInfoPath(String path) {
-        return SecurityBypassPaths.isInternalHealthOrInfoPath(path);
+        return SecurityBypassPaths.isInternalHealthOrInfoPath(path, CtfHideInternalEndpointsMode.OFF);
     }
 
     static Response accessDeniedResponse(String action, String credentialScope, MediaType requestMediaType) {

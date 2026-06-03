@@ -57,7 +57,8 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
-        if (SecurityBypassPaths.isInternalHealthOrInfoPath(ctx.getUriInfo().getPath())) {
+        if (SecurityBypassPaths.isInternalHealthOrInfoPath(
+                ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())) {
             return;
         }
 
@@ -131,7 +132,7 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
     }
 
     static boolean isInternalPath(String path) {
-        return SecurityBypassPaths.isInternalHealthOrInfoPath(path);
+        return SecurityBypassPaths.isInternalHealthOrInfoPath(path, CtfHideInternalEndpointsMode.OFF);
     }
 
     private static String extractService(String auth) {

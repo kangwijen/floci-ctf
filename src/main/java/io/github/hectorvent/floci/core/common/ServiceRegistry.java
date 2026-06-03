@@ -41,18 +41,17 @@ public class ServiceRegistry {
     }
 
     /**
-     * Returns all known services with their status: "running" if enabled, "available" if not.
+     * Returns enabled services for health and info endpoints. Disabled services are omitted so
+     * recon does not list APIs that are turned off via {@code FLOCI_SERVICES_*_ENABLED}.
      */
     public Map<String, String> getServices() {
         Map<String, String> services = new LinkedHashMap<>();
         for (ServiceDescriptor descriptor : catalog.allStatusDescriptors()) {
-            services.put(descriptor.externalKey(), status(descriptor.enabled()));
+            if (descriptor.enabled()) {
+                services.put(descriptor.externalKey(), "running");
+            }
         }
         return services;
-    }
-
-    private static String status(boolean enabled) {
-        return enabled ? "running" : "available";
     }
 
     public void logEnabledServices() {

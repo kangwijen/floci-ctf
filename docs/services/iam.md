@@ -154,7 +154,7 @@ Under strict enforcement:
 
 | Case | Behaviour |
 |---|---|
-| No `Authorization` header on `/health`, `/_floci/*`, or `/_localstack/*` | Allowed (Floci internal health/info endpoints) |
+| No `Authorization` header on `/health`, `/_floci/*`, or `/_localstack/*` | Allowed unless `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` is `true` or `all` (those paths return 404) |
 | No `Authorization` header on any other path | Denied (HTTP 403) |
 | Unresolvable IAM action for the request | Denied (HTTP 403) |
 

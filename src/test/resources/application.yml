@@ -9,6 +9,9 @@ floci:
   base-url: "http://localhost:4566"
   default-region: us-east-1
   default-account-id: "000000000000"
+  ctf:
+    # Product default is true; tests keep internal routes for EmulatorInfoController etc.
+    hide-internal-endpoints: false
   storage:
     mode: memory
     persistent-path: ./target/test-data

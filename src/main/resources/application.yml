@@ -93,6 +93,10 @@ floci:
     # extra-suffixes:
     #   - localhost.localstack.cloud
 
+  ctf:
+    # false | true (default) | all — hide unauthenticated /_floci/*, /_localstack/*, and optionally /health
+    hide-internal-endpoints: true
+
   auth:
     validate-signatures: false
     presign-secret: local-emulator-secret

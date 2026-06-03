@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.config;
 
+import io.github.hectorvent.floci.core.common.CtfHideInternalEndpointsMode;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import java.util.List;
@@ -61,6 +62,8 @@ public interface EmulatorConfig {
     DnsConfig dns();
 
     AuthConfig auth();
+
+    CtfConfig ctf();
 
     SecurityConfig security();
 
@@ -299,6 +302,24 @@ public interface EmulatorConfig {
             }
             String env = System.getenv("AWS_SECRET_ACCESS_KEY");
             return env != null && !env.isBlank() ? Optional.of(env) : Optional.empty();
+        }
+    }
+
+    interface CtfConfig {
+        /**
+         * Controls visibility of unauthenticated emulator introspection routes.
+         * <ul>
+         *   <li>{@code false}: expose internal endpoints</li>
+         *   <li>{@code true} (default): return 404 for {@code /_floci/*} and {@code /_localstack/*}</li>
+         *   <li>{@code all}: also hide {@code /health}</li>
+         * </ul>
+         * Env: {@code FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS}
+         */
+        @WithDefault("true")
+        String hideInternalEndpoints();
+
+        default CtfHideInternalEndpointsMode hideInternalEndpointsMode() {
+            return CtfHideInternalEndpointsMode.parse(hideInternalEndpoints());
         }
     }
 
