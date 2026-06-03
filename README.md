@@ -39,6 +39,8 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Role trust `sts:ExternalId` | Not enforced | Trust policy conditions evaluated on `AssumeRole` |
 | Identity policy `Resource` matching | Most requests use `*` | `ResourceArnBuilder` resolves per-service ARNs for identity policies |
 | Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` and account `:root` supported |
+| Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
+| Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides prefixed routes; `all` also hides `/health` |
 
 New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, `SecurityBypassPaths` (health and internal endpoints only), and `CtfInternalEndpointFilter` (`FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS`: `false`, `true`, or `all`).
 
@@ -68,6 +70,7 @@ All AWS services listen on `http://localhost:4566`. Use the root credentials onl
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | Operator access key (bypasses enforcement when paired with secret) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | Operator secret for the root access key |
 | `FLOCI_AUTH_PRESIGN_SECRET` | HMAC secret for Floci S3 pre-signed URLs |
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | Default `true`: `404` on `/_floci/*` and `/_localstack/*`; `all` also hides `/health`; set `false` for upstream-style introspection |
 | `FLOCI_DEFAULT_ACCOUNT_ID` | Optional; account id in IAM ARNs and `GetCallerIdentity` (default `000000000000`) |
 
 These are set in [docker-compose.yml](./docker-compose.yml). Pass root and pre-sign values from the host as shown above.

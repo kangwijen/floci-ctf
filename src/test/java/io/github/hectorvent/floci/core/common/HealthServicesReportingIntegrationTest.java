@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,18 +35,19 @@ class HealthServicesReportingIntegrationTest {
     }
 
     @Test
-    void healthEndpointOmitsDisabledServices() throws Exception {
-        String body = given()
-                .when()
-                .get("/_floci/health")
-                .then()
-                .statusCode(200)
-                .body("services.s3", equalTo("running"))
-                .extract()
-                .body()
-                .asString();
+    void rootHealthEndpointOmitsDisabledServices() throws Exception {
+        assertHealthOmitsDisabled(given().when().get("/health").then().statusCode(200).extract().body().asString());
+    }
 
+    @Test
+    void flociHealthEndpointOmitsDisabledServices() throws Exception {
+        assertHealthOmitsDisabled(
+                given().when().get("/_floci/health").then().statusCode(200).extract().body().asString());
+    }
+
+    private static void assertHealthOmitsDisabled(String body) throws Exception {
         JsonNode services = MAPPER.readTree(body).get("services");
+        assertEquals("running", services.get("s3").asText());
         assertFalse(services.has("lambda"), "disabled lambda must not appear in health");
         assertFalse(services.has("ssm"), "disabled ssm must not appear in health");
         assertFalse(services.has("sqs"), "disabled sqs must not appear in health");
