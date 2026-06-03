@@ -1,5 +1,7 @@
 package io.github.hectorvent.floci.services.iam.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +19,9 @@ public class PolicyStatement {
     private final List<String> notResources;// NotResource patterns; null when resources is set
     // Condition: outer key = operator (e.g. "StringEquals"), inner key = context key, value = list of values
     private final Map<String, Map<String, List<String>>> conditions;
+    /** Present on resource-based policy statements; null for identity policies. */
+    private final JsonNode principal;
+    private final JsonNode notPrincipal;
 
     public PolicyStatement(String effect,
                            List<String> actions,
@@ -24,12 +29,35 @@ public class PolicyStatement {
                            List<String> resources,
                            List<String> notResources,
                            Map<String, Map<String, List<String>>> conditions) {
+        this(effect, actions, notActions, resources, notResources, conditions, null, null);
+    }
+
+    public PolicyStatement(String effect,
+                           List<String> actions,
+                           List<String> notActions,
+                           List<String> resources,
+                           List<String> notResources,
+                           Map<String, Map<String, List<String>>> conditions,
+                           JsonNode principal) {
+        this(effect, actions, notActions, resources, notResources, conditions, principal, null);
+    }
+
+    public PolicyStatement(String effect,
+                           List<String> actions,
+                           List<String> notActions,
+                           List<String> resources,
+                           List<String> notResources,
+                           Map<String, Map<String, List<String>>> conditions,
+                           JsonNode principal,
+                           JsonNode notPrincipal) {
         this.effect = effect;
         this.actions = actions;
         this.notActions = notActions;
         this.resources = resources;
         this.notResources = notResources;
         this.conditions = conditions;
+        this.principal = principal;
+        this.notPrincipal = notPrincipal;
     }
 
     /** Convenience constructor for simple allow/deny without conditions or Not* fields. */
@@ -43,6 +71,8 @@ public class PolicyStatement {
     public List<String> getResources()     { return resources; }
     public List<String> getNotResources()  { return notResources; }
     public Map<String, Map<String, List<String>>> getConditions() { return conditions; }
+    public JsonNode getPrincipal() { return principal; }
+    public JsonNode getNotPrincipal() { return notPrincipal; }
 
     public boolean isDeny()  { return "Deny".equalsIgnoreCase(effect); }
     public boolean isAllow() { return "Allow".equalsIgnoreCase(effect); }

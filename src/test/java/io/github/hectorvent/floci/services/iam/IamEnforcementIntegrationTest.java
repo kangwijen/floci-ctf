@@ -2,10 +2,12 @@ package io.github.hectorvent.floci.services.iam;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
+import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import org.junit.jupiter.api.Test;
 
 import jakarta.inject.Inject;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -234,5 +236,190 @@ class IamEnforcementIntegrationTest {
         assertEquals(Decision.ALLOW, evaluator.evaluate(
                 List.of(policy), "sts:AssumeRole",
                 "arn:aws:iam::987654321098:role/polaris-admin-access"));
+    }
+
+    @Test
+    void allowIamCreateAccessKeyOnPolarisUserArn() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iam:CreateAccessKey",
+               "Resource":"arn:aws:iam::226767940554:user/polaris"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "iam:CreateAccessKey",
+                "arn:aws:iam::226767940554:user/polaris"));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "iam:CreateAccessKey",
+                "arn:aws:iam::226767940554:user/random"));
+    }
+
+    // =========================================================================
+    // Resource-based policies (Phase 2)
+    // =========================================================================
+
+    @Test
+    void bucketPolicyAllowsWithoutIdentityPolicy() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"arn:aws:iam::000000000000:user/reader"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::ctf-bucket/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/reader",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::ctf-bucket/flag.txt",
+                ctx));
+    }
+
+    @Test
+    void bucketPolicyDeniesWrongPrincipal() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"arn:aws:iam::000000000000:user/reader"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::ctf-bucket/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/other",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::ctf-bucket/flag.txt",
+                ctx));
+    }
+
+    @Test
+    void identityOrResourcePolicyEitherCanAllow() {
+        String identity = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::my-bucket"}
+            ]}""";
+        String bucket = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"*"},
+               "Action":"s3:GetObject","Resource":"arn:aws:s3:::other-bucket/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/x",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of(identity)),
+                List.of(bucket),
+                "s3:ListBucket",
+                "arn:aws:s3:::my-bucket",
+                ctx));
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucket),
+                "s3:GetObject",
+                "arn:aws:s3:::other-bucket/key",
+                ctx));
+    }
+
+    @Test
+    void accountRootPrincipalMatchesIamUserInSameAccount() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"arn:aws:iam::111122223333:root"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::shared/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::111122223333:user/reader",
+                "aws:principalaccount", "111122223333");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::shared/key",
+                ctx));
+    }
+
+    @Test
+    void notPrincipalDeniesListedPrincipal() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "NotPrincipal":{"AWS":"arn:aws:iam::000000000000:user/blocked"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::b/*"}
+            ]}""";
+        Map<String, String> allowed = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/allowed",
+                "aws:principalaccount", "000000000000");
+        Map<String, String> blocked = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/blocked",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of()), List.of(bucketPolicy),
+                "s3:GetObject", "arn:aws:s3:::b/k", allowed));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of()), List.of(bucketPolicy),
+                "s3:GetObject", "arn:aws:s3:::b/k", blocked));
+    }
+
+    @Test
+    void secretsResourcePolicyAllowsWithoutIdentityPolicy() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"arn:aws:iam::000000000000:user/reader"},
+               "Action":"secretsmanager:GetSecretValue",
+               "Resource":"*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/reader",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(policy),
+                "secretsmanager:GetSecretValue",
+                "arn:aws:secretsmanager:us-east-1:000000000000:secret:my-secret-000000",
+                ctx));
+    }
+
+    @Test
+    void resourcePolicyExplicitDenyOverridesResourceAllow() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"*"},
+               "Action":"s3:*","Resource":"arn:aws:s3:::b/*"},
+              {"Effect":"Deny","Principal":{"AWS":"*"},
+               "Action":"s3:GetObject","Resource":"arn:aws:s3:::b/secret/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::000000000000:user/x",
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::b/secret/flag",
+                ctx));
+    }
+
+    @Test
+    void allowDynamodbGetItemOnPolarisTableArn() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"dynamodb:GetItem",
+               "Resource":"arn:aws:dynamodb:us-east-1:226767940554:table/polaris"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "dynamodb:GetItem",
+                "arn:aws:dynamodb:us-east-1:226767940554:table/polaris"));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "dynamodb:GetItem",
+                "arn:aws:dynamodb:us-east-1:226767940554:table/random"));
     }
 }

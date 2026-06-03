@@ -6,9 +6,14 @@ import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
-import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.iam.ResourcePolicyResolver;
+import io.github.hectorvent.floci.services.iam.model.CallerContext;
+import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
+import io.github.hectorvent.floci.services.s3.PreSignedUrlFilter;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.MediaType;
@@ -16,7 +21,10 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.jboss.logging.Logger;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,31 +33,19 @@ import java.util.regex.Pattern;
  * JAX-RS filter that enforces IAM policies on every incoming request when
  * {@code floci.iam.enforcement-enabled = true}.
  *
- * <p>Bypass rules (request is always allowed through):
- * <ul>
- *   <li>Enforcement is disabled (default)</li>
- *   <li>Access key matches {@code floci.auth.root-access-key-id} when configured</li>
- *   <li>No {@code Authorization} header (unless strict enforcement is enabled)</li>
- *   <li>The action cannot be resolved (unknown mapping, permissive unless strict)</li>
- * </ul>
+ * <p>Evaluates identity-based policies and resource-based policies (S3 bucket policy,
+ * Lambda resource policy, SQS/SNS/KMS/Secrets Manager policies) via {@link ResourcePolicyResolver}.
  *
- * <p>When both enforcement and strict enforcement are enabled, missing auth on non-internal
- * paths and unmapped IAM actions are denied. Internal paths are {@code /health} and
- * {@code /_floci/*} / {@code /_localstack/*} ({@link io.github.hectorvent.floci.lifecycle.HealthController},
- * {@link io.github.hectorvent.floci.lifecycle.EmulatorInfoController}).
- *
- * <p>When enforcement is enabled, access keys not registered in the IAM store are denied.
- *
- * <p>Phase 1 evaluates identity-based policies only.
- * Resource-based policies (S3 bucket policy, Lambda resource policy, etc.) are Phase 2.
+ * <p>Pre-signed S3 URLs: after {@link PreSignedUrlFilter} validates the Floci HMAC, bucket
+ * and identity policies are evaluated (HMAC secret does not bypass IAM).
  */
 @Provider
 @ApplicationScoped
+@Priority(Priorities.AUTHENTICATION + 20)
 public class IamEnforcementFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(IamEnforcementFilter.class);
 
-    /** Extracts the credential-scope service name (e.g. "s3", "lambda"). */
     private static final Pattern SERVICE_PATTERN =
             Pattern.compile("Credential=\\S+/\\d{8}/[^/]+/([^/]+)/");
 
@@ -59,6 +55,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final IamPolicyEvaluator evaluator;
     private final IamActionRegistry actionRegistry;
     private final ResourceArnBuilder arnBuilder;
+    private final ResourcePolicyResolver resourcePolicyResolver;
     private final RegionResolver regionResolver;
 
     @Inject
@@ -68,6 +65,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 IamPolicyEvaluator evaluator,
                                 IamActionRegistry actionRegistry,
                                 ResourceArnBuilder arnBuilder,
+                                ResourcePolicyResolver resourcePolicyResolver,
                                 RegionResolver regionResolver) {
         this.config = config;
         this.accountResolver = accountResolver;
@@ -75,6 +73,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         this.evaluator = evaluator;
         this.actionRegistry = actionRegistry;
         this.arnBuilder = arnBuilder;
+        this.resourcePolicyResolver = resourcePolicyResolver;
         this.regionResolver = regionResolver;
     }
 
@@ -86,12 +85,22 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         boolean strict = config.services().iam().strictEnforcementEnabled();
 
+        if (SecurityBypassPaths.isPresignedUrlRequest(ctx)) {
+            if (Boolean.TRUE.equals(ctx.getProperty(PreSignedUrlFilter.PRESIGN_VERIFIED_PROPERTY))) {
+                enforcePresignedS3(ctx, strict);
+            } else if (strict
+                    && !SecurityBypassPaths.isInternalHealthOrInfoPath(ctx.getUriInfo().getPath())
+                    && config.auth().validateSignatures()) {
+                LOG.infov("IAM strict enforcement DENY: unverified pre-signed URL on {0}",
+                        ctx.getUriInfo().getPath());
+                ctx.abortWith(accessDeniedResponse("s3:GetObject", "s3", ctx.getMediaType()));
+            }
+            return;
+        }
+
         String auth = ctx.getHeaderString("Authorization");
         if (auth == null) {
             if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(ctx.getUriInfo().getPath())) {
-                if (SecurityBypassPaths.isPresignedUrlRequest(ctx) && config.auth().validateSignatures()) {
-                    return;
-                }
                 LOG.infov("IAM strict enforcement DENY: missing Authorization header on {0}",
                         ctx.getUriInfo().getPath());
                 ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
@@ -104,11 +113,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
         if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
-            return; // configured root key bypass
-        }
-
-        if (SecurityBypassPaths.isPresignedUrlRequest(ctx) && config.auth().validateSignatures()) {
-            return; // signature verified by PreSignedUrlFilter
+            return;
         }
 
         String credentialScope = extractCredentialScope(auth);
@@ -116,6 +121,64 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        String region = regionResolver.resolveRegionFromAuth(auth);
+        String accountId = accountResolver.resolve(auth);
+        evaluateAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+    }
+
+    private void enforcePresignedS3(ContainerRequestContext ctx, boolean strict) {
+        String credential = ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
+        String akid = accountResolver.extractAccessKeyIdFromCredential(credential);
+        if (akid != null && config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
+            return;
+        }
+
+        String region = regionResolver.getDefaultRegion();
+        if (credential != null) {
+            String[] parts = credential.split("/");
+            if (parts.length >= 2 && parts[1].length() == 8) {
+                // region segment present in credential scope
+            }
+            if (parts.length >= 3 && !parts[2].isBlank()) {
+                region = parts[2];
+            }
+        }
+
+        String accountId = akid != null && akid.matches("\\d{12}") ? akid : accountResolver.defaultAccountId();
+
+        String action = actionRegistry.resolve("s3", ctx);
+        if (action == null) {
+            if (strict) {
+                ctx.abortWith(accessDeniedResponse("s3:*", "s3", ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = akid != null ? iamService.resolveCallerContext(akid) : null;
+        if (caller == null) {
+            caller = CallerContext.of(List.of());
+        }
+
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
+        String resource = arnBuilder.build("s3", ctx, region, accountId);
+        List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, ctx);
+
+        if (evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx) == Decision.DENY) {
+            LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
+            ctx.abortWith(accessDeniedResponse(action, "s3", ctx.getMediaType()));
+        }
+    }
+
+    private void evaluateAndAbortIfDenied(ContainerRequestContext ctx,
+                                          String credentialScope,
+                                          String akid,
+                                          String region,
+                                          String accountId,
+                                          boolean strict) {
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
             if (strict) {
@@ -127,8 +190,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        List<String> policies = iamService.resolveCallerPolicies(akid);
-        if (policies == null) {
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
             LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
             ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
             return;
@@ -138,15 +201,42 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        String region = regionResolver.resolveRegionFromAuth(auth);
-        String accountId = accountResolver.resolve(auth);
         String resource = arnBuilder.build(credentialScope, ctx, region, accountId);
+        List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, ctx);
 
-        Decision decision = evaluator.evaluate(policies, action, resource);
+        Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
         if (decision == Decision.DENY) {
             LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
         }
+    }
+
+    private Map<String, String> buildConditionContext(String accessKeyId,
+                                                      String accountId,
+                                                      ContainerRequestContext ctx) {
+        Map<String, String> out = new HashMap<>();
+        Optional<CallerIdentity> identity = iamService.resolveCallerIdentity(
+                accessKeyId, accountId, config.auth().rootAccessKeyId());
+        String principalArn = identity.map(CallerIdentity::arn)
+                .orElse("arn:aws:iam::" + accountId + ":root");
+        String principalAccount = identity.map(CallerIdentity::account).orElse(accountId);
+        out.put("aws:principalarn", principalArn);
+        out.put("aws:principalaccount", principalAccount);
+        out.put("aws:sourceaccount", principalAccount);
+        out.put("aws:sourcearn", principalArn);
+        identity.map(CallerIdentity::userId).ifPresent(id -> out.put("aws:userid", id));
+        String sourceIp = ctx.getHeaderString("X-Forwarded-For");
+        if (sourceIp == null || sourceIp.isBlank()) {
+            sourceIp = "127.0.0.1";
+        } else {
+            int comma = sourceIp.indexOf(',');
+            if (comma > 0) {
+                sourceIp = sourceIp.substring(0, comma).trim();
+            }
+        }
+        out.put("aws:sourceip", sourceIp);
+        return out;
     }
 
     private String extractCredentialScope(String auth) {
@@ -154,29 +244,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         return m.find() ? m.group(1) : null;
     }
 
-    /**
-     * Paths served by {@link io.github.hectorvent.floci.lifecycle.HealthController} and
-     * {@link io.github.hectorvent.floci.lifecycle.EmulatorInfoController} that must stay
-     * reachable without SigV4 credentials even under strict enforcement.
-     */
     static boolean isInternalHealthOrInfoPath(String path) {
         return SecurityBypassPaths.isInternalHealthOrInfoPath(path);
     }
 
-    /**
-     * Builds a 403 Access Denied response in the wire format the calling SDK
-     * expects. AWS SDKs hard-fail when they receive the wrong shape: an XML
-     * parser blows up on a leading {@code {}, and a JSON parser blows up on
-     * {@code <}. Pick the shape from request signals:
-     *
-     * <ul>
-     *   <li>S3 → S3-flavored XML {@code <Error>...</Error>}</li>
-     *   <li>{@code application/x-www-form-urlencoded} body → AWS Query
-     *       {@code <ErrorResponse>...</ErrorResponse>} (IAM/STS/EC2/SQS/SNS/...)</li>
-     *   <li>everything else (JSON 1.x, REST-JSON) → keep the historical JSON shape</li>
-     * </ul>
-     */
-    // Package-private for unit testing.
     static Response accessDeniedResponse(String action, String credentialScope, MediaType requestMediaType) {
         String message = "User is not authorized to perform: " + action;
         if ("s3".equals(credentialScope)) {

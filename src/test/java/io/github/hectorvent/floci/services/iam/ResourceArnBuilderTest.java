@@ -131,6 +131,184 @@ class ResourceArnBuilderTest {
         assertEquals(body, new String(remaining, StandardCharsets.UTF_8));
     }
 
+    // ── IAM ───────────────────────────────────────────────────────────────────
+
+    @Test
+    void iamCreateAccessKeyBuildsUserArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=CreateAccessKey&UserName=broker-clerk");
+        String arn = builder.build("iam", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:iam::222222222222:user/broker-clerk", arn);
+    }
+
+    // ── DynamoDB ──────────────────────────────────────────────────────────────
+
+    @Test
+    void dynamodbGetItemBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"TableName\":\"smoke-settlements\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/smoke-settlements", arn);
+    }
+
+    // ── Secrets Manager ───────────────────────────────────────────────────────
+
+    @Test
+    void secretsGetSecretValueBuildsSecretArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"SecretId\":\"market/relay/scanner-hint\"}");
+        String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-000000", arn);
+    }
+
+    // ── Kinesis ───────────────────────────────────────────────────────────────
+
+    @Test
+    void kinesisGetRecordsBuildsStreamArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"StreamName\":\"orders\"}");
+        String arn = builder.build("kinesis", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kinesis:us-east-1:222222222222:stream/orders", arn);
+    }
+
+    @Test
+    void kinesisPutRecordUsesStreamArnField() {
+        String streamArn = "arn:aws:kinesis:us-east-1:222222222222:stream/existing";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"StreamARN\":\"" + streamArn + "\"}");
+        String arn = builder.build("kinesis", ctx, REGION, ACCOUNT);
+        assertEquals(streamArn, arn);
+    }
+
+    // ── KMS ───────────────────────────────────────────────────────────────────
+
+    @Test
+    void kmsDecryptBuildsKeyArnFromBody() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"KeyId\":\"550e8400-e29b-41d4-a716-446655440000\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:key/550e8400-e29b-41d4-a716-446655440000", arn);
+    }
+
+    @Test
+    void kmsAliasNameBuildsAliasArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"AliasName\":\"alias/nimbus\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:alias/nimbus", arn);
+    }
+
+    // ── EC2 ───────────────────────────────────────────────────────────────────
+
+    @Test
+    void ec2TerminateInstancesBuildsInstanceArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=TerminateInstances&InstanceId.1=i-0abc123");
+        String arn = builder.build("ec2", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:ec2:us-east-1:222222222222:instance/i-0abc123", arn);
+    }
+
+    @Test
+    void ec2DescribeSecurityGroupsBuildsGroupArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=DescribeSecurityGroups&GroupId.1=sg-0deadbeef");
+        String arn = builder.build("ec2", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:ec2:us-east-1:222222222222:security-group/sg-0deadbeef", arn);
+    }
+
+    // ── CloudFormation ────────────────────────────────────────────────────────
+
+    @Test
+    void cloudFormationDescribeStacksBuildsStackArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=DescribeStacks&StackName=my-stack");
+        String arn = builder.build("cloudformation", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudformation:us-east-1:222222222222:stack/my-stack/00000000-0000-0000-0000-000000000000", arn);
+    }
+
+    // ── SQS / SNS ─────────────────────────────────────────────────────────────
+
+    @Test
+    void sqsCreateQueueBuildsQueueArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=CreateQueue&QueueName=orders.fifo");
+        String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:sqs:us-east-1:222222222222:orders.fifo", arn);
+    }
+
+    @Test
+    void snsCreateTopicBuildsTopicArn() {
+        ContainerRequestContext ctx = formBodyCtx("Action=CreateTopic&Name=alerts");
+        String arn = builder.build("sns", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:sns:us-east-1:222222222222:alerts", arn);
+    }
+
+    // ── Logs / Events / States ────────────────────────────────────────────────
+
+    @Test
+    void logsPutLogEventsBuildsLogGroupArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"logGroupName\":\"/aws/lambda/my-fn\"}");
+        String arn = builder.build("logs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/my-fn", arn);
+    }
+
+    @Test
+    void eventsPutRuleBuildsRuleArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"default\",\"Rule\":\"cron-rule\"}");
+        String arn = builder.build("events", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:events:us-east-1:222222222222:rule/cron-rule", arn);
+    }
+
+    @Test
+    void statesStartExecutionUsesStateMachineArn() {
+        String smArn = "arn:aws:states:us-east-1:222222222222:stateMachine:MyFlow";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"stateMachineArn\":\"" + smArn + "\"}");
+        String arn = builder.build("states", ctx, REGION, ACCOUNT);
+        assertEquals(smArn, arn);
+    }
+
+    // ── ECR / ECS / Firehose / Cognito ────────────────────────────────────────
+
+    @Test
+    void ecrDescribeRepositoriesBuildsRepoArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"repositoryName\":\"nimbus/app\"}");
+        String arn = builder.build("ecr", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:ecr:us-east-1:222222222222:repository/nimbus/app", arn);
+    }
+
+    @Test
+    void ecsDescribeServicesBuildsServiceArn() {
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"cluster\":\"prod\",\"service\":\"api\"}");
+        String arn = builder.build("ecs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:ecs:us-east-1:222222222222:service/prod/api", arn);
+    }
+
+    @Test
+    void firehosePutRecordBuildsDeliveryStreamArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"DeliveryStreamName\":\"audit\"}");
+        String arn = builder.build("firehose", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:firehose:us-east-1:222222222222:deliverystream/audit", arn);
+    }
+
+    @Test
+    void cognitoDescribeUserPoolBuildsPoolArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"UserPoolId\":\"us-east-1_ABC123\"}");
+        String arn = builder.build("cognito-idp", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cognito-idp:us-east-1:222222222222:userpool/us-east-1_ABC123", arn);
+    }
+
+    // ── API Gateway ───────────────────────────────────────────────────────────
+
+    @Test
+    void apiGatewayRestApiFromPath() {
+        ContainerRequestContext ctx = pathCtx("/restapis/abc123/stages/dev", jsonBodyCtx("{}"));
+        String arn = builder.build("apigateway", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:apigateway:us-east-1::/restapis/abc123", arn);
+    }
+
+    @Test
+    void secretsScopedPolicyMatchesSuffixWildcard() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-*"}
+            ]}""";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-000000";
+        IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
+        assertEquals(IamPolicyEvaluator.Decision.ALLOW,
+                eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ContainerRequestContext jsonBodyCtx(String json) {
@@ -149,6 +327,14 @@ class ResourceArnBuilderTest {
                 new MultivaluedHashMap<>(),
                 MediaType.APPLICATION_FORM_URLENCODED_TYPE,
                 streamRef);
+    }
+
+    private static ContainerRequestContext pathCtx(String path, ContainerRequestContext base) {
+        UriInfo uriInfo = Mockito.mock(UriInfo.class);
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(uriInfo.getPath()).thenReturn(path);
+        when(base.getUriInfo()).thenReturn(uriInfo);
+        return base;
     }
 
     private static ContainerRequestContext ctxWithStream(MultivaluedMap<String, String> queryParams,

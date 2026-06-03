@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -450,6 +451,61 @@ public class SecretsManagerService {
             List<String> versionStages,
             Instant createdDate
     ) {
+    }
+
+    public void putResourcePolicy(String secretId, String resourcePolicy, boolean blockPublicPolicy, String region) {
+        if (resourcePolicy == null || resourcePolicy.isBlank()) {
+            throw new AwsException("InvalidParameterException",
+                    "ResourcePolicy is required.", 400);
+        }
+        Secret secret = resolveSecret(secretId, region);
+        if (blockPublicPolicy && policyAllowsPublicPrincipal(resourcePolicy)) {
+            throw new AwsException("InvalidParameterException",
+                    "The resource policy includes public principals.", 400);
+        }
+        secret.setResourcePolicy(resourcePolicy);
+        store.put(regionKey(region, secret.getName()), secret);
+    }
+
+    public Secret getResourcePolicy(String secretId, String region) {
+        Secret secret = resolveSecret(secretId, region);
+        if (secret.getResourcePolicy() == null || secret.getResourcePolicy().isBlank()) {
+            throw new AwsException("ResourceNotFoundException",
+                    "Secrets Manager can't find the specified resource policy.", 400);
+        }
+        return secret;
+    }
+
+    public Secret deleteResourcePolicy(String secretId, String region) {
+        Secret secret = resolveSecret(secretId, region);
+        if (secret.getResourcePolicy() == null || secret.getResourcePolicy().isBlank()) {
+            throw new AwsException("ResourceNotFoundException",
+                    "Secrets Manager can't find the specified resource policy.", 400);
+        }
+        secret.setResourcePolicy(null);
+        store.put(regionKey(region, secret.getName()), secret);
+        return secret;
+    }
+
+    /**
+     * Resource policy JSON for IAM enforcement from a secret ARN or friendly id.
+     */
+    public Optional<String> findSecretResourcePolicyDocument(String resourceArnOrId, String region) {
+        try {
+            Secret secret = resolveSecret(resourceArnOrId, region);
+            String policy = secret.getResourcePolicy();
+            if (policy == null || policy.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(policy);
+        } catch (AwsException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean policyAllowsPublicPrincipal(String policyJson) {
+        return policyJson.contains("\"Principal\"")
+                && (policyJson.contains("\"*\"") || policyJson.contains("\"AWS\":\"*\""));
     }
 
     private Secret resolveSecret(String secretId, String region) {

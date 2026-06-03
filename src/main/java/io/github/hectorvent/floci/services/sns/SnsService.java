@@ -42,6 +42,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -199,6 +200,20 @@ public class SnsService {
     public List<Topic> listTopics(String region) {
         String prefix = "topic::" + region + "::";
         return topicStore.scan(k -> k.startsWith(prefix));
+    }
+
+    /**
+     * Topic resource policy for IAM enforcement (includes AWS default policy when none is set).
+     */
+    public Optional<String> findTopicPolicyDocument(String topicArn, String region) {
+        if (topicStore.get(topicKey(region, topicArn)).isEmpty()) {
+            return Optional.empty();
+        }
+        String policy = getTopicAttributes(topicArn, region).get("Policy");
+        if (policy == null || policy.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(policy);
     }
 
     public Map<String, String> getTopicAttributes(String topicArn, String region) {

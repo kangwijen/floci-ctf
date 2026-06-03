@@ -46,8 +46,8 @@ public class SecretsManagerJsonHandler {
             case "GetResourcePolicy" -> handleGetResourcePolicy(request, region);
             case "GetRandomPassword" -> handleGetRandomPassword(request, region);
             case "BatchGetSecretValue" -> handleBatchGetSecretValue(request, region);
-            case "DeleteResourcePolicy" -> Response.ok(objectMapper.createObjectNode()).build();
-            case "PutResourcePolicy" -> Response.ok(objectMapper.createObjectNode()).build();
+            case "DeleteResourcePolicy" -> handleDeleteResourcePolicy(request, region);
+            case "PutResourcePolicy" -> handlePutResourcePolicy(request, region);
             case "UpdateSecretVersionStage" -> handleUpdateSecretVersionStage(request, region);
             default -> Response.status(400)
                     .entity(new AwsErrorResponse("UnsupportedOperation", "Operation " + action + " is not supported."))
@@ -373,7 +373,29 @@ public class SecretsManagerJsonHandler {
 
     private Response handleGetResourcePolicy(JsonNode request, String region) {
         String secretId = request.path("SecretId").asText();
+        Secret secret = service.getResourcePolicy(secretId, region);
+        ObjectNode response = objectMapper.createObjectNode();
+        response.put("ARN", secret.getArn());
+        response.put("Name", secret.getName());
+        response.put("ResourcePolicy", secret.getResourcePolicy());
+        return Response.ok(response).build();
+    }
+
+    private Response handlePutResourcePolicy(JsonNode request, String region) {
+        String secretId = request.path("SecretId").asText();
+        String policy = request.path("ResourcePolicy").asText();
+        boolean blockPublic = request.path("BlockPublicPolicy").asBoolean(false);
+        service.putResourcePolicy(secretId, policy, blockPublic, region);
         Secret secret = service.describeSecret(secretId, region);
+        ObjectNode response = objectMapper.createObjectNode();
+        response.put("ARN", secret.getArn());
+        response.put("Name", secret.getName());
+        return Response.ok(response).build();
+    }
+
+    private Response handleDeleteResourcePolicy(JsonNode request, String region) {
+        String secretId = request.path("SecretId").asText();
+        Secret secret = service.deleteResourcePolicy(secretId, region);
         ObjectNode response = objectMapper.createObjectNode();
         response.put("ARN", secret.getArn());
         response.put("Name", secret.getName());

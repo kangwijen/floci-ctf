@@ -1,0 +1,204 @@
+package io.github.hectorvent.floci.services.iam;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Evaluates IAM role trust policies ({@code AssumeRolePolicyDocument}) for
+ * {@code sts:AssumeRole} and related calls.
+ */
+@ApplicationScoped
+public class AssumeRoleTrustPolicyEvaluator {
+
+    private static final Logger LOG = Logger.getLogger(AssumeRoleTrustPolicyEvaluator.class);
+
+    private final ObjectMapper objectMapper;
+    private final IamPolicyEvaluator policyEvaluator;
+
+    @Inject
+    public AssumeRoleTrustPolicyEvaluator(ObjectMapper objectMapper, IamPolicyEvaluator policyEvaluator) {
+        this.objectMapper = objectMapper;
+        this.policyEvaluator = policyEvaluator;
+    }
+
+    /**
+     * @param trustPolicyDocument role trust policy JSON
+     * @param callerPrincipalArn  ARN of the calling principal (user, role, root, etc.)
+     * @param externalId          {@code ExternalId} request parameter, or null if omitted
+     * @return true if at least one Allow statement permits the assumption
+     */
+    public boolean isAssumeRoleTrusted(String trustPolicyDocument,
+                                        String callerPrincipalArn,
+                                        String externalId) {
+        if (trustPolicyDocument == null || trustPolicyDocument.isBlank()) {
+            return false;
+        }
+        String callerArn = callerPrincipalArn == null ? "" : callerPrincipalArn;
+        String callerAccount = AwsArnUtils.accountOrDefault(callerArn, "");
+
+        Map<String, String> conditionCtx = new LinkedHashMap<>();
+        if (externalId != null && !externalId.isBlank()) {
+            conditionCtx.put("sts:externalid", externalId);
+        }
+        conditionCtx.put("aws:principalarn", callerArn);
+        if (!callerAccount.isBlank()) {
+            conditionCtx.put("aws:principalaccount", callerAccount);
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(trustPolicyDocument);
+            JsonNode statements = root.path("Statement");
+            List<JsonNode> stmtList = new ArrayList<>();
+            if (statements.isArray()) {
+                statements.forEach(stmtList::add);
+            } else if (statements.isObject()) {
+                stmtList.add(statements);
+            }
+            for (JsonNode stmt : stmtList) {
+                if (matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnv("Failed to parse trust policy: {0}", e.getMessage());
+        }
+        return false;
+    }
+
+    private boolean matchesTrustStatement(JsonNode stmt,
+                                          String callerArn,
+                                          String callerAccount,
+                                          Map<String, String> conditionCtx) {
+        if (!"Allow".equalsIgnoreCase(stmt.path("Effect").asText())) {
+            return false;
+        }
+        if (!matchesTrustAction(stmt.get("Action"))) {
+            return false;
+        }
+        if (!PolicyPrincipalMatcher.matchesPrincipalDimension(
+                stmt.get("Principal"), stmt.get("NotPrincipal"), callerArn, callerAccount)) {
+            return false;
+        }
+        return matchesTrustConditions(stmt.get("Condition"), conditionCtx);
+    }
+
+    private boolean matchesTrustAction(JsonNode actionNode) {
+        if (actionNode == null) {
+            return false;
+        }
+        List<String> actions = nodeToList(actionNode);
+        for (String action : actions) {
+            if (IamPolicyEvaluator.globMatches(action, "sts:AssumeRole")
+                    || IamPolicyEvaluator.globMatches(action, "sts:*")
+                    || "*".equals(action)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesTrustConditions(JsonNode condNode, Map<String, String> conditionCtx) {
+        if (condNode == null || condNode.isNull() || !condNode.isObject()) {
+            return true;
+        }
+        Map<String, Map<String, List<String>>> conditions = parseConditions(condNode);
+        if (conditions == null || conditions.isEmpty()) {
+            return true;
+        }
+        return evaluateConditions(conditions, conditionCtx);
+    }
+
+    private boolean evaluateConditions(Map<String, Map<String, List<String>>> conditions,
+                                         Map<String, String> ctx) {
+        for (Map.Entry<String, Map<String, List<String>>> entry : conditions.entrySet()) {
+            if (!evaluateConditionBlock(entry.getKey(), entry.getValue(), ctx)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean evaluateConditionBlock(String operator,
+                                           Map<String, List<String>> keyValueMap,
+                                           Map<String, String> ctx) {
+        boolean ifExists = operator.endsWith("IfExists");
+        String baseOp = ifExists ? operator.substring(0, operator.length() - "IfExists".length()) : operator;
+
+        for (Map.Entry<String, List<String>> entry : keyValueMap.entrySet()) {
+            String condKey = entry.getKey().toLowerCase();
+            List<String> condValues = entry.getValue();
+            String ctxValue = ctx.get(condKey);
+
+            if (ctxValue == null) {
+                if (ifExists) {
+                    continue;
+                }
+                return false;
+            }
+
+            boolean keyMatch = false;
+            for (String condValue : condValues) {
+                if (evaluateSingleCondition(baseOp, ctxValue, condValue)) {
+                    keyMatch = true;
+                    break;
+                }
+            }
+            if (!keyMatch) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean evaluateSingleCondition(String operator, String ctxValue, String condValue) {
+        return switch (operator) {
+            case "StringEquals" -> ctxValue.equals(condValue);
+            case "StringNotEquals" -> !ctxValue.equals(condValue);
+            case "StringEqualsIgnoreCase" -> ctxValue.equalsIgnoreCase(condValue);
+            case "StringNotEqualsIgnoreCase" -> !ctxValue.equalsIgnoreCase(condValue);
+            case "StringLike" -> IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            case "StringNotLike" -> !IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            case "ArnEquals", "ArnLike" -> IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            case "ArnNotEquals", "ArnNotLike" -> !IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            default -> {
+                LOG.warnv("Unsupported trust condition operator: {0}", operator);
+                yield false;
+            }
+        };
+    }
+
+    private Map<String, Map<String, List<String>>> parseConditions(JsonNode condNode) {
+        Map<String, Map<String, List<String>>> result = new LinkedHashMap<>();
+        condNode.fields().forEachRemaining(opEntry -> {
+            Map<String, List<String>> kvMap = new LinkedHashMap<>();
+            opEntry.getValue().fields().forEachRemaining(kvEntry ->
+                    kvMap.put(kvEntry.getKey(), nodeToList(kvEntry.getValue())));
+            result.put(opEntry.getKey(), kvMap);
+        });
+        return result.isEmpty() ? null : result;
+    }
+
+    private List<String> nodeToList(JsonNode node) {
+        List<String> list = new ArrayList<>();
+        if (node == null) {
+            return list;
+        }
+        if (node.isTextual()) {
+            list.add(node.asText());
+        } else if (node.isArray()) {
+            for (JsonNode item : node) {
+                list.add(item.asText());
+            }
+        }
+        return list;
+    }
+}

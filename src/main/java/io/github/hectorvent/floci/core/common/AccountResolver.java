@@ -44,4 +44,20 @@ public class AccountResolver {
         Matcher m = AKID_PATTERN.matcher(authorizationHeader);
         return m.find() ? m.group(1) : null;
     }
+
+    /**
+     * Extracts the access key id from an {@code X-Amz-Credential} query value
+     * ({@code AKID/date/region/service/aws4_request}).
+     */
+    public String extractAccessKeyIdFromCredential(String credential) {
+        if (credential == null || credential.isBlank()) {
+            return null;
+        }
+        int slash = credential.indexOf('/');
+        return slash > 0 ? credential.substring(0, slash) : credential;
+    }
+
+    public String defaultAccountId() {
+        return defaultAccountId;
+    }
 }

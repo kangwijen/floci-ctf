@@ -2,8 +2,10 @@ package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.MediaType;
@@ -12,7 +14,11 @@ import jakarta.ws.rs.ext.Provider;
 
 @Provider
 @ApplicationScoped
+@Priority(Priorities.AUTHENTICATION + 10)
 public class PreSignedUrlFilter implements ContainerRequestFilter {
+
+    /** Set after expiry check and optional HMAC verification succeed. */
+    public static final String PRESIGN_VERIFIED_PROPERTY = "floci.s3.presign.verified";
 
     private final PreSignedUrlGenerator presignGenerator;
     private final EmulatorConfig config;
@@ -27,7 +33,6 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
     public void filter(ContainerRequestContext requestContext) {
         var queryParams = requestContext.getUriInfo().getQueryParameters();
 
-        // Only process if this is a pre-signed URL request
         String algorithm = queryParams.getFirst("X-Amz-Algorithm");
         if (algorithm == null) {
             return;
@@ -58,14 +63,12 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             return;
         }
 
-        // Check expiration
         if (presignGenerator.isExpired(amzDate, expires)) {
             requestContext.abortWith(errorResponse(403, "AccessDenied",
                     "Request has expired."));
             return;
         }
 
-        // Optionally verify signature (if validateSignatures is enabled)
         if (presignGenerator.shouldValidateSignatures()) {
             String path = requestContext.getUriInfo().getPath();
             String[] parts = path.split("/", 3);
@@ -81,8 +84,11 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             if (!presignGenerator.verifySignature(method, bucket, key, amzDate, expires, signature)) {
                 requestContext.abortWith(errorResponse(403, "SignatureDoesNotMatch",
                         "The request signature we calculated does not match the signature you provided."));
+                return;
             }
         }
+
+        requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
     }
 
     private Response errorResponse(int status, String code, String message) {

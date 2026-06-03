@@ -1275,6 +1275,25 @@ public class LambdaService {
         return statement;
     }
 
+    /**
+     * Resource policy JSON for IAM enforcement, or empty when the function has no permissions.
+     */
+    public Optional<String> findFunctionPolicyDocument(String region, String functionName) {
+        try {
+            LambdaFunction fn = getFunction(region, functionName);
+            if (fn.getPolicies().isEmpty()) {
+                return Optional.empty();
+            }
+            Map<String, Object> policy = new java.util.LinkedHashMap<>();
+            policy.put("Version", "2012-10-17");
+            policy.put("Id", "default");
+            policy.put("Statement", fn.getPolicies());
+            return Optional.of(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(policy));
+        } catch (AwsException | com.fasterxml.jackson.core.JsonProcessingException e) {
+            return Optional.empty();
+        }
+    }
+
     public Map<String, Object> getPolicy(String region, String functionName) {
         LambdaFunction fn = getFunction(region, functionName);
         if (fn.getPolicies().isEmpty()) {

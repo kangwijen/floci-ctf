@@ -47,9 +47,13 @@ public class IamService {
     private final StorageBackend<String, InstanceProfile> instanceProfiles;
     private final StorageBackend<String, SessionCredential> sessions;
     private final RegionResolver regionResolver;
+    private final AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator;
 
     @Inject
-    public IamService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
+    public IamService(StorageFactory storageFactory,
+                      EmulatorConfig config,
+                      RegionResolver regionResolver,
+                      AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator) {
         this(
             storageFactory.create("iam", "iam-users.json", new TypeReference<>() {}),
             storageFactory.create("iam", "iam-groups.json", new TypeReference<>() {}),
@@ -58,7 +62,8 @@ public class IamService {
             storageFactory.create("iam", "iam-access-keys.json", new TypeReference<>() {}),
             storageFactory.create("iam", "iam-instance-profiles.json", new TypeReference<>() {}),
             storageFactory.create("iam", "iam-sessions.json", new TypeReference<>() {}),
-            regionResolver
+            regionResolver,
+            trustPolicyEvaluator
         );
     }
 
@@ -70,6 +75,21 @@ public class IamService {
                StorageBackend<String, InstanceProfile> instanceProfiles,
                StorageBackend<String, SessionCredential> sessions,
                RegionResolver regionResolver) {
+        this(users, groups, roles, policies, accessKeys, instanceProfiles, sessions, regionResolver,
+                new AssumeRoleTrustPolicyEvaluator(
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())));
+    }
+
+    IamService(StorageBackend<String, IamUser> users,
+               StorageBackend<String, IamGroup> groups,
+               StorageBackend<String, IamRole> roles,
+               StorageBackend<String, IamPolicy> policies,
+               StorageBackend<String, AccessKey> accessKeys,
+               StorageBackend<String, InstanceProfile> instanceProfiles,
+               StorageBackend<String, SessionCredential> sessions,
+               RegionResolver regionResolver,
+               AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator) {
         this.users = users;
         this.groups = groups;
         this.roles = roles;
@@ -78,6 +98,7 @@ public class IamService {
         this.instanceProfiles = instanceProfiles;
         this.sessions = sessions;
         this.regionResolver = regionResolver;
+        this.trustPolicyEvaluator = trustPolicyEvaluator;
     }
 
     @PostConstruct
@@ -281,6 +302,34 @@ public class IamService {
         return roles.get(roleName)
                 .orElseThrow(() -> new AwsException("NoSuchEntity",
                         "The role with name " + roleName + " cannot be found.", 404));
+    }
+
+    public IamRole getRoleByArn(String roleArn) {
+        AwsArnUtils.Arn parsed = AwsArnUtils.parse(roleArn);
+        if (!"iam".equals(parsed.service())) {
+            throw new AwsException("ValidationError", "Invalid role ARN: " + roleArn, 400);
+        }
+        String resource = parsed.resource();
+        if (!resource.startsWith("role/")) {
+            throw new AwsException("ValidationError", "Invalid role ARN: " + roleArn, 400);
+        }
+        return getRole(resource.substring("role/".length()));
+    }
+
+    /**
+     * Validates that the caller may assume the role per its trust policy (principal + conditions).
+     *
+     * @throws AwsException AccessDenied when trust policy rejects the caller
+     */
+    public void validateAssumeRoleTrust(String roleArn, String callerPrincipalArn, String externalId) {
+        IamRole role = getRoleByArn(roleArn);
+        if (!trustPolicyEvaluator.isAssumeRoleTrusted(
+                role.getAssumeRolePolicyDocument(), callerPrincipalArn, externalId)) {
+            throw new AwsException("AccessDenied",
+                    "User: " + callerPrincipalArn + " is not authorized to perform: sts:AssumeRole on resource: "
+                            + roleArn,
+                    403);
+        }
     }
 
     public void deleteRole(String roleName) {

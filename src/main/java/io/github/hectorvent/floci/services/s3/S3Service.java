@@ -1278,6 +1278,15 @@ public class S3Service {
         bucketStore.put(bucketName, bucket);
     }
 
+    /**
+     * Returns the bucket policy document when the bucket exists and has a policy attached.
+     */
+    public Optional<String> findBucketPolicyIfPresent(String bucketName) {
+        return bucketStore.get(bucketName)
+                .map(Bucket::getPolicy)
+                .filter(p -> p != null && !p.isBlank());
+    }
+
     public void deleteBucketPolicy(String bucketName) {
         Bucket bucket = bucketStore.get(bucketName)
                 .orElseThrow(() -> new AwsException("NoSuchBucket", "The specified bucket does not exist.", 404));

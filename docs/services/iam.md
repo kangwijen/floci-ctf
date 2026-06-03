@@ -96,6 +96,39 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 
 **GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`.
 
+**AssumeRole trust policies:** `AssumeRoleTrustPolicyEvaluator` checks role trust documents before credentials are issued, including `sts:ExternalId` conditions and `Principal.AWS` matching.
+
+**Scoped resource ARNs:** `ResourceArnBuilder` maps each request to an AWS-shaped resource ARN for `IamPolicyEvaluator` (see [Service Authorization Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html)). Covered scopes include:
+
+| Scope | Source fields (examples) |
+|---|---|
+| `iam` | `UserName`, `GroupName`, `RoleName`, `PolicyArn` (form) |
+| `dynamodb` | `TableName`, `TableArn`, `GlobalTableName` (JSON) |
+| `secretsmanager` | `SecretId` (JSON; friendly names get `-000000` suffix for `secret:name-*` patterns) |
+| `s3` | Bucket/key from URL path |
+| `lambda` | Function or layer name from path |
+| `sqs` / `sns` | `QueueName` / `Name`, or ARN from `QueueUrl` / `TopicArn` |
+| `kms` / `kinesis` | `KeyId`, `AliasName`, `StreamName`, `StreamARN` (JSON) |
+| `ssm` | `Name` or first `Names[]` entry (JSON) |
+| `sts` | `RoleArn` (form) |
+| `ec2` | `InstanceId`, `ResourceId`, `VpcId`, `GroupId`, prefixed form keys |
+| `cloudformation` | `StackName` (placeholder stack id for `stack/name/*` patterns) |
+| `elasticache` / `rds` / `neptune` | Cluster/instance identifiers (query) |
+| `email` / `ses` | Identity, template, configuration set (query) |
+| `monitoring` | `AlarmName`, `ResourceARN` (query) |
+| `elasticloadbalancing` | Load balancer / target group ARNs (query) |
+| `autoscaling` | `AutoScalingGroupName` (query) |
+| `logs` / `events` / `states` | `logGroupName`, `Rule`, `stateMachineArn`, ... (JSON) |
+| `ecs` / `ecr` / `firehose` / `cognito-idp` | Cluster/service/repo/stream/pool fields (JSON) |
+| `apigateway` / `execute-api` | REST API id from path |
+| `glue` / `athena` / `es` | Database/table/workgroup/domain fields (JSON or path) |
+
+When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not.
+
+**Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
+
+**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates the Floci HMAC (`FLOCI_AUTH_PRESIGN_SECRET`), `IamEnforcementFilter` evaluates S3 identity and bucket policies. The presign secret does not bypass IAM.
+
 ### Bypass rules
 
 These identities bypass enforcement:
@@ -147,7 +180,9 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 - `Bool`, `IpAddress`, `NotIpAddress`, `Null`
 - Supports `...IfExists` variants for all operators.
 
-**Not yet supported**: `NotPrincipal`, resource-based policies (S3 bucket policy, Lambda resource policy).
+**Resource-based policies (HTTP):** S3 bucket policy, Lambda resource policy, SQS queue policy, SNS topic policy, KMS key policy (see above).
+
+**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals, presigned POST (`policy` form field).
 
 ### Assumed roles
 

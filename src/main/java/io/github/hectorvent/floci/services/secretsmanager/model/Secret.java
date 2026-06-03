@@ -24,6 +24,7 @@ public class Secret {
     private List<Tag> tags;
     private Map<String, SecretVersion> versions;
     private String currentVersionId;
+    private String resourcePolicy;
 
     public Secret() {
     }
@@ -127,5 +128,13 @@ public class Secret {
 
     public void setCurrentVersionId(String currentVersionId) {
         this.currentVersionId = currentVersionId;
+    }
+
+    public String getResourcePolicy() {
+        return resourcePolicy;
+    }
+
+    public void setResourcePolicy(String resourcePolicy) {
+        this.resourcePolicy = resourcePolicy;
     }
 }

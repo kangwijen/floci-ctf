@@ -73,9 +73,12 @@ public class IamPolicyEvaluator {
         List<PolicyStatement> boundaryStmts = caller.boundaryPolicyDocument() == null
                 ? null : parseAll(List.of(caller.boundaryPolicyDocument()));
 
+        String callerArn = ctx.get("aws:principalarn");
+        String callerAccount = ctx.get("aws:principalaccount");
+
         // 1. Explicit deny in ANY policy → DENY immediately
         if (anyExplicitDeny(identityStmts, action, resource, ctx)
-                || anyExplicitDeny(resourceStmts, action, resource, ctx)
+                || anyExplicitDenyResource(resourceStmts, action, resource, ctx, callerArn, callerAccount)
                 || (sessionStmts  != null && anyExplicitDeny(sessionStmts,  action, resource, ctx))
                 || (boundaryStmts != null && anyExplicitDeny(boundaryStmts, action, resource, ctx))) {
             return Decision.DENY;
@@ -83,7 +86,8 @@ public class IamPolicyEvaluator {
 
         // 2. Base grant: identity OR resource-based policy must allow
         boolean identityAllow = anyExplicitAllow(identityStmts, action, resource, ctx);
-        boolean resourceAllow = anyExplicitAllow(resourceStmts, action, resource, ctx);
+        boolean resourceAllow = anyExplicitAllowResource(resourceStmts, action, resource, ctx,
+                callerArn, callerAccount);
         if (!identityAllow && !resourceAllow) {
             return Decision.DENY;
         }
@@ -141,6 +145,33 @@ public class IamPolicyEvaluator {
             }
         }
         return false;
+    }
+
+    private boolean anyExplicitDenyResource(List<PolicyStatement> stmts, String action, String resource,
+                                            Map<String, String> ctx, String callerArn, String callerAccount) {
+        for (PolicyStatement stmt : stmts) {
+            if (stmt.isDeny() && matchesResourceStatement(stmt, action, resource, ctx, callerArn, callerAccount)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean anyExplicitAllowResource(List<PolicyStatement> stmts, String action, String resource,
+                                             Map<String, String> ctx, String callerArn, String callerAccount) {
+        for (PolicyStatement stmt : stmts) {
+            if (stmt.isAllow() && matchesResourceStatement(stmt, action, resource, ctx, callerArn, callerAccount)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesResourceStatement(PolicyStatement stmt, String action, String resource,
+                                             Map<String, String> ctx, String callerArn, String callerAccount) {
+        return matchesStatement(stmt, action, resource, ctx)
+                && PolicyPrincipalMatcher.matchesPrincipalDimension(
+                stmt.getPrincipal(), stmt.getNotPrincipal(), callerArn, callerAccount);
     }
 
     private boolean matchesStatement(PolicyStatement stmt, String action, String resource,
@@ -415,13 +446,17 @@ public class IamPolicyEvaluator {
         List<String> resources   = nodeToList(stmt.get("Resource"));
         List<String> notResources= nodeToList(stmt.get("NotResource"));
         Map<String, Map<String, List<String>>> conditions = parseConditions(stmt.get("Condition"));
+        JsonNode principal = stmt.get("Principal");
+        JsonNode notPrincipal = stmt.get("NotPrincipal");
         return new PolicyStatement(
                 effect,
                 actions.isEmpty()     ? null : actions,
                 notActions.isEmpty()  ? null : notActions,
                 resources.isEmpty()   ? null : resources,
                 notResources.isEmpty()? null : notResources,
-                conditions);
+                conditions,
+                principal,
+                notPrincipal);
     }
 
     private Map<String, Map<String, List<String>>> parseConditions(JsonNode condNode) {

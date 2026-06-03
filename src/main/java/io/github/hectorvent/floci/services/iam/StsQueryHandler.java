@@ -2,9 +2,12 @@ package io.github.hectorvent.floci.services.iam;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AccountResolver;
+import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
+
+import java.util.Optional;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.AwsQueryController;
 import io.github.hectorvent.floci.core.common.AwsQueryResponse;
@@ -50,11 +53,11 @@ public class StsQueryHandler {
         LOG.debugv("STS action: {0}", action);
 
         return switch (action) {
-            case "AssumeRole"                  -> handleAssumeRole(params);
+            case "AssumeRole"                  -> handleAssumeRole(params, authorization);
             case "GetCallerIdentity"           -> handleGetCallerIdentity(authorization);
             case "GetSessionToken"             -> handleGetSessionToken(params);
-            case "AssumeRoleWithWebIdentity"   -> handleAssumeRoleWithWebIdentity(params);
-            case "AssumeRoleWithSAML"          -> handleAssumeRoleWithSAML(params);
+            case "AssumeRoleWithWebIdentity"   -> handleAssumeRoleWithWebIdentity(params, authorization);
+            case "AssumeRoleWithSAML"          -> handleAssumeRoleWithSAML(params, authorization);
             case "GetFederationToken"          -> handleGetFederationToken(params);
             case "DecodeAuthorizationMessage"  -> handleDecodeAuthorizationMessage(params);
             default -> AwsQueryResponse.error("UnsupportedOperation",
@@ -62,10 +65,14 @@ public class StsQueryHandler {
         };
     }
 
-    private Response handleAssumeRole(MultivaluedMap<String, String> params) {
+    private Response handleAssumeRole(MultivaluedMap<String, String> params, String authorization) {
         Response validation = validateRequired(params, "RoleArn", "RoleSessionName");
         if (validation != null) {
             return validation;
+        }
+        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        if (trustDeny != null) {
+            return trustDeny;
         }
         String roleArn = getParam(params, "RoleArn");
         String sessionName = getParam(params, "RoleSessionName");
@@ -130,10 +137,14 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("GetSessionToken", AwsNamespaces.STS, result)).build();
     }
 
-    private Response handleAssumeRoleWithWebIdentity(MultivaluedMap<String, String> params) {
+    private Response handleAssumeRoleWithWebIdentity(MultivaluedMap<String, String> params, String authorization) {
         Response validation = validateRequired(params, "RoleArn", "RoleSessionName", "WebIdentityToken");
         if (validation != null) {
             return validation;
+        }
+        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        if (trustDeny != null) {
+            return trustDeny;
         }
         String roleArn = getParam(params, "RoleArn");
         String sessionName = getParam(params, "RoleSessionName");
@@ -169,10 +180,14 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("AssumeRoleWithWebIdentity", AwsNamespaces.STS, result)).build();
     }
 
-    private Response handleAssumeRoleWithSAML(MultivaluedMap<String, String> params) {
+    private Response handleAssumeRoleWithSAML(MultivaluedMap<String, String> params, String authorization) {
         Response validation = validateRequired(params, "RoleArn", "PrincipalArn", "SAMLAssertion");
         if (validation != null) {
             return validation;
+        }
+        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        if (trustDeny != null) {
+            return trustDeny;
         }
         String roleArn = getParam(params, "RoleArn");
         String sessionName = "saml-session";
@@ -247,6 +262,28 @@ public class StsQueryHandler {
         String encodedMessage = getParam(params, "EncodedMessage");
         String result = new XmlBuilder().elem("DecodedMessage", encodedMessage).build();
         return Response.ok(AwsQueryResponse.envelope("DecodeAuthorizationMessage", AwsNamespaces.STS, result)).build();
+    }
+
+    private Response validateAssumeRoleTrust(MultivaluedMap<String, String> params, String authorization) {
+        String roleArn = getParam(params, "RoleArn");
+        if (roleArn == null || roleArn.isBlank()) {
+            return null;
+        }
+        String accessKeyId = accountResolver.extractAccessKeyId(authorization);
+        String defaultAccountId = accountResolver.resolve(authorization);
+        Optional<CallerIdentity> caller = iamService.resolveCallerIdentity(
+                accessKeyId, defaultAccountId, config.auth().rootAccessKeyId());
+        if (caller.isEmpty()) {
+            return AwsQueryResponse.error("AccessDenied",
+                    "User is not authorized to perform: sts:AssumeRole on resource: " + roleArn,
+                    AwsNamespaces.STS, 403);
+        }
+        try {
+            iamService.validateAssumeRoleTrust(roleArn, caller.get().arn(), getParam(params, "ExternalId"));
+        } catch (AwsException e) {
+            return AwsQueryResponse.error(e.getErrorCode(), e.getMessage(), AwsNamespaces.STS, e.getHttpStatus());
+        }
+        return null;
     }
 
     private Response validateRequired(MultivaluedMap<String, String> params, String... names) {

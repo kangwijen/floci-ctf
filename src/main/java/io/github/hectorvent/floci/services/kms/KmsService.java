@@ -461,6 +461,44 @@ public class KmsService {
         return result;
     }
 
+    /**
+     * Key policy document for IAM enforcement from a KMS resource ARN or key id.
+     */
+    public Optional<String> findKeyPolicyDocument(String resourceArnOrKeyId, String region) {
+        String keyId = keyIdFromResourceArn(resourceArnOrKeyId);
+        if (keyId == null || keyId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            KmsKey key = resolveKey(keyId, region);
+            String policy = key.getPolicy();
+            if (policy == null || policy.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(policy);
+        } catch (AwsException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static String keyIdFromResourceArn(String arnOrId) {
+        if (arnOrId == null || arnOrId.isBlank()) {
+            return null;
+        }
+        if (!arnOrId.startsWith("arn:aws:kms:")) {
+            return arnOrId;
+        }
+        int keyIdx = arnOrId.indexOf(":key/");
+        if (keyIdx >= 0) {
+            return arnOrId.substring(keyIdx + 5);
+        }
+        int aliasIdx = arnOrId.indexOf(":alias/");
+        if (aliasIdx >= 0) {
+            return "alias/" + arnOrId.substring(aliasIdx + 7);
+        }
+        return null;
+    }
+
     public void putKeyPolicy(String keyId, String policy, String region) {
         KmsKey key = resolveKey(keyId, region);
         key.setPolicy(policy);

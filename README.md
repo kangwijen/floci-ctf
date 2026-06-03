@@ -36,6 +36,9 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Payload hashing | N/A | SigV4 validator hashes request bodies when `x-amz-content-sha256` is absent |
 | `sts:GetCallerIdentity` / `GetSessionToken` | Evaluated like any action | Policy-exempt (AWS parity): no Allow required; SigV4 and registered keys still apply |
 | `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
+| Role trust `sts:ExternalId` | Not enforced | Trust policy conditions evaluated on `AssumeRole` |
+| Identity policy `Resource` matching | Most requests use `*` | `ResourceArnBuilder` resolves per-service ARNs for identity policies |
+| Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` and account `:root` supported |
 
 New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, and `SecurityBypassPaths` (health and internal endpoints only).
 

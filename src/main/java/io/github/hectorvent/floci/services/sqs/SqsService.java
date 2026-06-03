@@ -1334,4 +1334,24 @@ public class SqsService {
         String candidate = slash > 0 ? trimmed.substring(0, slash) : trimmed;
         return candidate.matches("\\d{12}") ? candidate : null;
     }
+
+    /**
+     * Returns the queue resource policy document when the queue exists and has a {@code Policy} attribute.
+     */
+    public Optional<String> findQueuePolicyByArn(String queueArn) {
+        if (queueArn == null || !queueArn.startsWith("arn:aws:sqs:")) {
+            return Optional.empty();
+        }
+        String[] parts = queueArn.split(":", 6);
+        if (parts.length < 6) {
+            return Optional.empty();
+        }
+        String region = parts[3];
+        String accountId = parts[4];
+        String queueName = parts[5];
+        String queueUrl = baseUrl + "/" + accountId + "/" + queueName;
+        return queueStore.get(regionKey(region, queueUrl))
+                .map(q -> q.getAttributes().get("Policy"))
+                .filter(p -> p != null && !p.isBlank());
+    }
 }
