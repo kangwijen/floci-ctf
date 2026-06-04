@@ -5,6 +5,7 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.model.Frame;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
@@ -405,10 +406,8 @@ public class CodeBuildRunner {
         env.put("CODEBUILD_LOG_PATH", logStream);
         env.put("AWS_DEFAULT_REGION", region);
         env.put("AWS_REGION", region);
-        OperatorCredentialEnv.putIfPresent(env);
-        env.put("AWS_ENDPOINT_URL", resolveEndpointUrl());
 
-        env.putAll(buildspec.envVariables());
+        ContainerEnvHardening.putAllIfAllowed(env, buildspec.envVariables());
 
         for (Map.Entry<String, String> e : buildspec.parameterStoreVars().entrySet()) {
             try {
@@ -432,7 +431,9 @@ public class CodeBuildRunner {
             for (Map<String, String> v : project.getEnvironment().getEnvironmentVariables()) {
                 String name = v.get("name");
                 String value = v.get("value");
-                if (name != null) { env.put(name, value != null ? value : ""); }
+                if (name != null) {
+                    ContainerEnvHardening.putIfAllowed(env, name, value != null ? value : "");
+                }
             }
         }
 
@@ -440,9 +441,15 @@ public class CodeBuildRunner {
             for (Map<String, String> v : build.getEnvironment().getEnvironmentVariables()) {
                 String name = v.get("name");
                 String value = v.get("value");
-                if (name != null) { env.put(name, value != null ? value : ""); }
+                if (name != null) {
+                    ContainerEnvHardening.putIfAllowed(env, name, value != null ? value : "");
+                }
             }
         }
+
+        ContainerEnvHardening.removeBlockedKeys(env);
+        OperatorCredentialEnv.putIfPresent(env);
+        env.put("AWS_ENDPOINT_URL", resolveEndpointUrl());
 
         List<String> result = new ArrayList<>();
         env.forEach((k, v) -> result.add(k + "=" + (v != null ? v : "")));

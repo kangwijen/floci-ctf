@@ -19,6 +19,11 @@ class CtfHideInternalEndpointsIntegrationTest {
         given().when().get("/_floci/health").then().statusCode(404);
         given().when().get("/_localstack/info").then().statusCode(404);
         given().when().post("/_floci/ecr/gc").then().statusCode(404);
+        given().contentType("application/json")
+                .body(Map.of("apiVersion", "authentication.k8s.io/v1", "kind", "TokenReview",
+                        "spec", Map.of("token", "k8s-aws-v1.test")))
+                .when().post("/_floci/eks/token-webhook")
+                .then().statusCode(404);
 
         given().when().get("/health").then().statusCode(200).body("services.s3", equalTo("running"));
     }

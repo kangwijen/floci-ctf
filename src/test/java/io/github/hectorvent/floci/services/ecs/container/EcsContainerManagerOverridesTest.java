@@ -123,6 +123,34 @@ class EcsContainerManagerOverridesTest {
                 "unmatched container should keep its task-def environment");
     }
 
+    @Test
+    void overrideCannotInjectAwsCredentials() {
+        ContainerDefinition app = containerDef("app", "app:latest",
+                List.of("app-default"),
+                List.of(new KeyValuePair("PLAYER", "ok")));
+        TaskDefinition taskDef = new TaskDefinition();
+        taskDef.setFamily("test-family");
+        taskDef.setContainerDefinitions(List.of(app));
+
+        ContainerOverride appOverride = new ContainerOverride();
+        appOverride.setName("app");
+        appOverride.setEnvironment(List.of(
+                new KeyValuePair("AWS_ACCESS_KEY_ID", "stolen"),
+                new KeyValuePair("FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY", "stolen")));
+
+        EcsTask task = new EcsTask();
+        task.setTaskArn("arn:aws:ecs:us-east-1:000000000000:task/test-cluster/abc123");
+        manager.startTask(task, taskDef, List.of(appOverride), "us-east-1");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> envCaptor = ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(builder).withEnv(envCaptor.capture());
+        List<String> appEnv = envCaptor.getValue();
+        assertTrue(appEnv.contains("PLAYER=ok"));
+        assertFalse(appEnv.stream().anyMatch(e -> e.startsWith("AWS_ACCESS_KEY_ID=")));
+        assertFalse(appEnv.stream().anyMatch(e -> e.startsWith("FLOCI_AUTH_")));
+    }
+
     private static ContainerDefinition containerDef(String name, String image,
                                                     List<String> command, List<KeyValuePair> env) {
         ContainerDefinition def = new ContainerDefinition();

@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.services.eks;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -22,7 +24,9 @@ import java.util.Map;
  * by default. This is what makes the native {@code aws eks update-kubeconfig} + {@code kubectl}
  * workflow authenticate against a Floci EKS cluster.
  *
- * <p>This is Floci plumbing under the {@code _floci/...} namespace, not an AWS API.
+ * <p>This is Floci plumbing under the {@code _floci/...} namespace, not an AWS API. With CTF
+ * defaults, {@code CtfInternalEndpointFilter} returns 404 for this path. When reachable and IAM
+ * enforcement is on, only plausible presigned STS {@code GetCallerIdentity} URLs are accepted.
  */
 @ApplicationScoped
 @Path("_floci/eks/token-webhook")
@@ -31,7 +35,13 @@ import java.util.Map;
 public class EksTokenWebhookController {
 
     private static final Logger LOG = Logger.getLogger(EksTokenWebhookController.class);
-    private static final String EKS_TOKEN_PREFIX = "k8s-aws-v1.";
+
+    private final EmulatorConfig config;
+
+    @Inject
+    public EksTokenWebhookController(EmulatorConfig config) {
+        this.config = config;
+    }
 
     @POST
     public Response review(Map<String, Object> tokenReview) {
@@ -41,7 +51,8 @@ public class EksTokenWebhookController {
                 ? v : "authentication.k8s.io/v1";
 
         String token = extractToken(tokenReview);
-        boolean authenticated = token != null && token.startsWith(EKS_TOKEN_PREFIX);
+        boolean authenticated = EksTokenAuthenticator.accepts(
+                token, config.services().iam().enforcementEnabled());
 
         if (authenticated) {
             LOG.debug("EKS token-webhook: authenticated aws-iam token as cluster-admin");

@@ -19,9 +19,9 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) for capture-the-flag and security exercises. It is the same local AWS emulator, with IAM enforcement, strict policy mode, and SigV4 validation turned on by default so participants cannot rely on permissive `test`/`test` credentials or unsigned requests.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (currently merged with upstream **1.5.22**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
-For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/).
+For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operator setup, challenge images, and `floci:local` behavior, see [FLOCI.md](./FLOCI.md).
 
 ## What changed
 
@@ -41,8 +41,10 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` and account `:root` supported |
 | Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
 | Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides prefixed routes; `all` also hides `/health` |
+| Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys in user-supplied env; only `OperatorCredentialEnv` injects host operator `AWS_*` (Lambda: applied last) |
+| EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
 
-New or extended code paths include `IamEnforcementFilter` (strict mode), `SigV4ValidationFilter`, `SigV4RequestValidator`, `IamUnrestrictedActions`, `IamService.resolveCallerIdentity`, `OperatorCredentialEnv`, `SecurityBypassPaths` (health and internal endpoints only), and `CtfInternalEndpointFilter` (`FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS`: `false`, `true`, or `all`).
+**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `EksTokenAuthenticator`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 
 ## Quick start (operators)
 
@@ -92,7 +94,13 @@ aws iam create-access-key --user-name challenger
 
 3. Give participants IAM access keys from `CreateAccessKey`. They must sign every request with SigV4.
 4. Confirm enforcement: wrong secret or unregistered keys should return HTTP 403.
-5. Confirm identity shape (participant keys must **not** report account root unless that is intentional):
+5. Operator smoke (default hide hides `/_floci/health`):
+
+```bash
+curl -s http://localhost:4566/health | jq .services
+```
+
+6. Confirm identity shape (participant keys must **not** report account root unless that is intentional):
 
 ```bash
 # As participant (briefing AKIA only — not operator root)
@@ -127,11 +135,20 @@ client = boto3.client(
 )
 ```
 
+## Focused regression tests
+
+```bash
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest
+```
+
+On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` before tests that spawn containers.
+
 ## Documentation in this repo
 
 | Topic | Location |
 |---|---|
-| CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) (policy-exempt STS actions, caller identity) |
+| Operator guide (`floci:local`, players vs operator) | [FLOCI.md](./FLOCI.md) |
+| CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
 | Agent / implementation map | [AGENTS.md](./AGENTS.md) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |

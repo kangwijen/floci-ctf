@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.ecs.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
@@ -256,12 +257,12 @@ public class EcsContainerManager {
         Map<String, String> envMap = new LinkedHashMap<>();
         if (def.getEnvironment() != null) {
             for (var kv : def.getEnvironment()) {
-                envMap.put(kv.name(), kv.value());
+                ContainerEnvHardening.putIfAllowed(envMap, kv.name(), kv.value());
             }
         }
         if (override != null && override.getEnvironment() != null) {
             for (var kv : override.getEnvironment()) {
-                envMap.put(kv.name(), kv.value());
+                ContainerEnvHardening.putIfAllowed(envMap, kv.name(), kv.value());
             }
         }
         List<String> envVars = new ArrayList<>();

@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.lambda.launcher;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
@@ -186,15 +187,19 @@ public class ContainerLauncher {
             env.add("AWS_SHARED_CREDENTIALS_FILE=/opt/aws-config/credentials");
             env.add("AWS_CONFIG_FILE=/opt/aws-config/config");
         } else {
-            // Use Floci's own env vars when set; omit credentials otherwise.
+            if (fn.getEnvironment() != null) {
+                fn.getEnvironment().forEach((k, v) -> {
+                    if (!ContainerEnvHardening.isBlocked(k)) {
+                        env.add(k + "=" + v);
+                    }
+                });
+            }
+            // Host operator credentials last so function env cannot override them.
             OperatorCredentialEnv.addIfPresent(env);
         }
         env.add("FLOCI_HOSTNAME=" + flociHostname);
         env.add("FLOCI_ENDPOINT=" + flociEndpoint);
         env.add("AWS_ENDPOINT_URL=" + flociEndpoint);
-        if (fn.getEnvironment() != null) {
-            fn.getEnvironment().forEach((k, v) -> env.add(k + "=" + v));
-        }
 
         ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(image)
                 .withName(containerName)

@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.eks;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
@@ -9,10 +10,20 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class EksTokenWebhookControllerTest {
 
-    private final EksTokenWebhookController controller = new EksTokenWebhookController();
+    private final EmulatorConfig config = mock(EmulatorConfig.class);
+    private final EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+    private final EmulatorConfig.IamServiceConfig iam = mock(EmulatorConfig.IamServiceConfig.class);
+    private final EksTokenWebhookController controller = new EksTokenWebhookController(config);
+
+    EksTokenWebhookControllerTest() {
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iam);
+    }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> status(Response response) {
@@ -29,7 +40,8 @@ class EksTokenWebhookControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void awsIamTokenAuthenticatesAsClusterAdmin() {
+    void awsIamTokenAuthenticatesAsClusterAdminWhenEnforcementOff() {
+        when(iam.enforcementEnabled()).thenReturn(false);
         Response response = controller.review(tokenReview("k8s-aws-v1.aHR0cHM6Ly9zdHM..."));
 
         Map<String, Object> status = status(response);
@@ -40,13 +52,22 @@ class EksTokenWebhookControllerTest {
     }
 
     @Test
+    void fakeTokenRejectedWhenEnforcementOn() {
+        when(iam.enforcementEnabled()).thenReturn(true);
+        Response response = controller.review(tokenReview("k8s-aws-v1.aHR0cHM6Ly9zdHM..."));
+        assertEquals(Boolean.FALSE, status(response).get("authenticated"));
+    }
+
+    @Test
     void unrecognisedTokenIsRejected() {
+        when(iam.enforcementEnabled()).thenReturn(false);
         Response response = controller.review(tokenReview("some-random-bearer-token"));
         assertEquals(Boolean.FALSE, status(response).get("authenticated"));
     }
 
     @Test
     void emptyOrMalformedReviewIsRejected() {
+        when(iam.enforcementEnabled()).thenReturn(false);
         assertFalse((Boolean) status(controller.review(Map.of())).get("authenticated"));
         assertFalse((Boolean) status(controller.review(
                 Map.of("spec", Map.of()))).get("authenticated"));
@@ -54,6 +75,7 @@ class EksTokenWebhookControllerTest {
 
     @Test
     void responseIsAlwaysAWellFormedTokenReview() {
+        when(iam.enforcementEnabled()).thenReturn(false);
         Response response = controller.review(tokenReview("k8s-aws-v1.abc"));
         Map<?, ?> body = (Map<?, ?>) response.getEntity();
         assertEquals("authentication.k8s.io/v1", body.get("apiVersion"));
@@ -63,8 +85,7 @@ class EksTokenWebhookControllerTest {
 
     @Test
     void responseEchoesRequestApiVersion() {
-        // The kube-apiserver defaults to the v1beta1 webhook API and cannot convert a v1
-        // response back to v1beta1 — the response apiVersion MUST match the request's.
+        when(iam.enforcementEnabled()).thenReturn(false);
         Map<String, Object> v1beta1Review = Map.of(
                 "apiVersion", "authentication.k8s.io/v1beta1",
                 "kind", "TokenReview",
