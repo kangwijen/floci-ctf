@@ -70,6 +70,7 @@ public class SnsService {
     private final SqsService sqsService;
     private final LambdaService lambdaService;
     private final String baseUrl;
+    private final boolean iamEnforcementEnabled;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final Map<String, Instant> fifoDeduplicationCache = new ConcurrentHashMap<>();
@@ -96,6 +97,7 @@ public class SnsService {
                 sqsService,
                 lambdaService,
                 config.effectiveBaseUrl(),
+                config.services().iam().enforcementEnabled(),
                 objectMapper
         );
     }
@@ -127,6 +129,7 @@ public class SnsService {
         this.sqsService = sqsService;
         this.lambdaService = lambdaService;
         this.baseUrl = "http://localhost:4566";
+        this.iamEnforcementEnabled = false;
         this.objectMapper = new ObjectMapper();
         this.httpClient = null;
     }
@@ -137,6 +140,17 @@ public class SnsService {
                StorageBackend<String, PlatformEndpoint> platformEndpointStore,
                RegionResolver regionResolver, SqsService sqsService,
                LambdaService lambdaService, String baseUrl, ObjectMapper objectMapper) {
+        this(topicStore, subscriptionStore, platformAppStore, platformEndpointStore,
+                regionResolver, sqsService, lambdaService, baseUrl, false, objectMapper);
+    }
+
+    SnsService(StorageBackend<String, Topic> topicStore,
+               StorageBackend<String, Subscription> subscriptionStore,
+               StorageBackend<String, PlatformApplication> platformAppStore,
+               StorageBackend<String, PlatformEndpoint> platformEndpointStore,
+               RegionResolver regionResolver, SqsService sqsService,
+               LambdaService lambdaService, String baseUrl, boolean iamEnforcementEnabled,
+               ObjectMapper objectMapper) {
         this.topicStore = topicStore;
         this.subscriptionStore = subscriptionStore;
         this.platformAppStore = platformAppStore;
@@ -145,6 +159,7 @@ public class SnsService {
         this.sqsService = sqsService;
         this.lambdaService = lambdaService;
         this.baseUrl = baseUrl;
+        this.iamEnforcementEnabled = iamEnforcementEnabled;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
@@ -236,8 +251,10 @@ public class SnsService {
         attrs.putIfAbsent("Owner", regionResolver.getAccountId());
         attrs.putIfAbsent("EffectiveDeliveryPolicy", "{\"http\":{\"defaultHealthyRetryPolicy\":{\"minDelayTarget\":20,\"maxDelayTarget\":20,\"numRetries\":3,\"numMaxDelayRetries\":0,\"numNoDelayRetries\":0,\"numMinDelayRetries\":0,\"backoffFunction\":\"linear\"},\"disableSubscriptionOverrides\":false}}");
         if (!attrs.containsKey("Policy") || attrs.get("Policy") == null || attrs.get("Policy").isBlank()) {
-            String account = regionResolver.getAccountId();
-            attrs.put("Policy", "{\"Version\":\"2012-10-17\",\"Id\":\"__default_policy_ID\",\"Statement\":[{\"Sid\":\"__default_statement_ID\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"*\"},\"Action\":[\"SNS:GetTopicAttributes\",\"SNS:SetTopicAttributes\",\"SNS:AddPermission\",\"SNS:RemovePermission\",\"SNS:DeleteTopic\",\"SNS:Subscribe\",\"SNS:ListSubscriptionsByTopic\",\"SNS:Publish\"],\"Resource\":\"" + topicArn + "\",\"Condition\":{\"StringEquals\":{\"AWS:SourceAccount\":\"" + account + "\"}}}]}");
+            if (!iamEnforcementEnabled) {
+                String account = regionResolver.getAccountId();
+                attrs.put("Policy", "{\"Version\":\"2012-10-17\",\"Id\":\"__default_policy_ID\",\"Statement\":[{\"Sid\":\"__default_statement_ID\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"*\"},\"Action\":[\"SNS:GetTopicAttributes\",\"SNS:SetTopicAttributes\",\"SNS:AddPermission\",\"SNS:RemovePermission\",\"SNS:DeleteTopic\",\"SNS:Subscribe\",\"SNS:ListSubscriptionsByTopic\",\"SNS:Publish\"],\"Resource\":\"" + topicArn + "\",\"Condition\":{\"StringEquals\":{\"AWS:SourceAccount\":\"" + account + "\"}}}]}");
+            }
         }
         return attrs;
     }

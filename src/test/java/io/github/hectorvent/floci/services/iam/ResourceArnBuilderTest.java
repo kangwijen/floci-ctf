@@ -140,6 +140,23 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:iam::222222222222:user/broker-clerk", arn);
     }
 
+    @Test
+    void sqsReceiveMessageBuildsArnFromHttpQueueUrl() {
+        String queueUrl = "http://localhost:4566/000000000000/ctf-lab-queue";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=ReceiveMessage&QueueUrl=" + java.net.URLEncoder.encode(queueUrl, java.nio.charset.StandardCharsets.UTF_8));
+        String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:sqs:us-east-1:222222222222:ctf-lab-queue", arn);
+    }
+
+    @Test
+    void iamCreatePolicyVersionBuildsPolicyArn() {
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=CreatePolicyVersion&PolicyArn=arn:aws:iam::222222222222:policy/PathfindingPolicy");
+        String arn = builder.build("iam", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:iam::222222222222:policy/PathfindingPolicy", arn);
+    }
+
     // ── DynamoDB ──────────────────────────────────────────────────────────────
 
     @Test
@@ -191,6 +208,14 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:kms:us-east-1:222222222222:alias/nimbus", arn);
     }
 
+    @Test
+    void kmsDecryptBuildsKeyArnFromCiphertextBlob() {
+        String blob = java.util.Base64.getEncoder().encodeToString("kms:v2:550e8400-e29b-41d4-a716-446655440000:iv:cipher".getBytes());
+        ContainerRequestContext ctx = jsonBodyCtx("{\"CiphertextBlob\":\"" + blob + "\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:key/550e8400-e29b-41d4-a716-446655440000", arn);
+    }
+
     // ── EC2 ───────────────────────────────────────────────────────────────────
 
     @Test
@@ -213,7 +238,7 @@ class ResourceArnBuilderTest {
     void cloudFormationDescribeStacksBuildsStackArn() {
         ContainerRequestContext ctx = formBodyCtx("Action=DescribeStacks&StackName=my-stack");
         String arn = builder.build("cloudformation", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:cloudformation:us-east-1:222222222222:stack/my-stack/00000000-0000-0000-0000-000000000000", arn);
+        assertEquals("arn:aws:cloudformation:us-east-1:222222222222:stack/my-stack/*", arn);
     }
 
     // ── SQS / SNS ─────────────────────────────────────────────────────────────

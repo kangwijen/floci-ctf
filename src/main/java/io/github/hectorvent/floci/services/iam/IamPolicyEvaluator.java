@@ -88,12 +88,16 @@ public class IamPolicyEvaluator {
         boolean identityAllow = anyExplicitAllow(identityStmts, action, resource, ctx);
         boolean resourceAllow = anyExplicitAllowResource(resourceStmts, action, resource, ctx,
                 callerArn, callerAccount);
-        if (!identityAllow && !resourceAllow) {
-            return Decision.DENY;
-        }
+        boolean sessionAllow = sessionStmts != null
+                && anyExplicitAllow(sessionStmts, action, resource, ctx);
 
-        // 3. Session policy (if present) must also allow (intersection)
-        if (sessionStmts != null && !anyExplicitAllow(sessionStmts, action, resource, ctx)) {
+        if (!identityAllow && !resourceAllow) {
+            // GetSessionToken / GetFederationToken: session policy may be the only grant
+            if (!sessionAllow) {
+                return Decision.DENY;
+            }
+        } else if (sessionStmts != null && !sessionAllow) {
+            // AssumeRole: session policy intersects with identity/resource grant
             return Decision.DENY;
         }
 

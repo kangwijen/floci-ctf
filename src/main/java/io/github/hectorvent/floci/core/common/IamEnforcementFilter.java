@@ -167,7 +167,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String resource = arnBuilder.build("s3", ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", ctx);
 
         if (evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx) == Decision.DENY) {
             LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
@@ -205,7 +205,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String resource = arnBuilder.build(credentialScope, ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
         if (decision == Decision.DENY) {
@@ -216,6 +216,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
     private Map<String, String> buildConditionContext(String accessKeyId,
                                                       String accountId,
+                                                      String credentialScope,
                                                       ContainerRequestContext ctx) {
         Map<String, String> out = new HashMap<>();
         Optional<CallerIdentity> identity = iamService.resolveCallerIdentity(
@@ -238,7 +239,22 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             }
         }
         out.put("aws:sourceip", sourceIp);
+        if ("s3".equals(credentialScope)) {
+            enrichS3ConditionKeys(ctx, out);
+        }
         return out;
+    }
+
+    private static void enrichS3ConditionKeys(ContainerRequestContext ctx, Map<String, String> out) {
+        var query = ctx.getUriInfo().getQueryParameters();
+        String prefix = query.getFirst("prefix");
+        if (prefix != null && !prefix.isBlank()) {
+            out.put("s3:prefix", prefix);
+        }
+        String delimiter = query.getFirst("delimiter");
+        if (delimiter != null && !delimiter.isBlank()) {
+            out.put("s3:delimiter", delimiter);
+        }
     }
 
     private String extractCredentialScope(String auth) {

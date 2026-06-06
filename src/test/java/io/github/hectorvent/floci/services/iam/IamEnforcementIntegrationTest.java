@@ -6,6 +6,8 @@ import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import org.junit.jupiter.api.Test;
 
 import jakarta.inject.Inject;
+
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +27,9 @@ class IamEnforcementIntegrationTest {
 
     @Inject
     IamPolicyEvaluator evaluator;
+
+    @Inject
+    IamService iamService;
 
     // =========================================================================
     // IamPolicyEvaluator — basic allow / deny / implicit-deny
@@ -239,6 +244,84 @@ class IamEnforcementIntegrationTest {
     }
 
     @Test
+    void listBucketPrefixConditionAllowsEscrowOnly() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault",
+               "Condition":{"StringLike":{"s3:prefix":["escrow/*"]}}}
+            ]}""";
+        Map<String, String> escrowCtx = Map.of("s3:prefix", "escrow/");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                CallerContext.of(List.of(policy)),
+                List.of(),
+                "s3:ListBucket",
+                "arn:aws:s3:::vault",
+                escrowCtx));
+        Map<String, String> archivedCtx = Map.of("s3:prefix", "archived/");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of(policy)),
+                List.of(),
+                "s3:ListBucket",
+                "arn:aws:s3:::vault",
+                archivedCtx));
+    }
+
+    @Test
+    void listBucketPrefixConditionFailsWhenPrefixMissingFromContext() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault",
+               "Condition":{"StringLike":{"s3:prefix":["escrow/*"]}}}
+            ]}""";
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of(policy)),
+                List.of(),
+                "s3:ListBucket",
+                "arn:aws:s3:::vault",
+                Map.of()));
+    }
+
+    @Test
+    void sessionPolicyFromGetSessionTokenConstrainsTempCredentials() {
+        String sessionPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+            ]}""";
+        String sessionArn = "arn:aws:sts::000000000000:federated-user/floci-session";
+        iamService.registerSession(
+                "ASIATESTSESSION01",
+                sessionArn,
+                Instant.now().plusSeconds(3600),
+                sessionPolicy,
+                "secret",
+                "000000000000:floci-session",
+                sessionArn);
+        CallerContext caller = iamService.resolveCallerContext("ASIATESTSESSION01");
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", sessionArn,
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::other/flag.txt", ctx));
+    }
+
+    @Test
+    void allowIamCreatePolicyVersionOnPolicyArn() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iam:CreatePolicyVersion",
+               "Resource":"arn:aws:iam::226767940554:policy/PathfindingPolicy"}
+            ]}""";
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
+                List.of(policy), "iam:CreatePolicyVersion",
+                "arn:aws:iam::226767940554:policy/PathfindingPolicy"));
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                List.of(policy), "iam:CreatePolicyVersion",
+                "arn:aws:iam::226767940554:policy/OtherPolicy"));
+    }
+
+    @Test
     void allowIamCreateAccessKeyOnPolarisUserArn() {
         String policy = """
             {"Version":"2012-10-17","Statement":[
@@ -326,7 +409,7 @@ class IamEnforcementIntegrationTest {
     }
 
     @Test
-    void accountRootPrincipalMatchesIamUserInSameAccount() {
+    void accountRootPrincipalDoesNotMatchIamUserInSameAccount() {
         String bucketPolicy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow",
@@ -337,7 +420,7 @@ class IamEnforcementIntegrationTest {
         Map<String, String> ctx = Map.of(
                 "aws:principalarn", "arn:aws:iam::111122223333:user/reader",
                 "aws:principalaccount", "111122223333");
-        assertEquals(Decision.ALLOW, evaluator.evaluate(
+        assertEquals(Decision.DENY, evaluator.evaluate(
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",

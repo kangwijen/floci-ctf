@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -114,20 +115,42 @@ public class ResourceArnBuilder {
     // ── SQS ─────────────────────────────────────────────────────────────────────
 
     private String buildSqsArn(ContainerRequestContext ctx, String region, String accountId) {
-        String arn = firstArn(
+        String queueUrl = firstNonBlank(
                 readFormParam(ctx, "QueueUrl"),
                 readJsonStringField(ctx, "QueueUrl"));
-        if (arn != null) {
-            String queueName = arn.substring(arn.lastIndexOf('/') + 1);
+        if (queueUrl != null && queueUrl.startsWith("arn:")) {
+            String queueName = queueUrl.substring(queueUrl.lastIndexOf('/') + 1);
             return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
         }
-        String queueName = firstNonBlank(
-                readFormParam(ctx, "QueueName"),
-                readJsonStringField(ctx, "QueueName"));
-        if (queueName != null) {
+        String queueName = parseSqsQueueName(queueUrl);
+        if (queueName == null) {
+            queueName = firstNonBlank(
+                    readFormParam(ctx, "QueueName"),
+                    readJsonStringField(ctx, "QueueName"));
+        }
+        if (queueName != null && !queueName.isBlank()) {
             return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
         }
         return AwsArnUtils.Arn.of("sqs", region, accountId, "*").toString();
+    }
+
+    /**
+     * Resolves queue name from emulator queue URLs ({@code http://host:4566/account/queue})
+     * or bare queue names, matching {@code SqsService} URL layout.
+     */
+    static String parseSqsQueueName(String queueUrl) {
+        if (queueUrl == null || queueUrl.isBlank()) {
+            return null;
+        }
+        String trimmed = queueUrl.trim();
+        int slash = trimmed.lastIndexOf('/');
+        if (slash >= 0 && slash < trimmed.length() - 1) {
+            String segment = trimmed.substring(slash + 1);
+            if (!segment.isBlank() && !segment.contains("?")) {
+                return segment;
+            }
+        }
+        return trimmed.contains("/") ? null : trimmed;
     }
 
     // ── SNS ─────────────────────────────────────────────────────────────────────
@@ -244,7 +267,37 @@ public class ResourceArnBuilder {
         if (pathKey != null) {
             return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + pathKey).toString();
         }
+        String keyFromBlob = keyIdFromCiphertextBlob(readJsonStringField(ctx, "CiphertextBlob"));
+        if (keyFromBlob != null) {
+            if (keyFromBlob.startsWith("arn:aws:kms:")) {
+                return keyFromBlob;
+            }
+            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyFromBlob).toString();
+        }
         return AwsArnUtils.Arn.of("kms", region, accountId, "key/*").toString();
+    }
+
+    /**
+     * Extracts CMK id embedded in Floci KMS ciphertext blobs ({@code kms:v2:KEYID:...}).
+     */
+    static String keyIdFromCiphertextBlob(String ciphertextBlobBase64) {
+        if (ciphertextBlobBase64 == null || ciphertextBlobBase64.isBlank()) {
+            return null;
+        }
+        try {
+            String data = new String(Base64.getDecoder().decode(ciphertextBlobBase64), StandardCharsets.UTF_8);
+            if (data.startsWith("kms:v2:")) {
+                String[] parts = data.substring("kms:v2:".length()).split(":", 4);
+                return parts.length > 0 && !parts[0].isBlank() ? parts[0] : null;
+            }
+            if (data.startsWith("kms:")) {
+                String[] parts = data.substring("kms:".length()).split(":", 2);
+                return parts.length > 0 && !parts[0].isBlank() ? parts[0] : null;
+            }
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+        return null;
     }
 
     // ── IAM ────────────────────────────────────────────────────────────────────────
@@ -359,10 +412,16 @@ public class ResourceArnBuilder {
     // ── CloudFormation ───────────────────────────────────────────────────────────
 
     private String buildCloudFormationArn(ContainerRequestContext ctx, String region, String accountId) {
-        String stackName = readFormParam(ctx, "StackName");
+        String stackName = firstNonBlank(
+                readFormParam(ctx, "StackName"),
+                readFormParam(ctx, "StackId"));
         if (stackName != null && !stackName.isBlank()) {
+            if (stackName.startsWith("arn:")) {
+                return stackName;
+            }
+            // IAM policies commonly scope stack/{name}/* (UUID suffix varies per stack).
             return AwsArnUtils.Arn.of("cloudformation", region, accountId,
-                    "stack/" + stackName + "/00000000-0000-0000-0000-000000000000").toString();
+                    "stack/" + stackName + "/*").toString();
         }
         return AwsArnUtils.Arn.of("cloudformation", region, accountId, "stack/*/*").toString();
     }

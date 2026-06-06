@@ -107,10 +107,12 @@ public final class PolicyPrincipalMatcher {
         if (principal.matches("\\d{12}")) {
             return principal.equals(resolveCallerAccount(callerArn, callerAccount));
         }
+        // Account root ARN in a resource policy enables IAM delegation on AWS; it does not
+        // directly authorize every IAM principal in the account.
         if (principal.endsWith(":root")) {
-            String principalAccount = AwsArnUtils.accountOrDefault(principal, "");
-            return !principalAccount.isBlank()
-                    && principalAccount.equals(resolveCallerAccount(callerArn, callerAccount));
+            return callerArn != null
+                    && (principal.equalsIgnoreCase(callerArn)
+                    || IamPolicyEvaluator.globMatches(principal, callerArn));
         }
         return callerArn != null
                 && (IamPolicyEvaluator.globMatches(principal, callerArn)

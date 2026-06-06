@@ -38,7 +38,8 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
 | Role trust `sts:ExternalId` | Not enforced | Trust policy conditions evaluated on `AssumeRole` |
 | Identity policy `Resource` matching | Most requests use `*` | `ResourceArnBuilder` resolves per-service ARNs for identity policies |
-| Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` and account `:root` supported |
+| Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` supported; account `:root` in resource policies does **not** directly allow IAM users (identity policy still required) |
+| Lab builder IAM (F1-F10) | Partial / ad hoc | S3 versioning IAM, scoped KMS/SQS/SNS/SSM/CFN/IAM/Secrets actions on HTTP `:4566` with integration tests; see [FLOCI.md](./FLOCI.md#lab-builder-capabilities-p0p1-http-sigv4-on-4566) |
 | Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
 | Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides prefixed routes; `all` also hides `/health` |
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys in user-supplied env; only `OperatorCredentialEnv` injects host operator `AWS_*` (Lambda: applied last) |
@@ -137,8 +138,16 @@ client = boto3.client(
 
 ## Focused regression tests
 
+**Core CTF hardening:**
+
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
+```
+
+**Lab builder capabilities (F1-F10, HTTP IAM on `:4566`):**
+
+```bash
+./mvnw test -Dtest=S3ObjectVersioningIamIntegrationTest,KmsDecryptScopedKeyIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SsmGetParameterScopedArnIntegrationTest,CloudFormationDescribeStacksScopedIntegrationTest,IamGetPolicyScopedArnIntegrationTest,IamStrictUnmappedActionIntegrationTest,CreatePolicyVersionGrantsSecretReadIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,IamActionRegistryTest,ResourceArnBuilderTest
 ```
 
 On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` before tests that spawn containers.
@@ -147,7 +156,7 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 
 | Topic | Location |
 |---|---|
-| Operator guide (`floci:local`, players vs operator) | [FLOCI.md](./FLOCI.md) |
+| Operator guide (`floci:local`, players vs operator, F1-F10 matrix) | [FLOCI.md](./FLOCI.md) |
 | CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
 | Agent / implementation map | [AGENTS.md](./AGENTS.md) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |

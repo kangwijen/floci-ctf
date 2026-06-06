@@ -65,6 +65,30 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void s3ListObjectVersionsMapsToListBucketVersions() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("versions", "");
+        ContainerRequestContext ctx = mockCtx("GET", "/my-bucket", query, null, "");
+        assertEquals("s3:ListBucketVersions", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3GetObjectWithVersionIdMapsToGetObjectVersion() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("versionId", "abc-version");
+        ContainerRequestContext ctx = mockCtx("GET", "/my-bucket/my-key", query, null, "");
+        assertEquals("s3:GetObjectVersion", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutBucketVersioningMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("versioning", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket", query, null, "");
+        assertEquals("s3:PutBucketVersioning", registry.resolve("s3", ctx));
+    }
+
+    @Test
     void formBodyIsRestoredForDownstreamConsumers() throws Exception {
         String body = "Action=ListUsers&Version=2010-05-08";
         AtomicReference<InputStream> streamRef = new AtomicReference<>(

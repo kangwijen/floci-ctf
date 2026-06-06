@@ -90,6 +90,41 @@ public class IamActionRegistry {
     }
 
     /**
+     * Maps S3 versioning and list-versions calls to AWS IAM actions
+     * ({@code s3:ListBucketVersions}, {@code s3:GetObjectVersion}, {@code s3:PutBucketVersioning}).
+     */
+    private static String resolveS3Action(ContainerRequestContext ctx) {
+        var query = ctx.getUriInfo().getQueryParameters();
+        String method = ctx.getMethod().toUpperCase();
+        if (query.containsKey("versions") && "GET".equals(method)) {
+            return "s3:ListBucketVersions";
+        }
+        if (query.containsKey("versioning")) {
+            if ("PUT".equals(method)) {
+                return "s3:PutBucketVersioning";
+            }
+            if ("GET".equals(method)) {
+                return "s3:GetBucketVersioning";
+            }
+        }
+        String path = ctx.getUriInfo().getPath();
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        boolean objectKey = path.matches("^/[^/]+/.+");
+        String versionId = query.getFirst("versionId");
+        if (objectKey && versionId != null && !versionId.isBlank()) {
+            if ("GET".equals(method) || "HEAD".equals(method)) {
+                return "s3:GetObjectVersion";
+            }
+            if ("DELETE".equals(method)) {
+                return "s3:DeleteObjectVersion";
+            }
+        }
+        return null;
+    }
+
+    /**
      * Resolves the IAM action for an incoming request.
      *
      * For Query-protocol services the action comes directly from the {@code Action}
@@ -121,6 +156,14 @@ public class IamActionRegistry {
         if (target != null && target.contains(".")) {
             String operationName = target.substring(target.lastIndexOf('.') + 1);
             return IamUnrestrictedActions.canonicalAction(credentialScope + ":" + operationName);
+        }
+
+        // S3: query params disambiguate versioning APIs (AWS IAM action names).
+        if ("s3".equals(credentialScope)) {
+            String s3Action = resolveS3Action(ctx);
+            if (s3Action != null) {
+                return s3Action;
+            }
         }
 
         // REST-JSON: match against rule table

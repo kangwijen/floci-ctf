@@ -34,24 +34,33 @@ public class SecretsManagerService {
     private final StorageBackend<String, Secret> store;
     private final int defaultRecoveryWindowDays;
     private final RegionResolver regionResolver;
+    private final SecretsManagerKmsSupport kmsSupport;
 
     @Inject
-    public SecretsManagerService(StorageFactory factory, EmulatorConfig config, RegionResolver regionResolver) {
+    public SecretsManagerService(StorageFactory factory, EmulatorConfig config, RegionResolver regionResolver,
+                                 SecretsManagerKmsSupport kmsSupport) {
         this(factory.create("secretsmanager", "secretsmanager-secrets.json",
                         new TypeReference<Map<String, Secret>>() {}),
                 config.services().secretsmanager().defaultRecoveryWindowDays(),
-                regionResolver);
+                regionResolver,
+                kmsSupport);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays) {
-        this(store, defaultRecoveryWindowDays, new RegionResolver("us-east-1", "000000000000"));
+        this(store, defaultRecoveryWindowDays, new RegionResolver("us-east-1", "000000000000"), null);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
                           RegionResolver regionResolver) {
+        this(store, defaultRecoveryWindowDays, regionResolver, null);
+    }
+
+    SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
+                          RegionResolver regionResolver, SecretsManagerKmsSupport kmsSupport) {
         this.store = store;
         this.defaultRecoveryWindowDays = defaultRecoveryWindowDays;
         this.regionResolver = regionResolver;
+        this.kmsSupport = kmsSupport;
     }
 
     public Secret createSecret(String name, String secretString, String secretBinary,
@@ -70,8 +79,7 @@ public class SecretsManagerService {
         String versionId = UUID.randomUUID().toString();
         SecretVersion version = new SecretVersion();
         version.setVersionId(versionId);
-        version.setSecretString(secretString);
-        version.setSecretBinary(secretBinary);
+        applyKmsEnvelope(kmsKeyId, region, version, secretString, secretBinary);
         version.setVersionStages(List.of(AWSCURRENT));
         version.setCreatedDate(now);
 
@@ -198,8 +206,7 @@ public class SecretsManagerService {
 
         SecretVersion newVersion = new SecretVersion();
         newVersion.setVersionId(newVersionId);
-        newVersion.setSecretString(secretString);
-        newVersion.setSecretBinary(secretBinary);
+        applyKmsEnvelope(secret.getKmsKeyId(), region, newVersion, secretString, secretBinary);
         newVersion.setVersionStages(stages);
         newVersion.setCreatedDate(now);
 
@@ -555,6 +562,27 @@ public class SecretsManagerService {
             }
         }
         return null;
+    }
+
+    private void applyKmsEnvelope(String kmsKeyId, String region, SecretVersion version,
+                                  String secretString, String secretBinary) {
+        version.setSecretString(secretString);
+        version.setSecretBinary(secretBinary);
+        if (kmsSupport == null || kmsKeyId == null || kmsKeyId.isBlank()) {
+            return;
+        }
+        byte[] plaintext = null;
+        if (secretString != null && !secretString.isEmpty()) {
+            plaintext = secretString.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        } else if (secretBinary != null && !secretBinary.isEmpty()) {
+            plaintext = java.util.Base64.getDecoder().decode(secretBinary);
+        }
+        if (plaintext == null || plaintext.length == 0) {
+            return;
+        }
+        String envelope = kmsSupport.encryptSecretPayloadBase64(kmsKeyId, plaintext, region);
+        version.setSecretString(null);
+        version.setSecretBinary(envelope);
     }
 
     private String buildSecretArn(String region, String name) {

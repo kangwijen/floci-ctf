@@ -977,6 +977,9 @@ public class IamService {
                 return null; // expired — unknown key → bypass
             }
             List<String> identityPolicies = collectRolePolicies(session.getRoleArn());
+            if (identityPolicies == null && isStsFederatedSessionArn(session.getRoleArn())) {
+                identityPolicies = List.of();
+            }
             String boundaryDoc = resolveRoleBoundaryDocument(session.getRoleArn());
             return new CallerContext(identityPolicies, session.getSessionPolicyDocument(), boundaryDoc);
         }
@@ -1091,6 +1094,10 @@ public class IamService {
         }
 
         return docs;
+    }
+
+    private static boolean isStsFederatedSessionArn(String roleArn) {
+        return roleArn != null && roleArn.contains(":federated-user/");
     }
 
     private List<String> collectRolePolicies(String roleArn) {

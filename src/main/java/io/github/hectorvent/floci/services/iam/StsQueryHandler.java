@@ -55,7 +55,7 @@ public class StsQueryHandler {
         return switch (action) {
             case "AssumeRole"                  -> handleAssumeRole(params, authorization);
             case "GetCallerIdentity"           -> handleGetCallerIdentity(authorization);
-            case "GetSessionToken"             -> handleGetSessionToken(params);
+            case "GetSessionToken"             -> handleGetSessionToken(params, authorization);
             case "AssumeRoleWithWebIdentity"   -> handleAssumeRoleWithWebIdentity(params, authorization);
             case "AssumeRoleWithSAML"          -> handleAssumeRoleWithSAML(params, authorization);
             case "GetFederationToken"          -> handleGetFederationToken(params);
@@ -120,7 +120,7 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("GetCallerIdentity", AwsNamespaces.STS, result)).build();
     }
 
-    private Response handleGetSessionToken(MultivaluedMap<String, String> params) {
+    private Response handleGetSessionToken(MultivaluedMap<String, String> params, String authorization) {
         int durationSeconds = getIntParam(params, "DurationSeconds", 43200);
         String accessKeyId = "ASIA" + randomId(16);
         String secretKey = randomSecret(40);
@@ -130,7 +130,8 @@ public class StsQueryHandler {
         String accountId = regionResolver.getAccountId();
         String sessionArn = AwsArnUtils.Arn.of("sts", "", accountId, "federated-user/floci-session").toString();
         String federatedUserId = accountId + ":floci-session";
-        iamService.registerSession(accessKeyId, sessionArn, expiration, null, secretKey,
+        String sessionPolicy = getParam(params, "Policy");
+        iamService.registerSession(accessKeyId, sessionArn, expiration, sessionPolicy, secretKey,
                 federatedUserId, sessionArn);
 
         String result = credentialsXml(accessKeyId, secretKey, sessionToken, expiration);
