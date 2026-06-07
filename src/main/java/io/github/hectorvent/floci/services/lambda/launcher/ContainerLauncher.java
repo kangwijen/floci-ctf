@@ -10,6 +10,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
+import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
 import io.github.hectorvent.floci.services.lambda.LambdaLayerService;
 import io.github.hectorvent.floci.services.lambda.model.ContainerState;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
@@ -32,6 +33,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -65,6 +67,7 @@ public class ContainerLauncher {
     private final EcrRegistryManager ecrRegistryManager;
     private final EmbeddedDnsServer embeddedDnsServer;
     private final LambdaLayerService layerService;
+    private final LambdaContainerCredentialsServer credentialsServer;
 
     /** Matches an AWS-shaped ECR image URI: {@code <account>.dkr.ecr.<region>.amazonaws.com/<repo>[:tag]}. */
     private static final java.util.regex.Pattern AWS_ECR_URI =
@@ -80,7 +83,8 @@ public class ContainerLauncher {
                              EmulatorConfig config,
                              EcrRegistryManager ecrRegistryManager,
                              EmbeddedDnsServer embeddedDnsServer,
-                             LambdaLayerService layerService) {
+                             LambdaLayerService layerService,
+                             LambdaContainerCredentialsServer credentialsServer) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
@@ -91,6 +95,7 @@ public class ContainerLauncher {
         this.ecrRegistryManager = ecrRegistryManager;
         this.embeddedDnsServer = embeddedDnsServer;
         this.layerService = layerService;
+        this.credentialsServer = credentialsServer;
     }
 
     /**
@@ -165,6 +170,10 @@ public class ContainerLauncher {
                 : hostAddress;
         String flociEndpoint = "http://" + flociHostname + ":" + flociPort;
 
+        String executionRoleArn = fn.getRole();
+        String credentialToken = credentialsServer.registerFunction(
+                fn.getFunctionName(), executionRoleArn, lambdaRegion);
+
         // Build env vars
         List<String> env = new ArrayList<>();
         env.add("AWS_LAMBDA_RUNTIME_API=" + runtimeApiEndpoint);
@@ -186,14 +195,18 @@ public class ContainerLauncher {
             // Set explicit file paths so discovery works regardless of container HOME.
             env.add("AWS_SHARED_CREDENTIALS_FILE=/opt/aws-config/credentials");
             env.add("AWS_CONFIG_FILE=/opt/aws-config/config");
-        } else {
-            if (fn.getEnvironment() != null) {
-                fn.getEnvironment().forEach((k, v) -> {
-                    if (!ContainerEnvHardening.isBlocked(k)) {
-                        env.add(k + "=" + v);
-                    }
-                });
-            }
+        }
+        if (fn.getEnvironment() != null) {
+            fn.getEnvironment().forEach((k, v) -> {
+                if (!ContainerEnvHardening.isBlocked(k)) {
+                    env.add(k + "=" + v);
+                }
+            });
+        }
+        if (credentialToken != null) {
+            env.add("AWS_CONTAINER_CREDENTIALS_FULL_URI="
+                    + credentialsServer.credentialsFullUri(hostAddress, credentialToken));
+        } else if (awsConfigPath.isEmpty()) {
             // Host operator credentials last so function env cannot override them.
             OperatorCredentialEnv.addIfPresent(env);
         }
@@ -289,6 +302,7 @@ public class ContainerLauncher {
         lifecycleManager.startCreated(containerId, spec);
 
         ContainerHandle handle = new ContainerHandle(containerId, fn.getFunctionName(), runtimeApiServer, ContainerState.WARM, fn.isHotReload());
+        handle.setCredentialToken(credentialToken);
 
         // Attach log streaming
         Closeable logHandle = logStreamer.attach(
@@ -301,6 +315,12 @@ public class ContainerLauncher {
     public void stop(ContainerHandle handle) {
         LOG.infov("Stopping container {0}", handle.getContainerId());
         handle.setState(ContainerState.STOPPED);
+
+        if (handle.getCredentialToken() != null) {
+            credentialsServer.unregisterFunction(
+                    handle.getFunctionName(),
+                    Collections.singletonList(handle.getCredentialToken()));
+        }
 
         try {
             handle.getRuntimeApiServer().stop().get(5, TimeUnit.SECONDS);

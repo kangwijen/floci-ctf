@@ -54,8 +54,19 @@ just test-java
 | Variable         | Default                 | Description             |
 | ---------------- | ----------------------- | ----------------------- |
 | `FLOCI_ENDPOINT` | `http://localhost:4566` | Floci emulator endpoint |
+| `AWS_ACCESS_KEY_ID` | `test` (permissive) | IAM or operator root when enforcement is on |
+| `AWS_SECRET_ACCESS_KEY` | `test` (permissive) | Matching secret |
+| `AWS_DEFAULT_REGION` | `us-east-1` | Region |
 
-AWS credentials are always `test` / `test` / `us-east-1`.
+### IAM enforcement (CTF fork)
+
+`IamEnforcementTest` probes whether enforcement is enabled at runtime and skips all cases when it is off. Against **floci-ctf** Compose, set operator or provisioned IAM credentials in the environment and run:
+
+```bash
+mvn test -Dtest=IamEnforcementTest
+```
+
+Other test classes still default to `test`/`test` and expect permissive mode unless you override credentials globally.
 
 ## Docker
 

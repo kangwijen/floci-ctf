@@ -322,11 +322,26 @@ public class IamService {
      * @throws AwsException AccessDenied when trust policy rejects the caller
      */
     public void validateAssumeRoleTrust(String roleArn, String callerPrincipalArn, String externalId) {
+        validateAssumeRoleTrust(roleArn, callerPrincipalArn, externalId, "sts:AssumeRole");
+    }
+
+    public void validateAssumeRoleTrust(String roleArn, String callerPrincipalArn,
+                                        String externalId, String stsAction) {
+        validateAssumeRoleTrust(roleArn, callerPrincipalArn, externalId, stsAction, null);
+    }
+
+    public void validateAssumeRoleTrust(String roleArn, String callerPrincipalArn,
+                                        String externalId, String stsAction,
+                                        FederatedTrustContext federatedContext) {
         IamRole role = getRoleByArn(roleArn);
+        String action = stsAction == null || stsAction.isBlank() ? "sts:AssumeRole" : stsAction;
         if (!trustPolicyEvaluator.isAssumeRoleTrusted(
-                role.getAssumeRolePolicyDocument(), callerPrincipalArn, externalId)) {
+                role.getAssumeRolePolicyDocument(), callerPrincipalArn, externalId, action, federatedContext)) {
+            String actor = federatedContext != null && federatedContext.federatedPrincipal() != null
+                    ? federatedContext.federatedPrincipal()
+                    : callerPrincipalArn;
             throw new AwsException("AccessDenied",
-                    "User: " + callerPrincipalArn + " is not authorized to perform: sts:AssumeRole on resource: "
+                    "User: " + actor + " is not authorized to perform: " + action + " on resource: "
                             + roleArn,
                     403);
         }
@@ -898,11 +913,20 @@ public class IamService {
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument, String secretAccessKey,
                                 String callerIdentityUserId, String callerIdentityArn) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                callerIdentityUserId, callerIdentityArn, null);
+    }
+
+    public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
+                                String sessionPolicyDocument, String secretAccessKey,
+                                String callerIdentityUserId, String callerIdentityArn,
+                                String parentAccessKeyId) {
         SessionCredential session = new SessionCredential(
                 sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument);
         session.setSecretAccessKey(secretAccessKey);
         session.setCallerIdentityUserId(callerIdentityUserId);
         session.setCallerIdentityArn(callerIdentityArn);
+        session.setParentAccessKeyId(parentAccessKeyId);
         sessions.put(sessionAccessKeyId, session);
     }
 
@@ -953,6 +977,26 @@ public class IamService {
     }
 
     /**
+     * Resolves identity policies and permission boundary for an IAM role ARN.
+     *
+     * <p>Used by in-process Step Functions and API Gateway integrations that execute
+     * downstream calls with the configured execution role rather than HTTP caller credentials.
+     *
+     * @return caller context, or {@code null} if the role is unknown
+     */
+    public CallerContext resolveCallerContextFromRoleArn(String roleArn) {
+        if (roleArn == null || roleArn.isBlank()) {
+            return null;
+        }
+        List<String> identityPolicies = collectRolePolicies(roleArn);
+        if (identityPolicies == null) {
+            return null;
+        }
+        String boundaryDoc = resolveRoleBoundaryDocument(roleArn);
+        return new CallerContext(identityPolicies, null, boundaryDoc);
+    }
+
+    /**
      * Resolves the full caller context for the given access key, including identity policies,
      * optional session policy, and optional permission boundary.
      *
@@ -976,9 +1020,11 @@ public class IamService {
                 sessions.delete(accessKeyId);
                 return null; // expired — unknown key → bypass
             }
-            List<String> identityPolicies = collectRolePolicies(session.getRoleArn());
-            if (identityPolicies == null && isStsFederatedSessionArn(session.getRoleArn())) {
-                identityPolicies = List.of();
+            List<String> identityPolicies;
+            if (isStsFederatedSessionArn(session.getRoleArn())) {
+                identityPolicies = resolveFederatedSessionIdentityPolicies(session);
+            } else {
+                identityPolicies = collectRolePolicies(session.getRoleArn());
             }
             String boundaryDoc = resolveRoleBoundaryDocument(session.getRoleArn());
             return new CallerContext(identityPolicies, session.getSessionPolicyDocument(), boundaryDoc);
@@ -1098,6 +1144,16 @@ public class IamService {
 
     private static boolean isStsFederatedSessionArn(String roleArn) {
         return roleArn != null && roleArn.contains(":federated-user/");
+    }
+
+    private List<String> resolveFederatedSessionIdentityPolicies(SessionCredential session) {
+        String parentAccessKeyId = session.getParentAccessKeyId();
+        if (parentAccessKeyId == null || parentAccessKeyId.isBlank()) {
+            return List.of();
+        }
+        return accessKeys.get(parentAccessKeyId)
+                .map(ak -> collectUserPolicies(ak.getUserName()))
+                .orElse(List.of());
     }
 
     private List<String> collectRolePolicies(String roleArn) {

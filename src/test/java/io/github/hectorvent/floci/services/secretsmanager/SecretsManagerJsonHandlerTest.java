@@ -2,13 +2,19 @@ package io.github.hectorvent.floci.services.secretsmanager;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
+import io.github.hectorvent.floci.services.kms.KmsService;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class SecretsManagerJsonHandlerTest {
 
@@ -184,5 +190,37 @@ class SecretsManagerJsonHandlerTest {
         ObjectNode batchReq = MAPPER.createObjectNode();
         Response response = handler.handle("BatchGetSecretValue", batchReq, REGION);
         assertThat(response.getStatus(), is(400));
+    }
+
+    @Test
+    void getSecretValueReturnsKmsWrappedSecretBinary() {
+        KmsService kmsService = new KmsService(
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new RegionResolver(REGION, "000000000000"));
+        SecretsManagerKmsSupport kmsSupport = new SecretsManagerKmsSupport(kmsService);
+        SecretsManagerService service = new SecretsManagerService(
+                new InMemoryStorage<>(), 30, new RegionResolver(REGION, "000000000000"), kmsSupport);
+        SecretsManagerJsonHandler kmsHandler = new SecretsManagerJsonHandler(service, MAPPER);
+
+        String keyId = kmsService.createKey("handler-envelope", REGION).getKeyId();
+        ObjectNode createReq = MAPPER.createObjectNode();
+        createReq.put("Name", "handler/kms-secret");
+        createReq.put("SecretString", "handler-flag");
+        createReq.put("KmsKeyId", keyId);
+        kmsHandler.handle("CreateSecret", createReq, REGION);
+
+        ObjectNode getReq = MAPPER.createObjectNode();
+        getReq.put("SecretId", "handler/kms-secret");
+        Response response = kmsHandler.handle("GetSecretValue", getReq, REGION);
+
+        assertThat(response.getStatus(), is(200));
+        ObjectNode body = (ObjectNode) response.getEntity();
+        assertFalse(body.has("SecretString"));
+        assertTrue(body.has("SecretBinary"));
+
+        byte[] ciphertext = Base64.getDecoder().decode(body.get("SecretBinary").asText());
+        assertEquals("handler-flag", new String(kmsService.decrypt(ciphertext, REGION), StandardCharsets.UTF_8));
     }
 }

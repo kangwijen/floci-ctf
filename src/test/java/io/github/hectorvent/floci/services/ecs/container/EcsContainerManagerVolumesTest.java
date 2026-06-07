@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.ContainerInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
+import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
 import io.github.hectorvent.floci.services.ecs.model.EcsTask;
 import io.github.hectorvent.floci.services.ecs.model.MountPoint;
@@ -62,9 +63,12 @@ class EcsContainerManagerVolumesTest {
         ContainerDetector containerDetector = mock(ContainerDetector.class);
         EmulatorConfig config = mock(EmulatorConfig.class, RETURNS_DEEP_STUBS);
         RegionResolver regionResolver = mock(RegionResolver.class);
+        DockerHostResolver dockerHostResolver = mock(DockerHostResolver.class);
+        EcsContainerCredentialsServer credentialsServer = mock(EcsContainerCredentialsServer.class);
+        when(dockerHostResolver.resolve()).thenReturn("127.0.0.1");
 
         manager = new EcsContainerManager(containerBuilder, lifecycleManager, logStreamer,
-                containerDetector, config, regionResolver);
+                containerDetector, config, regionResolver, dockerHostResolver, credentialsServer);
     }
 
     @Test

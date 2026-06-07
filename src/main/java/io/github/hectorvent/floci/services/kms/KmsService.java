@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.kms;
 
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.iam.PolicyPrincipalMatcher;
 import io.github.hectorvent.floci.core.common.ReservedTags;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
@@ -65,14 +66,14 @@ public class KmsService {
                 regionResolver);
     }
 
-    KmsService(StorageBackend<String, KmsKey> keyStore,
+    public KmsService(StorageBackend<String, KmsKey> keyStore,
                StorageBackend<String, KmsAlias> aliasStore,
                StorageBackend<String, KmsGrant> grantStore,
                RegionResolver regionResolver) {
         this(keyStore, aliasStore, grantStore, regionResolver, new SecureRandom());
     }
 
-    KmsService(StorageBackend<String, KmsKey> keyStore,
+    public KmsService(StorageBackend<String, KmsKey> keyStore,
                StorageBackend<String, KmsAlias> aliasStore,
                StorageBackend<String, KmsGrant> grantStore,
                RegionResolver regionResolver,
@@ -487,7 +488,7 @@ public class KmsService {
      */
     public Optional<String> findKeyPolicyDocument(String resourceArnOrKeyId, String region) {
         String keyId = keyIdFromResourceArn(resourceArnOrKeyId);
-        if (keyId == null || keyId.isBlank()) {
+        if (keyId == null || keyId.isBlank() || "*".equals(keyId)) {
             return Optional.empty();
         }
         try {
@@ -500,6 +501,61 @@ public class KmsService {
         } catch (AwsException e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Whether an active KMS grant authorizes a data-plane IAM action for the caller on the CMK
+     * identified by {@code resourceArn}. Control-plane APIs (CreateGrant, PutKeyPolicy, ...) are
+     * not grant-authorized here.
+     */
+    public boolean isGrantAuthorized(String granteePrincipalArn,
+                                     String callerAccount,
+                                     String resourceArn,
+                                     String iamAction,
+                                     String region) {
+        if (granteePrincipalArn == null || granteePrincipalArn.isBlank()
+                || resourceArn == null || resourceArn.isBlank()
+                || iamAction == null || !iamAction.startsWith("kms:")) {
+            return false;
+        }
+        String grantOperation = grantOperationForIamAction(iamAction);
+        if (grantOperation == null) {
+            return false;
+        }
+        String keyId = keyIdFromResourceArn(resourceArn);
+        if (keyId == null || keyId.isBlank() || "*".equals(keyId)) {
+            return false;
+        }
+        try {
+            KmsKey key = resolveKey(keyId, region);
+            String prefix = region + "::";
+            return grantStore.scan(k -> k.startsWith(prefix)).stream()
+                    .filter(grant -> key.getKeyId().equals(grant.getKeyId()))
+                    .filter(grant -> grant.getOperations() != null
+                            && grant.getOperations().contains(grantOperation))
+                    .anyMatch(grant -> PolicyPrincipalMatcher.matchesAwsPrincipal(
+                            grant.getGranteePrincipal(), granteePrincipalArn, callerAccount));
+        } catch (AwsException e) {
+            return false;
+        }
+    }
+
+    private static String grantOperationForIamAction(String iamAction) {
+        return switch (iamAction) {
+            case "kms:Decrypt" -> "Decrypt";
+            case "kms:Encrypt" -> "Encrypt";
+            case "kms:GenerateDataKey" -> "GenerateDataKey";
+            case "kms:GenerateDataKeyWithoutPlaintext" -> "GenerateDataKeyWithoutPlaintext";
+            case "kms:ReEncryptFrom" -> "ReEncryptFrom";
+            case "kms:ReEncryptTo" -> "ReEncryptTo";
+            case "kms:CreateGrant" -> "CreateGrant";
+            case "kms:RetireGrant" -> "RetireGrant";
+            case "kms:RevokeGrant" -> "RevokeGrant";
+            case "kms:DescribeKey" -> "DescribeKey";
+            case "kms:GenerateDataKeyPair" -> "GenerateDataKeyPair";
+            case "kms:GenerateDataKeyPairWithoutPlaintext" -> "GenerateDataKeyPairWithoutPlaintext";
+            default -> null;
+        };
     }
 
     private static String keyIdFromResourceArn(String arnOrId) {

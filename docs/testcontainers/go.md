@@ -2,6 +2,9 @@
 
 The `testcontainers-floci-go` module integrates Floci with [Testcontainers for Go](https://golang.testcontainers.org/). It starts a real Floci container before your tests and shuts it down after, with no extra setup.
 
+!!! info "CTF fork"
+    Configure a custom image (`floci:local`) and enforcement environment variables on the container request. Provision IAM access keys in test setup; default `GetAccessKey()` / `GetSecretKey()` values are rejected when enforcement is on.
+
 ## Installation
 
 ```bash

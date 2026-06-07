@@ -122,3 +122,11 @@ aws --endpoint-url http://localhost:4566 codebuild list-builds
 # List curated images
 aws --endpoint-url http://localhost:4566 codebuild list-curated-environment-images
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- Build containers receive execution-role credentials from the CodeBuild container credentials server on host port **9172** (`floci.services.codebuild.container-credentials-port`).
+- Build environments are hardened the same way as Lambda and ECS tasks (no injected root or static bypass keys).
+- `StartBuild` and artifact uploads to S3 require IAM on the CodeBuild service role and S3 bucket policies as usual.

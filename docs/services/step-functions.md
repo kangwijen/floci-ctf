@@ -67,3 +67,17 @@ aws stepfunctions get-execution-history \
   --execution-arn $EXEC_ARN \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, in-process service integrations use `InProcessIamAuthorizer` with the state machine execution role. Missing or unauthorized role credentials deny the task instead of falling back to permissive access.
+
+Supported `aws-sdk` task integrations (in addition to existing Lambda, SNS, SQS, DynamoDB, etc.):
+
+| Service | Task resource | IAM actions |
+|---|---|---|
+| KMS | `arn:aws:states:::aws-sdk:kms:decrypt` (and related) | `kms:Decrypt`, `kms:Encrypt`, ... |
+| Secrets Manager | `arn:aws:states:::aws-sdk:secretsmanager:getSecretValue` | `secretsmanager:GetSecretValue`, ... |
+| S3 | `arn:aws:states:::aws-sdk:s3:getObject` | `s3:GetObject`, `s3:PutObject`, ... |
+
+Attach least-privilege policies to the state machine role before `StartExecution`. HTTP calls to Floci still require SigV4 from the caller; only the in-process SDK path uses the execution role.

@@ -89,13 +89,41 @@ class SnsSubscribeReceiveIamIntegrationTest {
     }
 
     @Test
-    void subscribeDecoyTopicDenied() {
+    void subscribeDecoyTopicDeniedWithoutResourcePolicy() {
         String auth = "AWS4-HMAC-SHA256 Credential=" + playerAkid + "/20260227/us-east-1/sns/aws4_request";
         given()
                 .formParam("Action", "Subscribe")
                 .formParam("TopicArn", decoyTopicArn)
                 .formParam("Protocol", "sqs")
                 .formParam("Endpoint", queueUrl)
+                .header("Authorization", auth)
+                .when().post("/")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void confirmSubscriptionDeniedWithoutConfirmPermission() {
+        String rootSns = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/sns/aws4_request";
+        String httpTopicArn = given()
+                .formParam("Action", "CreateTopic")
+                .formParam("Name", "ctf-http-confirm-topic")
+                .header("Authorization", rootSns)
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().xmlPath().getString("CreateTopicResponse.CreateTopicResult.TopicArn");
+
+        String subscribeOnlyPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"sns:Subscribe","Resource":"%s"}
+            ]}""".formatted(httpTopicArn);
+        CtfLabIamTestSupport.putUserPolicy("ctf-sns-player", "sns-subscribe-only", subscribeOnlyPolicy);
+
+        String auth = "AWS4-HMAC-SHA256 Credential=" + playerAkid + "/20260227/us-east-1/sns/aws4_request";
+        given()
+                .formParam("Action", "ConfirmSubscription")
+                .formParam("TopicArn", httpTopicArn)
+                .formParam("Token", "not-a-real-token")
                 .header("Authorization", auth)
                 .when().post("/")
                 .then().statusCode(403);

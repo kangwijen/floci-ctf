@@ -2,6 +2,9 @@
 
 The `@floci/testcontainers` package integrates Floci with [Testcontainers for Node.js](https://node.testcontainers.org/). It works with any test runner that supports `async`/`await` — Jest, Vitest, Mocha, and others.
 
+!!! info "CTF fork"
+    Use a locally built `floci:local` image with `.withEnvironment({ FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: "true", ... })` and IAM `CreateAccessKey` credentials instead of `floci.getAccessKey()` / `floci.getSecretKey()`.
+
 ## Installation
 
 ```sh

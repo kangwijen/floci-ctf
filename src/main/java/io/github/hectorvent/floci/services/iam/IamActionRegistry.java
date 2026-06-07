@@ -1,5 +1,8 @@
 package io.github.hectorvent.floci.services.iam;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +31,8 @@ import jakarta.ws.rs.core.MediaType;
 public class IamActionRegistry {
 
     private static final Logger LOG = Logger.getLogger(IamActionRegistry.class);
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private record ActionRule(String service, String method, Pattern pathPattern, String action) {}
 
@@ -155,6 +160,12 @@ public class IamActionRegistry {
         String target = ctx.getHeaderString("X-Amz-Target");
         if (target != null && target.contains(".")) {
             String operationName = target.substring(target.lastIndexOf('.') + 1);
+            if ("dynamodb".equals(credentialScope)) {
+                String partiqlAction = resolveDynamoDbPartiQLAction(operationName, ctx);
+                if (partiqlAction != null) {
+                    return partiqlAction;
+                }
+            }
             return IamUnrestrictedActions.canonicalAction(credentialScope + ":" + operationName);
         }
 
@@ -181,6 +192,84 @@ public class IamActionRegistry {
 
         LOG.debugv("No action mapping for {0} {1} {2} — defaulting to ALLOW", credentialScope, method, path);
         return null;
+    }
+
+    /**
+     * Maps {@code ExecuteStatement} / {@code BatchExecuteStatement} to AWS PartiQL IAM actions
+     * ({@code dynamodb:PartiQLSelect}, etc.) based on the leading statement keyword.
+     *
+     * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-iam.html">PartiQL IAM</a>
+     */
+    static String resolveDynamoDbPartiQLAction(String operationName, ContainerRequestContext ctx) {
+        if (!"ExecuteStatement".equals(operationName) && !"BatchExecuteStatement".equals(operationName)) {
+            return null;
+        }
+        String statement = readPartiQLStatement(ctx);
+        String actionSuffix = mapPartiQLStatementToActionSuffix(statement);
+        if (actionSuffix == null) {
+            return null;
+        }
+        return "dynamodb:" + actionSuffix;
+    }
+
+    /**
+     * Maps a PartiQL statement to the AWS IAM action suffix (e.g. {@code PartiQLSelect}).
+     */
+    static String mapPartiQLStatementToActionSuffix(String statement) {
+        if (statement == null || statement.isBlank()) {
+            return null;
+        }
+        String trimmed = statement.trim();
+        if (trimmed.regionMatches(true, 0, "SELECT", 0, 6)) {
+            return "PartiQLSelect";
+        }
+        if (trimmed.regionMatches(true, 0, "INSERT", 0, 6)) {
+            return "PartiQLInsert";
+        }
+        if (trimmed.regionMatches(true, 0, "UPDATE", 0, 6)) {
+            return "PartiQLUpdate";
+        }
+        if (trimmed.regionMatches(true, 0, "DELETE", 0, 6)) {
+            return "PartiQLDelete";
+        }
+        return null;
+    }
+
+    private static String readPartiQLStatement(ContainerRequestContext ctx) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(body);
+            JsonNode statement = node.get("Statement");
+            if (statement != null && statement.isTextual()) {
+                return statement.asText();
+            }
+            JsonNode statements = node.get("Statements");
+            if (statements != null && statements.isArray() && !statements.isEmpty()) {
+                JsonNode first = statements.get(0).get("Statement");
+                if (first != null && first.isTextual()) {
+                    return first.asText();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static byte[] bufferBody(ContainerRequestContext ctx) {
+        InputStream in = ctx.getEntityStream();
+        if (in == null) {
+            return null;
+        }
+        try {
+            byte[] body = in.readAllBytes();
+            ctx.setEntityStream(new ByteArrayInputStream(body));
+            return body;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /**

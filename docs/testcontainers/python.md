@@ -2,6 +2,9 @@
 
 The `testcontainers-floci` package integrates Floci with [Testcontainers for Python](https://testcontainers-python.readthedocs.io/). It works as a context manager and integrates naturally with pytest fixtures.
 
+!!! info "CTF fork"
+    Pass `image="floci:local"` and enforcement env vars to `FlociContainer`, then create IAM users with boto3 using operator `FLOCI_AUTH_ROOT_*` credentials. Do not use `floci.get_access_key()` / `floci.get_secret_key()` against the hardened image.
+
 ## Installation
 
 ```sh

@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
@@ -146,7 +147,33 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = formBodyCtx(
                 "Action=ReceiveMessage&QueueUrl=" + java.net.URLEncoder.encode(queueUrl, java.nio.charset.StandardCharsets.UTF_8));
         String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:sqs:us-east-1:222222222222:ctf-lab-queue", arn);
+        assertEquals("arn:aws:sqs:us-east-1:000000000000:ctf-lab-queue", arn);
+    }
+
+    @Test
+    void sqsReceiveMessageBuildsArnFromLocalstackHostVariant() {
+        String queueUrl = "http://localhost.localstack.cloud:4566/000000000000/orders";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=ReceiveMessage&QueueUrl=" + java.net.URLEncoder.encode(queueUrl, java.nio.charset.StandardCharsets.UTF_8));
+        String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:sqs:us-east-1:000000000000:orders", arn);
+    }
+
+    @Test
+    void sqsReceiveMessageUsesQueueArnWhenQueueUrlIsArn() {
+        String queueArn = "arn:aws:sqs:us-east-1:000000000000:orders";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=ReceiveMessage&QueueUrl=" + java.net.URLEncoder.encode(queueArn, java.nio.charset.StandardCharsets.UTF_8));
+        String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
+        assertEquals(queueArn, arn);
+    }
+
+    @Test
+    void sqsReceiveMessageUsesAccountFromQueueUrlPath() {
+        assertEquals("000000000000", ResourceArnBuilder.parseSqsAccountFromQueueUrl(
+                "https://sqs.us-east-1.amazonaws.com/000000000000/my-queue"));
+        assertEquals("my-queue.fifo", ResourceArnBuilder.parseSqsQueueName(
+                "https://sqs.us-east-1.amazonaws.com/000000000000/my-queue.fifo"));
     }
 
     @Test
@@ -166,6 +193,119 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/smoke-settlements", arn);
     }
 
+    @Test
+    void dynamodbPutItemBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"TableName\":\"ledger\",\"Item\":{\"pk\":{\"S\":\"x\"}}}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/ledger", arn);
+    }
+
+    @Test
+    void dynamodbQueryBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"TableName":"events","KeyConditionExpression":"pk = :pk",
+                 "ExpressionAttributeValues":{":pk":{"S":"a"}}}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/events", arn);
+    }
+
+    @Test
+    void dynamodbQueryWithIndexBuildsIndexArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"TableName":"events","IndexName":"by-sk",
+                 "KeyConditionExpression":"pk = :pk",
+                 "ExpressionAttributeValues":{":pk":{"S":"a"}}}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/events/index/by-sk", arn);
+    }
+
+    @Test
+    void dynamodbTableNameAsArnReturnsTableArn() {
+        String tableArn = "arn:aws:dynamodb:us-east-1:222222222222:table/Users";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"TableName\":\"" + tableArn + "\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals(tableArn, arn);
+    }
+
+    @Test
+    void dynamodbBatchGetItemBuildsTableArnFromRequestItems() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"RequestItems":{"Orders":{"Keys":[{"pk":{"S":"1"}}]}}}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Orders", arn);
+    }
+
+    @Test
+    void dynamodbTagResourceUsesResourceArnField() {
+        String tableArn = "arn:aws:dynamodb:us-east-1:222222222222:table/tagged";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ResourceArn\":\"" + tableArn + "\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals(tableArn, arn);
+    }
+
+    @Test
+    void dynamodbMissingTableNameFallsBackToWildcard() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"Limit\":10}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/*", arn);
+    }
+
+    @Test
+    void dynamodbExecuteStatementSelectFromQuotedTableBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"SELECT * FROM \\"Music\\" WHERE Artist = ?"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Music", arn);
+    }
+
+    @Test
+    void dynamodbExecuteStatementSelectFromUnquotedTableBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"SELECT pk FROM events WHERE pk = ?"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/events", arn);
+    }
+
+    @Test
+    void dynamodbExecuteStatementInsertIntoQuotedTableBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"INSERT INTO \\"Flowers\\" VALUE {'Name': ?}"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Flowers", arn);
+    }
+
+    @Test
+    void dynamodbExecuteStatementUpdateTableBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"UPDATE EyeColors SET IsRecessive = ? WHERE Color = ?"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/EyeColors", arn);
+    }
+
+    @Test
+    void dynamodbExecuteStatementDeleteFromQuotedTableBuildsTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"DELETE FROM \\"Music\\" WHERE Artist = ?"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Music", arn);
+    }
+
+    @Test
+    void dynamodbBatchExecuteStatementUsesFirstStatementTable() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statements":[
+                  {"Statement":"SELECT * FROM \\"Orders\\""},
+                  {"Statement":"SELECT * FROM \\"Other\\""}
+                ]}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Orders", arn);
+    }
+
+    @Test
+    void extractPartiQLTableNameReturnsNullForBlankStatement() {
+        assertNull(ResourceArnBuilder.extractPartiQLTableName("  "));
+    }
+
     // ── Secrets Manager ───────────────────────────────────────────────────────
 
     @Test
@@ -173,6 +313,22 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = jsonBodyCtx("{\"SecretId\":\"market/relay/scanner-hint\"}");
         String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-000000", arn);
+    }
+
+    @Test
+    void secretsBatchGetSecretValueUsesFirstSecretId() {
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"SecretIdList\":[\"allowed/secret\",\"other/secret\"]}");
+        String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-000000", arn);
+    }
+
+    @Test
+    void secretsGetSecretValuePassesThroughFullArn() {
+        String fullArn = "arn:aws:secretsmanager:us-east-1:222222222222:secret:my/full-arn-ABC123";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"SecretId\":\"" + fullArn + "\"}");
+        String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
+        assertEquals(fullArn, arn);
     }
 
     // ── Kinesis ───────────────────────────────────────────────────────────────
@@ -211,6 +367,23 @@ class ResourceArnBuilderTest {
     @Test
     void kmsDecryptBuildsKeyArnFromCiphertextBlob() {
         String blob = java.util.Base64.getEncoder().encodeToString("kms:v2:550e8400-e29b-41d4-a716-446655440000:iv:cipher".getBytes());
+        ContainerRequestContext ctx = jsonBodyCtx("{\"CiphertextBlob\":\"" + blob + "\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:key/550e8400-e29b-41d4-a716-446655440000", arn);
+    }
+
+    @Test
+    void kmsDecryptPreservesAliasArnFromKeyId() {
+        String aliasArn = "arn:aws:kms:us-east-1:222222222222:alias/lab-key";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"KeyId\":\"" + aliasArn + "\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals(aliasArn, arn);
+    }
+
+    @Test
+    void kmsDecryptBuildsKeyArnFromLegacyCiphertextBlob() {
+        String blob = java.util.Base64.getEncoder().encodeToString(
+                "kms:550e8400-e29b-41d4-a716-446655440000:cGF5bG9hZA==".getBytes());
         ContainerRequestContext ctx = jsonBodyCtx("{\"CiphertextBlob\":\"" + blob + "\"}");
         String arn = builder.build("kms", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:kms:us-east-1:222222222222:key/550e8400-e29b-41d4-a716-446655440000", arn);
@@ -255,6 +428,27 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = formBodyCtx("Action=CreateTopic&Name=alerts");
         String arn = builder.build("sns", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:sns:us-east-1:222222222222:alerts", arn);
+    }
+
+    @Test
+    void snsSubscribeUsesTopicArnNotSubscriptionArn() {
+        String topicArn = "arn:aws:sns:us-east-1:222222222222:dispatch";
+        String subscriptionArn = topicArn + ":sub-id";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=Subscribe&TopicArn=" + topicArn
+                        + "&SubscriptionArn=" + subscriptionArn
+                        + "&Protocol=sqs&Endpoint=arn:aws:sqs:us-east-1:222222222222:q");
+        String arn = builder.build("sns", ctx, REGION, ACCOUNT);
+        assertEquals(topicArn, arn);
+    }
+
+    @Test
+    void snsConfirmSubscriptionUsesTopicArn() {
+        String topicArn = "arn:aws:sns:us-east-1:222222222222:alerts";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=ConfirmSubscription&TopicArn=" + topicArn + "&Token=abc123");
+        String arn = builder.build("sns", ctx, REGION, ACCOUNT);
+        assertEquals(topicArn, arn);
     }
 
     // ── Logs / Events / States ────────────────────────────────────────────────

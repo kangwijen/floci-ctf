@@ -91,13 +91,19 @@ public class IamPolicyEvaluator {
         boolean sessionAllow = sessionStmts != null
                 && anyExplicitAllow(sessionStmts, action, resource, ctx);
 
+        boolean hasIdentityPolicyDocs = caller.identityPolicies() != null
+                && !caller.identityPolicies().isEmpty();
+
         if (!identityAllow && !resourceAllow) {
-            // GetSessionToken / GetFederationToken: session policy may be the only grant
-            if (!sessionAllow) {
+            if (sessionStmts == null || !sessionAllow) {
+                return Decision.DENY;
+            }
+            // GetFederationToken: session policy alone may grant. GetSessionToken / AssumeRole
+            // require an identity or resource grant intersected with any session policy.
+            if (hasIdentityPolicyDocs) {
                 return Decision.DENY;
             }
         } else if (sessionStmts != null && !sessionAllow) {
-            // AssumeRole: session policy intersects with identity/resource grant
             return Decision.DENY;
         }
 

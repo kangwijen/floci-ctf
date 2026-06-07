@@ -2,6 +2,9 @@
 
 Floci is a drop-in replacement for LocalStack Community. The wire protocol, port, credentials, and SDK configuration are identical, so most migrations require only an image swap. This page documents every change and provides a compatibility mode for projects that need a gentler transition.
 
+!!! warning "CTF fork"
+    **floci-ctf** is not a drop-in permissive replacement: Compose enables IAM enforcement, strict mode, and SigV4 validation. `test`/`test` is rejected; use IAM users and operator `FLOCI_AUTH_ROOT_*` for provisioning. See [CTF hardening](../services/iam.md#ctf-hardening).
+
 ## Compatibility mode
 
 LocalStack environment variable translation is **on by default**. Floci automatically maps LocalStack variables to their Floci equivalents at startup, so you can keep your existing environment variables unchanged:

@@ -18,6 +18,7 @@ public class ContainerHandle {
     private volatile ContainerState state;
     private volatile long lastUsedMs;
     private Closeable logStream;
+    private String credentialToken;
 
     public ContainerHandle(String containerId, String functionName,
                            RuntimeApiServer runtimeApiServer, ContainerState state) {
@@ -46,4 +47,6 @@ public class ContainerHandle {
     public void setState(ContainerState state) { this.state = state; }
     public Closeable getLogStream() { return logStream; }
     public void setLogStream(Closeable logStream) { this.logStream = logStream; }
+    public String getCredentialToken() { return credentialToken; }
+    public void setCredentialToken(String credentialToken) { this.credentialToken = credentialToken; }
 }

@@ -2,6 +2,9 @@
 
 Floci has first-class Testcontainers modules for every major SDK language. Each module starts a real Floci container before your tests run and tears it down after — no running daemon, no shared state, no port conflicts.
 
+!!! info "CTF fork"
+    Published `FlociContainer` modules default to the upstream `floci/floci:latest` image and return `test`/`test` credentials. For **floci-ctf**, build a local image (`docker build -t floci:local .`), pass enforcement env vars via `.withEnv(...)`, and wire IAM access keys you create at test setup (or operator root credentials for provisioning). See language guides for examples.
+
 ## Available modules
 
 | Language | Package | Version | Registry | Source |
@@ -19,10 +22,10 @@ Every module exposes a `FlociContainer` class that wraps the official `floci/flo
 |---|---|
 | `getEndpoint()` | `http://localhost:<mapped-port>` |
 | `getRegion()` | `us-east-1` (default) |
-| `getAccessKey()` | `test` |
-| `getSecretKey()` | `test` |
+| `getAccessKey()` | `test` (upstream image only) |
+| `getSecretKey()` | `test` (upstream image only) |
 
-You pass these values directly into any AWS SDK client — no manual configuration, no environment variables.
+You pass these values directly into any AWS SDK client — no manual configuration, no environment variables. On the CTF image, create IAM users in `@BeforeAll` and use those keys instead of `getAccessKey()` / `getSecretKey()`.
 
 ## Language guides
 

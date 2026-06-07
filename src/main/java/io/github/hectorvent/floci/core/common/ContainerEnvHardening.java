@@ -19,9 +19,20 @@ public final class ContainerEnvHardening {
             "AWS_SECRET_ACCESS_KEY",
             "AWS_SESSION_TOKEN",
             "AWS_SECURITY_TOKEN",
+            "AWS_SHARED_CREDENTIALS_FILE",
+            "AWS_CONFIG_FILE",
+            "AWS_PROFILE",
+            "AWS_ROLE_ARN",
+            "AWS_ROLE_SESSION_NAME",
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+            "AWS_EC2_METADATA_SERVICE_ENDPOINT",
+            "AWS_EC2_METADATA_SERVICE",
+            "ECS_CONTAINER_METADATA_URI",
+            "ECS_CONTAINER_METADATA_URI_V4",
             "FLOCI_AUTH_ROOT_ACCESS_KEY_ID",
-            "FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY",
-            "FLOCI_AUTH_PRESIGN_SECRET");
+            "FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY");
 
     private ContainerEnvHardening() {
     }
@@ -34,7 +45,13 @@ public final class ContainerEnvHardening {
         if (BLOCKED_KEYS.contains(upper)) {
             return true;
         }
-        return upper.startsWith("FLOCI_AUTH_");
+        if (upper.startsWith("FLOCI_AUTH_")) {
+            return true;
+        }
+        return upper.startsWith("AWS_CONTAINER_CREDENTIALS_")
+                || upper.startsWith("AWS_EC2_METADATA_")
+                || upper.startsWith("AWS_WEB_IDENTITY_")
+                || upper.startsWith("ECS_CONTAINER_METADATA_");
     }
 
     public static void removeBlockedKeys(Map<String, String> env) {

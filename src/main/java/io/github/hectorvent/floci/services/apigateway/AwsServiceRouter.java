@@ -14,6 +14,7 @@ import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerJsonHand
 import io.github.hectorvent.floci.services.sns.SnsJsonHandler;
 import io.github.hectorvent.floci.services.sqs.SqsJsonHandler;
 import io.github.hectorvent.floci.services.ssm.SsmJsonHandler;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.stepfunctions.StepFunctionsJsonHandler;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -45,6 +46,7 @@ public class AwsServiceRouter {
     private final KmsJsonHandler kmsHandler;
     private final CognitoJsonHandler cognitoHandler;
     private final AcmJsonHandler acmHandler;
+    private final InProcessIamAuthorizer inProcessIamAuthorizer;
 
     @Inject
     public AwsServiceRouter(StepFunctionsJsonHandler stepFunctionsHandler,
@@ -59,7 +61,8 @@ public class AwsServiceRouter {
                             SecretsManagerJsonHandler secretsManagerHandler,
                             KmsJsonHandler kmsHandler,
                             CognitoJsonHandler cognitoHandler,
-                            AcmJsonHandler acmHandler) {
+                            AcmJsonHandler acmHandler,
+                            InProcessIamAuthorizer inProcessIamAuthorizer) {
         this.stepFunctionsHandler = stepFunctionsHandler;
         this.dynamoDbHandler = dynamoDbHandler;
         this.sqsHandler = sqsHandler;
@@ -73,6 +76,7 @@ public class AwsServiceRouter {
         this.kmsHandler = kmsHandler;
         this.cognitoHandler = cognitoHandler;
         this.acmHandler = acmHandler;
+        this.inProcessIamAuthorizer = inProcessIamAuthorizer;
     }
 
     /**
@@ -116,7 +120,18 @@ public class AwsServiceRouter {
      * @return the service response
      */
     public Response invoke(String service, String action, JsonNode requestBody, String region) {
+        return invoke(service, action, requestBody, region, null);
+    }
+
+    /**
+     * Dispatches to the appropriate service handler with optional execution-role IAM checks.
+     *
+     * @param roleArn IAM role whose policies authorize the downstream call (APIGW credentials / SFN role)
+     */
+    public Response invoke(String service, String action, JsonNode requestBody, String region, String roleArn) {
         LOG.debugv("AWS integration dispatch: {0}:{1} in {2}", service, action, region);
+
+        inProcessIamAuthorizer.authorize(roleArn, service, action, requestBody, region);
 
         try {
             return switch (service) {

@@ -19,6 +19,8 @@ public class SessionCredential {
     /** Values returned by {@code sts:GetCallerIdentity} for this session, when set at issuance. */
     private String callerIdentityUserId;
     private String callerIdentityArn;
+    /** Long-term access key that issued this session ({@code GetSessionToken}); used for policy intersection. */
+    private String parentAccessKeyId;
 
     public SessionCredential() {}
 
@@ -58,5 +60,10 @@ public class SessionCredential {
     public String getCallerIdentityArn() { return callerIdentityArn; }
     public void setCallerIdentityArn(String callerIdentityArn) {
         this.callerIdentityArn = callerIdentityArn;
+    }
+
+    public String getParentAccessKeyId() { return parentAccessKeyId; }
+    public void setParentAccessKeyId(String parentAccessKeyId) {
+        this.parentAccessKeyId = parentAccessKeyId;
     }
 }

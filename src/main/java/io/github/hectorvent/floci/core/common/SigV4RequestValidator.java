@@ -31,6 +31,8 @@ public final class SigV4RequestValidator {
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
     private static final String EMPTY_PAYLOAD_HASH =
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    /** S3 presigned URL payload placeholder per AWS SigV4 query-string auth. */
+    public static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
     private static final long MAX_SKEW_SECONDS = 15 * 60;
 
     private SigV4RequestValidator() {
@@ -112,6 +114,191 @@ public final class SigV4RequestValidator {
         }
     }
 
+    /**
+     * Validates an inbound S3 presigned URL (SigV4 query-string authentication).
+     *
+     * @param rawQuery the raw query string including {@code X-Amz-Signature}
+     * @param hostHeader value of the HTTP {@code Host} header used in the signature
+     */
+    public static Result validatePresignedUrl(String method,
+                                              String rawPath,
+                                              String rawQuery,
+                                              String hostHeader,
+                                              String secretKey) {
+        try {
+            if (rawQuery == null || rawQuery.isBlank()) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            if (hostHeader == null || hostHeader.isBlank()) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String algorithm = queryParam(rawQuery, "X-Amz-Algorithm");
+            if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String credential = queryParam(rawQuery, "X-Amz-Credential");
+            String amzDate = queryParam(rawQuery, "X-Amz-Date");
+            String signedHeadersList = queryParam(rawQuery, "X-Amz-SignedHeaders");
+            String providedSignature = queryParam(rawQuery, "X-Amz-Signature");
+
+            if (credential == null || amzDate == null || signedHeadersList == null || providedSignature == null) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String[] credParts = credential.split("/");
+            if (credParts.length < 5) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            String date = credParts[1];
+            String region = credParts[2];
+            String service = credParts[3];
+            String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+
+            String expectedSignature = computePresignedSignature(
+                    method,
+                    rawPath,
+                    rawQuery,
+                    hostHeader,
+                    secretKey,
+                    amzDate,
+                    signedHeadersList,
+                    region,
+                    service,
+                    date,
+                    credentialScope);
+
+            if (MessageDigest.isEqual(
+                    expectedSignature.getBytes(StandardCharsets.UTF_8),
+                    providedSignature.getBytes(StandardCharsets.UTF_8))) {
+                return Result.VALID;
+            }
+            return Result.INVALID_SIGNATURE;
+        } catch (Exception e) {
+            return Result.INVALID_SIGNATURE;
+        }
+    }
+
+    /**
+     * Computes the SigV4 signature for an S3 presigned URL (query params except
+     * {@code X-Amz-Signature} must already be present in {@code rawQuery}).
+     */
+    public static String computePresignedSignature(String method,
+                                                   String rawPath,
+                                                   String rawQuery,
+                                                   String hostHeader,
+                                                   String secretKey,
+                                                   String amzDate,
+                                                   String signedHeadersList,
+                                                   String region,
+                                                   String service,
+                                                   String dateStamp,
+                                                   String credentialScope) throws Exception {
+        String canonicalRequest = buildPresignedCanonicalRequest(
+                method, rawPath, rawQuery, hostHeader, signedHeadersList);
+
+        String stringToSign = "AWS4-HMAC-SHA256\n"
+                + amzDate + "\n"
+                + credentialScope + "\n"
+                + sha256Hex(canonicalRequest);
+
+        byte[] signingKey = deriveSigningKey(secretKey, dateStamp, region, service);
+        return hexEncode(hmacSha256(signingKey, stringToSign));
+    }
+
+    /**
+     * Parses the access key ID from {@code X-Amz-Credential} ({@code accessKey/date/region/service/aws4_request}).
+     */
+    public static String parseAccessKeyIdFromCredential(String credential) {
+        if (credential == null || credential.isBlank()) {
+            return null;
+        }
+        int slash = credential.indexOf('/');
+        return slash < 0 ? credential : credential.substring(0, slash);
+    }
+
+    private static String buildPresignedCanonicalRequest(String method,
+                                                         String rawPath,
+                                                         String rawQuery,
+                                                         String hostHeader,
+                                                         String signedHeadersList) throws Exception {
+        String normalizedSignedHeaders = signedHeadersList.toLowerCase(Locale.ROOT);
+        String[] signedHeaderNames = normalizedSignedHeaders.split(";");
+        List<String> canonicalHeaderLines = new ArrayList<>();
+        for (String name : signedHeaderNames) {
+            String trimmedName = name.trim();
+            if (trimmedName.isEmpty()) {
+                continue;
+            }
+            String value = presignedHeaderValue(trimmedName, hostHeader, rawQuery);
+            if (value == null) {
+                throw new IllegalStateException("Missing signed header: " + trimmedName);
+            }
+            canonicalHeaderLines.add(trimmedName + ":" + trimHeaderValue(value));
+        }
+        canonicalHeaderLines.sort(Comparator.naturalOrder());
+        String canonicalHeaders = String.join("\n", canonicalHeaderLines) + "\n";
+
+        return method.toUpperCase(Locale.ROOT) + "\n"
+                + canonicalUri(rawPath) + "\n"
+                + canonicalQueryString(rawQuery) + "\n"
+                + canonicalHeaders + "\n"
+                + normalizedSignedHeaders + "\n"
+                + UNSIGNED_PAYLOAD;
+    }
+
+    private static String presignedHeaderValue(String headerName, String hostHeader, String rawQuery) {
+        if ("host".equals(headerName)) {
+            return hostHeader;
+        }
+        if (headerName.startsWith("x-amz-")) {
+            String queryName = headerNameToQueryParam(headerName);
+            return queryParam(rawQuery, queryName);
+        }
+        return null;
+    }
+
+    private static String headerNameToQueryParam(String headerName) {
+        StringBuilder sb = new StringBuilder("X-Amz-");
+        for (int i = 6; i < headerName.length(); i++) {
+            char c = headerName.charAt(i);
+            if (c == '-') {
+                sb.append('-');
+            } else {
+                sb.append(Character.toUpperCase(c));
+            }
+        }
+        return sb.toString();
+    }
+
+    static String queryParam(String rawQuery, String paramName) {
+        if (rawQuery == null || paramName == null) {
+            return null;
+        }
+        for (String part : rawQuery.split("&")) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            int eq = part.indexOf('=');
+            String rawName = eq >= 0 ? part.substring(0, eq) : part;
+            String decodedName = urlDecode(rawName);
+            if (paramName.equalsIgnoreCase(rawName) || paramName.equalsIgnoreCase(decodedName)) {
+                return eq >= 0 ? urlDecode(part.substring(eq + 1)) : "";
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSignedHeader(String signedHeadersList, String headerName) {
+        for (String name : signedHeadersList.split(";")) {
+            if (headerName.equals(name.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isExpired(String amzDate) {
         try {
             Instant requestTime = Instant.from(DATETIME_FMT.parse(amzDate));
@@ -144,7 +331,7 @@ public final class SigV4RequestValidator {
         String canonicalHeaders = String.join("\n", canonicalHeaderLines) + "\n";
 
         String payloadHash;
-        if (signedHeadersList.contains("x-amz-content-sha256")) {
+        if (isSignedHeader(signedHeadersList, "x-amz-content-sha256")) {
             // Client signed the hash header: read it directly from headers.
             payloadHash = headerValue(headers, "x-amz-content-sha256");
             if (payloadHash == null || payloadHash.isBlank()) {
@@ -217,7 +404,7 @@ public final class SigV4RequestValidator {
             int eq = part.indexOf('=');
             String rawName = eq >= 0 ? part.substring(0, eq) : part;
             String rawValue = eq >= 0 ? part.substring(eq + 1) : "";
-            if ("X-Amz-Signature".equals(rawName) || "X-Amz-Signature".equals(urlDecode(rawName))) {
+            if (isSignatureQueryParam(rawName)) {
                 continue;
             }
             String name = awsUriEncode(urlDecode(rawName), true);
@@ -228,11 +415,20 @@ public final class SigV4RequestValidator {
         return String.join("&", pairs);
     }
 
+    private static boolean isSignatureQueryParam(String rawName) {
+        if (rawName == null || rawName.isEmpty()) {
+            return false;
+        }
+        String decoded = urlDecode(rawName);
+        return "X-Amz-Signature".equalsIgnoreCase(rawName)
+                || "X-Amz-Signature".equalsIgnoreCase(decoded);
+    }
+
     private static String urlDecode(String value) {
         return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
-    static String awsUriEncode(String value, boolean encodeSlash) {
+    public static String awsUriEncode(String value, boolean encodeSlash) {
         String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8)
                 .replace("+", "%20")
                 .replace("*", "%2A")

@@ -227,6 +227,21 @@ class MyServiceTest extends FlociTestBase {
 }
 ```
 
+## CTF fork image
+
+Build the hardened image from this repository and override the default Docker image plus enforcement flags:
+
+```java
+@Container
+static FlociContainer floci = new FlociContainer("floci:local")
+        .withEnv("FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED", "true")
+        .withEnv("FLOCI_AUTH_VALIDATE_SIGNATURES", "true")
+        .withEnv("FLOCI_AUTH_ROOT_ACCESS_KEY_ID", System.getenv("FLOCI_AUTH_ROOT_ACCESS_KEY_ID"))
+        .withEnv("FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY", System.getenv("FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"));
+```
+
+Provision a test user with IAM using the root credentials, then build SDK clients with `CreateAccessKey` output. `floci.getAccessKey()` returns `test`, which the CTF image rejects under enforcement.
+
 ## Source and changelog
 
 [github.com/floci-io/testcontainers-floci](https://github.com/floci-io/testcontainers-floci)

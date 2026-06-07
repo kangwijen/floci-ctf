@@ -1,8 +1,27 @@
 # floci-compatibility-tests
 
-Compatibility test suite for [Floci](https://github.com/hectorvent/floci) — a local AWS emulator.
+Compatibility test suite for [floci-ctf](https://github.com/kangwijen/floci-ctf) — a security-hardened local AWS emulator fork.
 
 Verifies that standard AWS tooling (SDKs, CDK, OpenTofu/Terraform) works correctly against the emulator without modification. Tests run against a live Floci instance and use real AWS SDK clients — no mocks.
+
+## CTF fork (floci-ctf)
+
+The main **floci-ctf** repository enables IAM enforcement, strict mode, and SigV4 validation in Compose. Most modules assume permissive `test`/`test` credentials in `.env`; against the hardened image you must:
+
+1. Export operator `FLOCI_AUTH_ROOT_*` (or participant IAM keys from `CreateAccessKey`).
+2. Set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` to registered credentials.
+3. Expect unsigned or `test`/`test` calls to return `403`.
+
+`sdk-test-java` includes `IamEnforcementTest`, which **skips** when enforcement is off and runs allow/deny scenarios when `floci.services.iam.enforcement-enabled=true`. Run it against a CTF Compose instance:
+
+```bash
+export FLOCI_ENDPOINT=http://localhost:4566
+export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+cd sdk-test-java && mvn test -Dtest=IamEnforcementTest
+```
+
+S3 presign tests use the AWS SDK presigner and work when the signing access key is registered in IAM (or matches the operator root pair).
 
 ## Quick Start
 
@@ -104,14 +123,20 @@ Bats-based suites keep their normal console output and also write JUnit XML repo
 
 ## Configuration
 
-All modules read from environment variables (see `.env.example`):
+All modules read from environment variables (see `env.example`):
 
 ```bash
 FLOCI_ENDPOINT=http://localhost:4566
+AWS_DEFAULT_REGION=us-east-1
+
+# Permissive mode (default for most suite tests):
 AWS_ACCESS_KEY_ID=test
 AWS_SECRET_ACCESS_KEY=test
-AWS_DEFAULT_REGION=us-east-1
+
+# CTF fork: replace with IAM or operator root credentials
 ```
+
+Copy `env.example` to `.env` and adjust for your Floci profile.
 
 ## Running with Docker
 

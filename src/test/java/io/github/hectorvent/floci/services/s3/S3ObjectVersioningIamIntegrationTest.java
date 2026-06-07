@@ -91,6 +91,51 @@ class S3ObjectVersioningIamIntegrationTest {
     }
 
     @Test
+    void listVersionsDeniedWhenPrefixConditionNotMet() {
+        String prefixUser = "ctf-s3-ver-prefix";
+        CtfLabIamTestSupport.createUser(prefixUser);
+        String prefixAkid = CtfLabIamTestSupport.createAccessKey(prefixUser);
+        String prefixAuth = CtfLabIamTestSupport.playerAuth(prefixAkid);
+
+        String prefixPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":"arn:aws:s3:::%s",
+               "Condition":{"StringLike":{"s3:prefix":["%s*"]}}}
+            ]}""".formatted(BUCKET, WITNESS_KEY);
+        CtfLabIamTestSupport.putUserPolicy(prefixUser, "prefix-list", prefixPolicy);
+
+        given()
+                .header("Authorization", prefixAuth)
+                .queryParam("versions", "")
+                .queryParam("prefix", DECOY_KEY)
+                .when().get("/" + BUCKET)
+                .then().statusCode(403);
+    }
+
+    @Test
+    void listVersionsAllowedWhenPrefixConditionMatches() {
+        String prefixUser = "ctf-s3-ver-prefix-ok";
+        CtfLabIamTestSupport.createUser(prefixUser);
+        String prefixAkid = CtfLabIamTestSupport.createAccessKey(prefixUser);
+        String prefixAuth = CtfLabIamTestSupport.playerAuth(prefixAkid);
+
+        String prefixPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":"arn:aws:s3:::%s",
+               "Condition":{"StringLike":{"s3:prefix":["%s*"]}}}
+            ]}""".formatted(BUCKET, WITNESS_KEY);
+        CtfLabIamTestSupport.putUserPolicy(prefixUser, "prefix-list-ok", prefixPolicy);
+
+        given()
+                .header("Authorization", prefixAuth)
+                .queryParam("versions", "")
+                .queryParam("prefix", WITNESS_KEY)
+                .when().get("/" + BUCKET)
+                .then().statusCode(200)
+                .body(containsString(WITNESS_KEY));
+    }
+
+    @Test
     void getDecoyObjectVersionDenied() {
         given()
                 .header("Authorization", playerAuth)

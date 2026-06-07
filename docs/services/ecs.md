@@ -269,3 +269,11 @@ RunTaskResponse response = ecs.runTask(r -> r
 
 String taskArn = response.tasks().get(0).taskArn();
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- Task roles receive temporary credentials via the ECS container credentials endpoint on host port **9170** (`floci.services.ecs.container-credentials-port`). Tasks should use `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` injected by Floci rather than static keys.
+- `ContainerEnvHardening` strips operator root keys and other bypass env vars from task containers.
+- Control-plane ECS API calls require SigV4 from a principal with `ecs:*` (or scoped actions) on the cluster/task ARNs.

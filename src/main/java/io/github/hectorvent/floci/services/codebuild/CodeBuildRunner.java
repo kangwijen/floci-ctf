@@ -15,6 +15,8 @@ import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
+import io.github.hectorvent.floci.services.codebuild.container.CodeBuildContainerCredentialsServer;
 import io.github.hectorvent.floci.services.codebuild.BuildspecParser.ParsedArtifacts;
 import io.github.hectorvent.floci.services.codebuild.BuildspecParser.ParsedBuildspec;
 import io.github.hectorvent.floci.services.codebuild.model.Build;
@@ -70,6 +72,8 @@ public class CodeBuildRunner {
     private final EmulatorConfig config;
     private final ContainerDetector containerDetector;
     private final RegionResolver regionResolver;
+    private final DockerHostResolver dockerHostResolver;
+    private final CodeBuildContainerCredentialsServer credentialsServer;
 
     private final ConcurrentHashMap<String, String> runningContainers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicBoolean> stopFlags = new ConcurrentHashMap<>();
@@ -84,7 +88,9 @@ public class CodeBuildRunner {
                            SecretsManagerService secretsManagerService,
                            EmulatorConfig config,
                            ContainerDetector containerDetector,
-                           RegionResolver regionResolver) {
+                           RegionResolver regionResolver,
+                           DockerHostResolver dockerHostResolver,
+                           CodeBuildContainerCredentialsServer credentialsServer) {
         this.dockerClient = dockerClient;
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
@@ -95,6 +101,8 @@ public class CodeBuildRunner {
         this.config = config;
         this.containerDetector = containerDetector;
         this.regionResolver = regionResolver;
+        this.dockerHostResolver = dockerHostResolver;
+        this.credentialsServer = credentialsServer;
     }
 
     public void startBuild(String region, Build build, Project project, String buildspecOverride) {
@@ -124,6 +132,7 @@ public class CodeBuildRunner {
         Path workspace = null;
         String containerId = null;
         Closeable logHandle = null;
+        String credentialToken = null;
 
         try {
             // SUBMITTED
@@ -190,7 +199,11 @@ public class CodeBuildRunner {
             logsMap.put("cloudWatchLogsArn", AwsArnUtils.Arn.of("logs", region, regionResolver.getAccountId(), "log-group:" + logGroup + ":log-stream:" + logStream).toString());
             build.setLogs(logsMap);
 
-            List<String> envList = buildEnvList(region, build, project, buildspec, logStream);
+            credentialToken = credentialsServer.registerBuild(
+                    buildId, project.getServiceRole(), region);
+            String flociHost = dockerHostResolver.resolve();
+            List<String> envList = buildEnvList(region, build, project, buildspec, logStream,
+                    flociHost, credentialToken);
 
             // Create the working directory inside the container as part of startup,
             // then keep the container alive. No bind mount needed — source and
@@ -340,6 +353,9 @@ public class CodeBuildRunner {
             }
         } finally {
             stopFlags.remove(buildId);
+            if (credentialToken != null) {
+                credentialsServer.unregisterBuild(buildId, List.of(credentialToken));
+            }
             if (containerId != null) {
                 runningContainers.remove(buildId);
                 if (logHandle != null) {
@@ -393,7 +409,8 @@ public class CodeBuildRunner {
     }
 
     private List<String> buildEnvList(String region, Build build, Project project,
-                                      ParsedBuildspec buildspec, String logStream) {
+                                      ParsedBuildspec buildspec, String logStream,
+                                      String flociHost, String credentialToken) {
         Map<String, String> env = new LinkedHashMap<>();
 
         env.put("CODEBUILD_BUILD_ID", build.getId());
@@ -448,7 +465,12 @@ public class CodeBuildRunner {
         }
 
         ContainerEnvHardening.removeBlockedKeys(env);
-        OperatorCredentialEnv.putIfPresent(env);
+        if (credentialToken != null) {
+            env.put("AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                    credentialsServer.credentialsFullUri(flociHost, credentialToken));
+        } else {
+            OperatorCredentialEnv.putIfPresent(env);
+        }
         env.put("AWS_ENDPOINT_URL", resolveEndpointUrl());
 
         List<String> result = new ArrayList<>();

@@ -138,13 +138,12 @@ Background workers (Lambda event-source pollers, DynamoDB TTL sweeper, MSK readi
 
 By default Floci **does not** validate SigV4 signatures on inbound API requests. Only the access key ID is extracted from the `Authorization` header for account resolution and IAM enforcement. The secret access key is not verified on the main request path.
 
-`FLOCI_AUTH_VALIDATE_SIGNATURES=true` enables verification for **S3 pre-signed URLs** only (via `FLOCI_AUTH_PRESIGN_SECRET`). It does not validate SigV4 on every AWS API call.
-
-To enforce real signature validation:
+In the CTF fork, `FLOCI_AUTH_VALIDATE_SIGNATURES=true` (default in Compose) verifies SigV4 on inbound API requests and on S3 pre-signed URLs. Presign verification uses the IAM access key secret from `X-Amz-Credential` or the operator `FLOCI_AUTH_ROOT_*` pair.
 
 ```bash
 FLOCI_AUTH_VALIDATE_SIGNATURES=true
-FLOCI_AUTH_PRESIGN_SECRET=your-secret   # for pre-signed URL verification
+FLOCI_AUTH_ROOT_ACCESS_KEY_ID=AKIA...
+FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY=...
 ```
 
 When `validate-signatures` is `false` (the default), account isolation still works correctly — the AKID is extracted from the `Authorization` header regardless of whether the signature itself is verified.

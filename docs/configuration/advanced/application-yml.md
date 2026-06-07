@@ -78,7 +78,7 @@ floci:
 
   auth:
     validate-signatures: false               # Set to true to enforce AWS SigV4 validation
-    presign-secret: local-emulator-secret    # HMAC secret for S3 pre-signed URL verification
+    # root-access-key-id / root-secret-access-key — operator bypass and built-in S3 presign signing
 
   tls:
     enabled: false                           # FLOCI_TLS_ENABLED — enable HTTPS on all endpoints

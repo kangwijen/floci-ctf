@@ -9,8 +9,11 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.Base64;
 
@@ -24,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 @TestProfile(CtfLabIamEnforcementProfile.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class KmsDecryptScopedKeyIntegrationTest {
 
     @TestHTTPResource("/")
@@ -79,6 +83,7 @@ class KmsDecryptScopedKeyIntegrationTest {
     }
 
     @Test
+    @Order(1)
     void decryptAllowedKeySucceeds() throws Exception {
         ObjectNode req = objectMapper.createObjectNode();
         req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));
@@ -96,6 +101,86 @@ class KmsDecryptScopedKeyIntegrationTest {
     }
 
     @Test
+    @Order(3)
+    void decryptViaKeyPolicyWithoutIdentityPolicy() throws Exception {
+        String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/ctf-kms-player";
+        String keyPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"%s"},
+               "Action":"kms:Decrypt",
+               "Resource":"*"}
+            ]}""".formatted(playerArn);
+
+        ObjectNode putPolicy = objectMapper.createObjectNode();
+        putPolicy.put("KeyId", allowedKeyId);
+        putPolicy.put("Policy", keyPolicy);
+        given()
+                .header("Authorization", rootAuth)
+                .header("X-Amz-Target", "TrentService.PutKeyPolicy")
+                .contentType("application/x-amz-json-1.1")
+                .body(putPolicy.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        CtfLabIamTestSupport.putUserPolicy("ctf-kms-player", "kms-decrypt-one", """
+            {"Version":"2012-10-17","Statement":[]}""");
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));
+
+        String plaintextB64 = given()
+                .header("Authorization", CtfLabIamTestSupport.playerAuth(playerAkid).replace("/s3/", "/kms/"))
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        assertEquals("lab-plaintext", new String(Base64.getDecoder().decode(plaintextB64)));
+    }
+
+    @Test
+    @Order(4)
+    void decryptViaGrantWithoutIdentityPolicy() throws Exception {
+        String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/ctf-kms-player";
+
+        ObjectNode grantReq = objectMapper.createObjectNode();
+        grantReq.put("KeyId", allowedKeyId);
+        grantReq.put("GranteePrincipal", playerArn);
+        grantReq.putArray("Operations").add("Decrypt");
+        given()
+                .header("Authorization", rootAuth)
+                .header("X-Amz-Target", "TrentService.CreateGrant")
+                .contentType("application/x-amz-json-1.1")
+                .body(grantReq.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        CtfLabIamTestSupport.putUserPolicy("ctf-kms-player", "kms-decrypt-one", """
+            {"Version":"2012-10-17","Statement":[]}""");
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));
+
+        String plaintextB64 = given()
+                .header("Authorization", CtfLabIamTestSupport.playerAuth(playerAkid).replace("/s3/", "/kms/"))
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        assertEquals("lab-plaintext", new String(Base64.getDecoder().decode(plaintextB64)));
+    }
+
+    @Test
+    @Order(2)
     void decryptWithWrongKeyInPolicyDenied() throws Exception {
         String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/kms/aws4_request";

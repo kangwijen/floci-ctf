@@ -30,6 +30,9 @@ public class SecretsManagerService {
     private static final String AWSCURRENT = "AWSCURRENT";
     private static final String AWSPREVIOUS = "AWSPREVIOUS";
     private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    /** Trailing {@code -XXXXXX} on secret ARNs (IAM placeholder uses {@code -000000}). */
+    private static final java.util.regex.Pattern SECRET_ARN_SUFFIX =
+            java.util.regex.Pattern.compile("-[A-Z0-9]{6}$");
 
     private final StorageBackend<String, Secret> store;
     private final int defaultRecoveryWindowDays;
@@ -539,6 +542,13 @@ public class SecretsManagerService {
                     if (byName != null) {
                         return byName;
                     }
+                    String friendlyName = secretNameFromArnResourceSegment(nameFromArn);
+                    if (!friendlyName.equals(nameFromArn)) {
+                        byName = store.get(regionKey(arnRegion, friendlyName)).orElse(null);
+                        if (byName != null) {
+                            return byName;
+                        }
+                    }
                 }
             }
 
@@ -588,6 +598,21 @@ public class SecretsManagerService {
     private String buildSecretArn(String region, String name) {
         String suffix = randomSuffix();
         return regionResolver.buildArn("secretsmanager", region, "secret:" + name + "-" + suffix);
+    }
+
+    /**
+     * Maps a Secrets Manager ARN resource segment to the friendly secret name by
+     * removing the trailing {@code -XXXXXX} suffix when present.
+     */
+    static String secretNameFromArnResourceSegment(String resourceSegment) {
+        if (resourceSegment == null || resourceSegment.isBlank()) {
+            return resourceSegment;
+        }
+        java.util.regex.Matcher suffix = SECRET_ARN_SUFFIX.matcher(resourceSegment);
+        if (suffix.find() && suffix.start() > 0) {
+            return resourceSegment.substring(0, suffix.start());
+        }
+        return resourceSegment;
     }
 
     private static String regionKey(String region, String name) {

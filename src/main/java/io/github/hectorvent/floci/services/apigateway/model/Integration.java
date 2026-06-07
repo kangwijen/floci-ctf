@@ -10,6 +10,8 @@ public class Integration {
 
     private String type;          // MOCK, HTTP, AWS, HTTP_PROXY, AWS_PROXY
     private String uri;
+    /** IAM role ARN assumed for AWS-type integrations (APIGW {@code credentials} field). */
+    private String credentials;
     private String httpMethod;
     private String passthroughBehavior = "WHEN_NO_MATCH"; // WHEN_NO_MATCH, WHEN_NO_TEMPLATES, NEVER
     private Map<String, String> requestParameters = new HashMap<>(); // integration.request.* → method.request.*
@@ -30,6 +32,14 @@ public class Integration {
 
     public void setUri(String uri) {
         this.uri = uri;
+    }
+
+    public String getCredentials() {
+        return credentials;
+    }
+
+    public void setCredentials(String credentials) {
+        this.credentials = credentials;
     }
 
     public String getHttpMethod() {

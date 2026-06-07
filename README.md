@@ -31,20 +31,20 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Strict IAM mode | Off by default | On: denies unregistered keys and unknown action mappings |
 | SigV4 on API calls | Off by default | On: validates `Authorization` signatures |
 | Operator bypass | N/A | `FLOCI_AUTH_ROOT_*` pair bypasses enforcement for provisioning |
-| S3 pre-signed URLs | Default HMAC secret | Requires `FLOCI_AUTH_PRESIGN_SECRET` (do not use the default) |
+| S3 pre-signed URLs | Default HMAC secret | SigV4 query auth; signed with IAM access keys or operator root pair |
 | Docker image defaults | `test`/`test` baked in | No default credentials in `docker/Dockerfile` |
 | Payload hashing | N/A | SigV4 validator hashes request bodies when `x-amz-content-sha256` is absent |
 | `sts:GetCallerIdentity` / `GetSessionToken` | Evaluated like any action | Policy-exempt (AWS parity): no Allow required; SigV4 and registered keys still apply |
 | `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
 | Role trust `sts:ExternalId` | Not enforced | Trust policy conditions evaluated on `AssumeRole` |
-| Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 evaluates bucket policy after HMAC; `NotPrincipal` supported; account `:root` in resource policies does **not** directly allow IAM users (identity policy still required) |
+| Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 uses SigV4 query auth then evaluates bucket policy; `NotPrincipal` supported; account `:root` in resource policies does **not** directly allow IAM users (identity policy still required) |
 | Scoped IAM `Resource` ARNs | Most requests use `*` | `ResourceArnBuilder` maps per-service ARNs for S3, IAM, DynamoDB, KMS, SQS, SNS, SSM, STS, and more on HTTP `:4566` |
 | Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
 | Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides prefixed routes; `all` also hides `/health` |
-| Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys in user-supplied env; only `OperatorCredentialEnv` injects host operator `AWS_*` (Lambda: applied last) |
+| Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
 
-**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `PolicyPrincipalMatcher`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENT.md](./AGENT.md#ctf-implementation-map).
+**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `PreSignedUrlFilter` (SigV4 presign), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENT.md](./AGENT.md#ctf-implementation-map).
 
 After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENT.md](./AGENT.md#upstream-sync).
 
@@ -55,7 +55,6 @@ Export operator secrets on the host, then start Compose:
 ```bash
 export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
 export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
-export FLOCI_AUTH_PRESIGN_SECRET="$(openssl rand -hex 32)"
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 
@@ -73,11 +72,10 @@ All AWS services listen on `http://localhost:4566`. Use the root credentials onl
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true`: verify SigV4 on inbound API requests |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | Operator access key (bypasses enforcement when paired with secret) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | Operator secret for the root access key |
-| `FLOCI_AUTH_PRESIGN_SECRET` | HMAC secret for Floci S3 pre-signed URLs |
 | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | Default `true`: `404` on `/_floci/*` and `/_localstack/*`; `all` also hides `/health`; set `false` for upstream-style introspection |
 | `FLOCI_DEFAULT_ACCOUNT_ID` | Optional; account id in IAM ARNs and `GetCallerIdentity` (default `000000000000`) |
 
-These are set in [docker-compose.yml](./docker-compose.yml). Pass root and pre-sign values from the host as shown above.
+These are set in [docker-compose.yml](./docker-compose.yml). Pass root credentials from the host as shown above.
 
 ## Operator workflow
 
@@ -138,7 +136,7 @@ client = boto3.client(
 **Core CTF hardening:**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EcsContainerCredentialsServerTest,LambdaContainerCredentialsServerTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,PolicyPrincipalMatcherTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest
 ```
 
 On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` before tests that spawn containers.

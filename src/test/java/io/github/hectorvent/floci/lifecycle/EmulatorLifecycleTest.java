@@ -13,6 +13,9 @@ import io.github.hectorvent.floci.services.lambda.DynamoDbStreamsEventSourcePoll
 import io.github.hectorvent.floci.services.lambda.KinesisEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.SqsEventSourcePoller;
 import io.github.hectorvent.floci.services.ec2.Ec2MetadataServer;
+import io.github.hectorvent.floci.services.ecs.container.EcsContainerCredentialsServer;
+import io.github.hectorvent.floci.services.codebuild.container.CodeBuildContainerCredentialsServer;
+import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.pipes.PipesService;
 import io.github.hectorvent.floci.services.rds.RdsService;
@@ -34,6 +37,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,6 +63,9 @@ class EmulatorLifecycleTest {
     @Mock private DynamoDbStreamsEventSourcePoller dynamodbStreamsPoller;
     @Mock private PipesService pipesService;
     @Mock private Ec2MetadataServer ec2MetadataServer;
+    @Mock private EcsContainerCredentialsServer ecsContainerCredentialsServer;
+    @Mock private LambdaContainerCredentialsServer lambdaContainerCredentialsServer;
+    @Mock private CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer;
     @Mock private EcrRegistryManager ecrRegistryManager;
     @Mock private InitLifecycleState initLifecycleState;
     @Mock private EmulatorConfig.TlsConfig tlsConfig;
@@ -70,6 +77,15 @@ class EmulatorLifecycleTest {
         Mockito.lenient().when(config.services()).thenReturn(servicesConfig);
         Mockito.lenient().when(servicesConfig.ec2()).thenReturn(ec2ServiceConfig);
         Mockito.lenient().when(ec2ServiceConfig.enabled()).thenReturn(false);
+        EmulatorConfig.EcsServiceConfig ecsServiceConfig = mock(EmulatorConfig.EcsServiceConfig.class);
+        Mockito.lenient().when(servicesConfig.ecs()).thenReturn(ecsServiceConfig);
+        Mockito.lenient().when(ecsServiceConfig.enabled()).thenReturn(false);
+        EmulatorConfig.LambdaServiceConfig lambdaServiceConfig = mock(EmulatorConfig.LambdaServiceConfig.class);
+        Mockito.lenient().when(servicesConfig.lambda()).thenReturn(lambdaServiceConfig);
+        Mockito.lenient().when(lambdaServiceConfig.enabled()).thenReturn(false);
+        EmulatorConfig.CodeBuildServiceConfig codeBuildServiceConfig = mock(EmulatorConfig.CodeBuildServiceConfig.class);
+        Mockito.lenient().when(servicesConfig.codebuild()).thenReturn(codeBuildServiceConfig);
+        Mockito.lenient().when(codeBuildServiceConfig.enabled()).thenReturn(false);
         Mockito.lenient().when(config.tls()).thenReturn(tlsConfig);
         Mockito.lenient().when(tlsConfig.enabled()).thenReturn(false);
 
@@ -78,7 +94,9 @@ class EmulatorLifecycleTest {
                 elastiCacheContainerManager, elastiCacheMemcachedContainerManager,
                 elastiCacheProxyManager, rdsContainerManager, rdsProxyManager, rdsService,
                 initializationHooksRunner, sqsPoller, kinesisPoller, dynamodbStreamsPoller,
-                pipesService, ec2MetadataServer, ecrRegistryManager, initLifecycleState);
+                pipesService, ec2MetadataServer, ecsContainerCredentialsServer,
+                lambdaContainerCredentialsServer, codeBuildContainerCredentialsServer,
+                ecrRegistryManager, initLifecycleState);
     }
 
     private void stubStorageConfig() {

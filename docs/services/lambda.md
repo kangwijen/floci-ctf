@@ -429,3 +429,12 @@ use `ParallelizationFactor` instead, which is a separate field.
 ## Supported Runtimes
 
 Any runtime that has an official AWS Lambda container image works with Floci (e.g. `nodejs22.x`, `python3.13`, `java21`, `go1.x`, `provided.al2023`).
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- Function execution roles receive credentials from the Lambda container credentials server on host port **9171** (`floci.services.lambda.container-credentials-port`).
+- `ContainerEnvHardening` removes static AWS keys and operator bypass variables from the runtime environment.
+- Function resource policies feed `IamAuthorizationService` for `lambda:InvokeFunction` and related actions.
+- Control-plane Lambda API calls require SigV4 from registered IAM principals.

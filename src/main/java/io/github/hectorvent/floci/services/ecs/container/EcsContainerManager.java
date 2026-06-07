@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.ContainerInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecs.model.Container;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
 import io.github.hectorvent.floci.services.ecs.model.ContainerOverride;
@@ -47,6 +48,8 @@ public class EcsContainerManager {
     private final ContainerDetector containerDetector;
     private final EmulatorConfig config;
     private final RegionResolver regionResolver;
+    private final DockerHostResolver dockerHostResolver;
+    private final EcsContainerCredentialsServer credentialsServer;
 
     @Inject
     public EcsContainerManager(ContainerBuilder containerBuilder,
@@ -54,13 +57,17 @@ public class EcsContainerManager {
                                ContainerLogStreamer logStreamer,
                                ContainerDetector containerDetector,
                                EmulatorConfig config,
-                               RegionResolver regionResolver) {
+                               RegionResolver regionResolver,
+                               DockerHostResolver dockerHostResolver,
+                               EcsContainerCredentialsServer credentialsServer) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
         this.containerDetector = containerDetector;
         this.config = config;
         this.regionResolver = regionResolver;
+        this.dockerHostResolver = dockerHostResolver;
+        this.credentialsServer = credentialsServer;
     }
 
     /**
@@ -74,6 +81,13 @@ public class EcsContainerManager {
         Map<String, String> containerIds = new LinkedHashMap<>();
         List<Closeable> logStreams = new ArrayList<>();
         List<Container> runtimeContainers = new ArrayList<>();
+        List<String> credentialTokens = new ArrayList<>();
+        String credentialToken = credentialsServer.registerTask(
+                task.getTaskArn(), taskId, taskDef.getTaskRoleArn(), taskDef.getFamily(), region);
+        if (credentialToken != null) {
+            credentialTokens.add(credentialToken);
+        }
+        String flociHost = dockerHostResolver.resolve();
 
         // Task-level volumes: map volume name -> host source path, consumed by per-container mountPoints.
         Map<String, String> volumeSourcePaths = new LinkedHashMap<>();
@@ -103,7 +117,7 @@ public class EcsContainerManager {
             // Build container spec
             ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(def.getImage())
                     .withName(containerName)
-                    .withEnv(buildEnvVars(def, override))
+                    .withEnv(buildEnvVars(def, override, region, flociHost, taskId, credentialToken))
                     .withDockerNetwork(config.services().ecs().dockerNetwork())
                     .withLogRotation();
 
@@ -190,7 +204,7 @@ public class EcsContainerManager {
         task.setDesiredStatus(TaskStatus.RUNNING.name());
         task.setStartedAt(Instant.now());
 
-        return new EcsTaskHandle(task.getTaskArn(), containerIds, logStreams);
+        return new EcsTaskHandle(task.getTaskArn(), containerIds, logStreams, taskId, credentialTokens);
     }
 
     /**
@@ -229,6 +243,8 @@ public class EcsContainerManager {
         if (handle == null) {
             return exitCodes;
         }
+
+        credentialsServer.unregisterTask(handle.getTaskId(), handle.getCredentialTokens());
 
         for (Closeable logStream : handle.getLogStreams()) {
             try {
@@ -283,7 +299,9 @@ public class EcsContainerManager {
         }
     }
 
-    private List<String> buildEnvVars(ContainerDefinition def, ContainerOverride override) {
+    private List<String> buildEnvVars(ContainerDefinition def, ContainerOverride override,
+                                      String region, String flociHost, String taskId,
+                                      String credentialToken) {
         // Task-def environment first, then override environment (override wins on key conflict).
         Map<String, String> envMap = new LinkedHashMap<>();
         if (def.getEnvironment() != null) {
@@ -295,6 +313,15 @@ public class EcsContainerManager {
             for (var kv : override.getEnvironment()) {
                 ContainerEnvHardening.putIfAllowed(envMap, kv.name(), kv.value());
             }
+        }
+        ContainerEnvHardening.removeBlockedKeys(envMap);
+        envMap.put("AWS_DEFAULT_REGION", region);
+        envMap.put("AWS_REGION", region);
+        if (credentialToken != null) {
+            envMap.put("AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                    credentialsServer.credentialsFullUri(flociHost, credentialToken));
+            envMap.put("ECS_CONTAINER_METADATA_URI_V4",
+                    credentialsServer.metadataUriV4(flociHost, taskId));
         }
         List<String> envVars = new ArrayList<>();
         for (var entry : envMap.entrySet()) {

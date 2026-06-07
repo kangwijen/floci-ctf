@@ -36,6 +36,22 @@ public class ResourceArnBuilder {
     private static final Pattern API_GW_REST_API = Pattern.compile("/restapis/([^/]+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern EXECUTE_API = Pattern.compile("/([^/]+)/([^/]+)/", Pattern.CASE_INSENSITIVE);
 
+    /** PartiQL {@code FROM "table"} / {@code FROM table} (SELECT, DELETE). */
+    private static final Pattern PARTIQL_FROM_QUOTED =
+            Pattern.compile("\\bFROM\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTIQL_FROM_IDENT =
+            Pattern.compile("\\bFROM\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
+    /** PartiQL {@code INSERT INTO "table"} / {@code INSERT INTO table}. */
+    private static final Pattern PARTIQL_INTO_QUOTED =
+            Pattern.compile("\\bINTO\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTIQL_INTO_IDENT =
+            Pattern.compile("\\bINTO\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
+    /** PartiQL {@code UPDATE "table"} / {@code UPDATE table SET ...}. */
+    private static final Pattern PARTIQL_UPDATE_QUOTED =
+            Pattern.compile("\\bUPDATE\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTIQL_UPDATE_IDENT =
+            Pattern.compile("\\bUPDATE\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
+
     private final ObjectMapper objectMapper;
 
     @Inject
@@ -82,6 +98,253 @@ public class ResourceArnBuilder {
         };
     }
 
+    /**
+     * Builds a resource ARN from an in-process JSON request body (Step Functions / API Gateway).
+     */
+    public String buildFromJsonBody(String credentialScope, JsonNode body,
+                                    String region, String accountId) {
+        JsonNode node = body != null ? body : objectMapper.createObjectNode();
+        return switch (credentialScope) {
+            case "dynamodb" -> buildDynamoDbArnFromJson(node, region, accountId);
+            case "sqs" -> buildSqsArnFromJson(node, region, accountId);
+            case "sns" -> buildSnsArnFromJson(node, region, accountId);
+            case "secretsmanager" -> buildSecretsManagerArnFromJson(node, region, accountId);
+            case "kms" -> buildKmsArnFromJson(node, region, accountId);
+            case "states" -> buildStatesArnFromJson(node, region, accountId);
+            case "lambda" -> buildLambdaArnFromJson(node, region, accountId);
+            case "ssm" -> buildSsmArnFromJson(node, region, accountId);
+            case "kinesis" -> buildKinesisArnFromJson(node, region, accountId);
+            case "logs" -> buildLogsArnFromJson(node, region, accountId);
+            case "events" -> buildEventsArnFromJson(node, region, accountId);
+            case "monitoring" -> buildCloudWatchArnFromJson(node, region, accountId);
+            case "cognito-idp" -> buildCognitoArnFromJson(node, region, accountId);
+            case "s3" -> buildS3ArnFromJson(node);
+            default -> "*";
+        };
+    }
+
+    private String buildS3ArnFromJson(JsonNode node) {
+        String bucket = jsonText(node, "Bucket");
+        String key = jsonText(node, "Key");
+        if (bucket != null && !bucket.isBlank() && key != null && !key.isBlank()) {
+            return AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+        }
+        if (bucket != null && !bucket.isBlank()) {
+            return AwsArnUtils.Arn.of("s3", "", "", bucket).toString();
+        }
+        return AwsArnUtils.Arn.of("s3", "", "", "*").toString();
+    }
+
+    private String buildDynamoDbArnFromJson(JsonNode node, String region, String accountId) {
+        String tableArn = firstArn(jsonText(node, "TableArn"), jsonText(node, "ResourceArn"));
+        if (tableArn != null) {
+            return appendDynamoDbIndexSuffix(jsonText(node, "IndexName"), tableArn);
+        }
+        String tableName = firstNonBlank(
+                jsonText(node, "TableName"),
+                jsonText(node, "GlobalTableName"),
+                jsonFirstRequestItemsTableKey(node),
+                partiQLTableNameFromJson(node));
+        if (tableName != null && !tableName.isBlank()) {
+            if (jsonText(node, "GlobalTableName") != null) {
+                return AwsArnUtils.Arn.of("dynamodb", "", accountId, "global-table/" + tableName).toString();
+            }
+            if (tableName.startsWith("arn:")) {
+                return appendDynamoDbIndexSuffix(jsonText(node, "IndexName"), tableName);
+            }
+            String indexName = jsonText(node, "IndexName");
+            if (indexName != null && !indexName.isBlank()) {
+                return AwsArnUtils.Arn.of("dynamodb", region, accountId,
+                        "table/" + tableName + "/index/" + indexName).toString();
+            }
+            return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
+        }
+        return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
+    }
+
+    private String buildSqsArnFromJson(JsonNode node, String region, String accountId) {
+        String queueUrl = jsonText(node, "QueueUrl");
+        if (queueUrl != null && !queueUrl.isBlank()) {
+            int lastSlash = queueUrl.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < queueUrl.length() - 1) {
+                String queueName = queueUrl.substring(lastSlash + 1);
+                return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
+            }
+        }
+        String queueArn = jsonText(node, "QueueArn");
+        if (queueArn != null && queueArn.startsWith("arn:")) {
+            return queueArn;
+        }
+        return AwsArnUtils.Arn.of("sqs", region, accountId, "*").toString();
+    }
+
+    private String buildSnsArnFromJson(JsonNode node, String region, String accountId) {
+        String topicArn = firstArn(jsonText(node, "TopicArn"), jsonText(node, "TargetArn"));
+        if (topicArn != null) {
+            return topicArn;
+        }
+        return AwsArnUtils.Arn.of("sns", region, accountId, "*").toString();
+    }
+
+    private String buildSecretsManagerArnFromJson(JsonNode node, String region, String accountId) {
+        String secretId = firstNonBlank(
+                jsonText(node, "SecretId"),
+                jsonText(node, "ARN"),
+                jsonFirstArrayElement(node, "SecretIdList"));
+        if (secretId == null || secretId.isBlank()) {
+            return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
+        }
+        if (secretId.startsWith("arn:aws:secretsmanager:")) {
+            return secretId;
+        }
+        return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:" + secretId + "-000000").toString();
+    }
+
+    private String buildKmsArnFromJson(JsonNode node, String region, String accountId) {
+        String keyId = jsonText(node, "KeyId");
+        if (keyId != null && !keyId.isBlank()) {
+            if (keyId.startsWith("arn:aws:kms:")) {
+                return keyId;
+            }
+            if (keyId.startsWith("alias/")) {
+                return AwsArnUtils.Arn.of("kms", region, accountId, keyId).toString();
+            }
+            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyId).toString();
+        }
+        String alias = jsonText(node, "AliasName");
+        if (alias != null && !alias.isBlank()) {
+            if (!alias.startsWith("alias/")) {
+                alias = "alias/" + alias;
+            }
+            return AwsArnUtils.Arn.of("kms", region, accountId, alias).toString();
+        }
+        String keyFromBlob = keyIdFromCiphertextBlob(jsonText(node, "CiphertextBlob"));
+        if (keyFromBlob != null) {
+            if (keyFromBlob.startsWith("arn:aws:kms:")) {
+                return keyFromBlob;
+            }
+            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyFromBlob).toString();
+        }
+        return AwsArnUtils.Arn.of("kms", region, accountId, "key/*").toString();
+    }
+
+    private String buildStatesArnFromJson(JsonNode node, String region, String accountId) {
+        String smArn = firstArn(jsonText(node, "stateMachineArn"), jsonText(node, "StateMachineArn"));
+        if (smArn != null) {
+            return smArn;
+        }
+        String executionArn = jsonText(node, "executionArn");
+        if (executionArn != null) {
+            return executionArn;
+        }
+        String activityArn = jsonText(node, "activityArn");
+        if (activityArn != null) {
+            return activityArn;
+        }
+        String name = jsonText(node, "name");
+        if (name != null && !name.isBlank()) {
+            return AwsArnUtils.Arn.of("states", region, accountId, "stateMachine:" + name).toString();
+        }
+        return AwsArnUtils.Arn.of("states", region, accountId, "stateMachine:*").toString();
+    }
+
+    private String buildLambdaArnFromJson(JsonNode node, String region, String accountId) {
+        String fn = firstNonBlank(jsonText(node, "FunctionName"), jsonText(node, "functionName"));
+        if (fn != null && !fn.isBlank()) {
+            if (fn.contains(":")) {
+                fn = fn.substring(fn.lastIndexOf(':') + 1);
+            }
+            return AwsArnUtils.Arn.of("lambda", region, accountId, "function:" + fn).toString();
+        }
+        return AwsArnUtils.Arn.of("lambda", region, accountId, "function:*").toString();
+    }
+
+    private String buildSsmArnFromJson(JsonNode node, String region, String accountId) {
+        String name = firstNonBlank(jsonText(node, "Name"), jsonFirstArrayElement(node, "Names"));
+        if (name == null || name.isBlank()) {
+            return AwsArnUtils.Arn.of("ssm", region, accountId, "parameter/*").toString();
+        }
+        if (name.startsWith("/")) {
+            name = name.substring(1);
+        }
+        return AwsArnUtils.Arn.of("ssm", region, accountId, "parameter/" + name).toString();
+    }
+
+    private String buildKinesisArnFromJson(JsonNode node, String region, String accountId) {
+        String streamArn = firstArn(jsonText(node, "StreamARN"), jsonText(node, "StreamArn"));
+        if (streamArn != null) {
+            return streamArn;
+        }
+        String streamName = jsonText(node, "StreamName");
+        if (streamName != null && !streamName.isBlank()) {
+            return AwsArnUtils.Arn.of("kinesis", region, accountId, "stream/" + streamName).toString();
+        }
+        return AwsArnUtils.Arn.of("kinesis", region, accountId, "stream/*").toString();
+    }
+
+    private String buildLogsArnFromJson(JsonNode node, String region, String accountId) {
+        String logGroup = jsonText(node, "logGroupName");
+        if (logGroup != null && !logGroup.isBlank()) {
+            return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:" + logGroup).toString();
+        }
+        return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:*").toString();
+    }
+
+    private String buildEventsArnFromJson(JsonNode node, String region, String accountId) {
+        String bus = jsonText(node, "EventBusName");
+        String rule = jsonText(node, "Name");
+        if (bus != null && !bus.isBlank()) {
+            if (rule != null && !rule.isBlank() && !"default".equals(bus)) {
+                return AwsArnUtils.Arn.of("events", region, accountId, "rule/" + bus + "/" + rule).toString();
+            }
+            if (rule != null && !rule.isBlank()) {
+                return AwsArnUtils.Arn.of("events", region, accountId, "rule/" + rule).toString();
+            }
+            return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/" + bus).toString();
+        }
+        return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/*").toString();
+    }
+
+    private String buildCloudWatchArnFromJson(JsonNode node, String region, String accountId) {
+        String namespace = jsonText(node, "Namespace");
+        if (namespace != null && !namespace.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudwatch", region, accountId, "metric/" + namespace + "/*").toString();
+        }
+        return AwsArnUtils.Arn.of("cloudwatch", region, accountId, "metric/*").toString();
+    }
+
+    private String buildCognitoArnFromJson(JsonNode node, String region, String accountId) {
+        String poolId = jsonText(node, "UserPoolId");
+        if (poolId != null && !poolId.isBlank()) {
+            return AwsArnUtils.Arn.of("cognito-idp", region, accountId, "userpool/" + poolId).toString();
+        }
+        return AwsArnUtils.Arn.of("cognito-idp", region, accountId, "userpool/*").toString();
+    }
+
+    private static String jsonText(JsonNode node, String fieldName) {
+        JsonNode field = node.get(fieldName);
+        return field != null && field.isTextual() ? field.asText() : null;
+    }
+
+    private static String jsonFirstArrayElement(JsonNode node, String fieldName) {
+        JsonNode arr = node.get(fieldName);
+        if (arr != null && arr.isArray() && !arr.isEmpty() && arr.get(0).isTextual()) {
+            return arr.get(0).asText();
+        }
+        return null;
+    }
+
+    private String jsonFirstRequestItemsTableKey(JsonNode node) {
+        JsonNode requestItems = node.get("RequestItems");
+        if (requestItems != null && requestItems.isObject()) {
+            var names = requestItems.fieldNames();
+            if (names.hasNext()) {
+                return names.next();
+            }
+        }
+        return null;
+    }
+
     // ── S3 ──────────────────────────────────────────────────────────────────────
 
     private String buildS3Arn(String path) {
@@ -118,31 +381,52 @@ public class ResourceArnBuilder {
         String queueUrl = firstNonBlank(
                 readFormParam(ctx, "QueueUrl"),
                 readJsonStringField(ctx, "QueueUrl"));
-        if (queueUrl != null && queueUrl.startsWith("arn:")) {
-            String queueName = queueUrl.substring(queueUrl.lastIndexOf('/') + 1);
-            return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
+        if (queueUrl != null && queueUrl.startsWith("arn:aws:sqs:")) {
+            return queueUrl.trim();
         }
         String queueName = parseSqsQueueName(queueUrl);
+        String queueAccount = parseSqsAccountFromQueueUrl(queueUrl);
+        String effectiveAccount = queueAccount != null ? queueAccount : accountId;
         if (queueName == null) {
             queueName = firstNonBlank(
                     readFormParam(ctx, "QueueName"),
                     readJsonStringField(ctx, "QueueName"));
         }
         if (queueName != null && !queueName.isBlank()) {
-            return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
+            return AwsArnUtils.Arn.of("sqs", region, effectiveAccount, queueName).toString();
         }
         return AwsArnUtils.Arn.of("sqs", region, accountId, "*").toString();
     }
 
     /**
-     * Resolves queue name from emulator queue URLs ({@code http://host:4566/account/queue})
-     * or bare queue names, matching {@code SqsService} URL layout.
+     * Resolves queue name from emulator queue URLs ({@code http://host:4566/account/queue}),
+     * AWS queue URLs ({@code https://sqs.region.amazonaws.com/account/queue}), or bare queue
+     * names. Hostname variants (localhost vs localhost.localstack.cloud) do not affect the
+     * resolved name, matching {@code SqsService} URL layout.
      */
     static String parseSqsQueueName(String queueUrl) {
         if (queueUrl == null || queueUrl.isBlank()) {
             return null;
         }
         String trimmed = queueUrl.trim();
+        if (trimmed.startsWith("arn:aws:sqs:")) {
+            try {
+                return AwsArnUtils.parse(trimmed).resource();
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+        String path = extractQueuePath(trimmed);
+        if (path != null && !path.isEmpty()) {
+            String withoutLeading = path.startsWith("/") ? path.substring(1) : path;
+            int slash = withoutLeading.indexOf('/');
+            if (slash > 0 && slash < withoutLeading.length() - 1) {
+                String name = withoutLeading.substring(slash + 1);
+                if (!name.isBlank() && !name.contains("?")) {
+                    return name;
+                }
+            }
+        }
         int slash = trimmed.lastIndexOf('/');
         if (slash >= 0 && slash < trimmed.length() - 1) {
             String segment = trimmed.substring(slash + 1);
@@ -153,17 +437,60 @@ public class ResourceArnBuilder {
         return trimmed.contains("/") ? null : trimmed;
     }
 
+    /**
+     * Extracts the owning account from a queue URL path ({@code /accountId/queueName}) or
+     * SQS ARN, mirroring {@code SqsService} account resolution for IAM resource ARNs.
+     */
+    static String parseSqsAccountFromQueueUrl(String queueUrl) {
+        if (queueUrl == null || queueUrl.isBlank()) {
+            return null;
+        }
+        String trimmed = queueUrl.trim();
+        if (trimmed.startsWith("arn:aws:sqs:")) {
+            try {
+                String account = AwsArnUtils.parse(trimmed).accountId();
+                return account.isBlank() ? null : account;
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+        String path = extractQueuePath(trimmed);
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        String withoutLeading = path.startsWith("/") ? path.substring(1) : path;
+        int slash = withoutLeading.indexOf('/');
+        String candidate = slash > 0 ? withoutLeading.substring(0, slash) : withoutLeading;
+        return candidate.matches("\\d{12}") ? candidate : null;
+    }
+
+    private static String extractQueuePath(String queueUrl) {
+        if (queueUrl == null) {
+            return null;
+        }
+        int schemeEnd = queueUrl.indexOf("://");
+        if (schemeEnd < 0) {
+            return queueUrl.contains("/") ? queueUrl : null;
+        }
+        int pathStart = queueUrl.indexOf('/', schemeEnd + 3);
+        if (pathStart < 0) {
+            return null;
+        }
+        return queueUrl.substring(pathStart);
+    }
+
     // ── SNS ─────────────────────────────────────────────────────────────────────
 
     private String buildSnsArn(ContainerRequestContext ctx, String region, String accountId) {
+        // TopicArn first so Subscribe / ConfirmSubscription / Publish scope to the topic.
         String arn = firstArn(
                 readFormParam(ctx, "TopicArn"),
+                readJsonStringField(ctx, "TopicArn"),
                 readFormParam(ctx, "SubscriptionArn"),
                 readFormParam(ctx, "TargetArn"),
                 readFormParam(ctx, "ResourceArn"),
                 readFormParam(ctx, "PlatformApplicationArn"),
                 readFormParam(ctx, "EndpointArn"),
-                readJsonStringField(ctx, "TopicArn"),
                 readJsonStringField(ctx, "TargetArn"));
         if (arn != null) {
             return arn;
@@ -180,20 +507,135 @@ public class ResourceArnBuilder {
     // ── DynamoDB ─────────────────────────────────────────────────────────────────
 
     private String buildDynamoDbArn(ContainerRequestContext ctx, String region, String accountId) {
-        String tableArn = firstArn(readJsonStringField(ctx, "TableArn"));
+        String tableArn = firstArn(
+                readJsonStringField(ctx, "TableArn"),
+                readJsonStringField(ctx, "ResourceArn"));
         if (tableArn != null) {
-            return tableArn;
+            return appendDynamoDbIndexSuffix(readJsonStringField(ctx, "IndexName"), tableArn);
         }
         String tableName = firstNonBlank(
                 readJsonStringField(ctx, "TableName"),
-                readJsonStringField(ctx, "GlobalTableName"));
+                readJsonStringField(ctx, "GlobalTableName"),
+                readJsonFirstRequestItemsTableKey(ctx),
+                partiQLTableNameFromRequest(ctx));
         if (tableName != null && !tableName.isBlank()) {
             if (readJsonStringField(ctx, "GlobalTableName") != null) {
                 return AwsArnUtils.Arn.of("dynamodb", "", accountId, "global-table/" + tableName).toString();
             }
+            if (tableName.startsWith("arn:")) {
+                return appendDynamoDbIndexSuffix(readJsonStringField(ctx, "IndexName"), tableName);
+            }
+            String indexName = readJsonStringField(ctx, "IndexName");
+            if (indexName != null && !indexName.isBlank()) {
+                return AwsArnUtils.Arn.of("dynamodb", region, accountId,
+                        "table/" + tableName + "/index/" + indexName).toString();
+            }
             return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
         }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
+    }
+
+    /**
+     * Extracts the first DynamoDB table name from a PartiQL {@code Statement} string.
+     *
+     * <p>Supports {@code SELECT}/{@code DELETE} {@code FROM} clauses, {@code INSERT INTO},
+     * and {@code UPDATE} table targets per the
+     * <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html">PartiQL reference</a>.
+     */
+    static String extractPartiQLTableName(String statement) {
+        if (statement == null || statement.isBlank()) {
+            return null;
+        }
+        String trimmed = statement.trim();
+        if (trimmed.regionMatches(true, 0, "INSERT", 0, 6)) {
+            return firstRegexGroup(PARTIQL_INTO_QUOTED, trimmed, PARTIQL_INTO_IDENT, trimmed);
+        }
+        if (trimmed.regionMatches(true, 0, "UPDATE", 0, 6)) {
+            return firstRegexGroup(PARTIQL_UPDATE_QUOTED, trimmed, PARTIQL_UPDATE_IDENT, trimmed);
+        }
+        return firstRegexGroup(PARTIQL_FROM_QUOTED, trimmed, PARTIQL_FROM_IDENT, trimmed);
+    }
+
+    private String partiQLTableNameFromRequest(ContainerRequestContext ctx) {
+        String statement = readJsonStringField(ctx, "Statement");
+        if (statement == null) {
+            statement = readJsonFirstBatchStatement(ctx);
+        }
+        return extractPartiQLTableName(statement);
+    }
+
+    private String partiQLTableNameFromJson(JsonNode node) {
+        String statement = jsonText(node, "Statement");
+        if (statement == null) {
+            statement = jsonFirstBatchStatement(node);
+        }
+        return extractPartiQLTableName(statement);
+    }
+
+    private String readJsonFirstBatchStatement(ContainerRequestContext ctx) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            return jsonFirstBatchStatement(node);
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static String jsonFirstBatchStatement(JsonNode node) {
+        JsonNode statements = node.get("Statements");
+        if (statements != null && statements.isArray() && !statements.isEmpty()) {
+            JsonNode first = statements.get(0);
+            if (first != null) {
+                return jsonText(first, "Statement");
+            }
+        }
+        return null;
+    }
+
+    private static String firstRegexGroup(Pattern quoted, String quotedInput,
+                                          Pattern ident, String identInput) {
+        String quotedMatch = firstRegexGroup(quoted, quotedInput);
+        if (quotedMatch != null) {
+            return quotedMatch;
+        }
+        return firstRegexGroup(ident, identInput);
+    }
+
+    private static String firstRegexGroup(Pattern pattern, String input) {
+        Matcher m = pattern.matcher(input);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static String appendDynamoDbIndexSuffix(String indexName, String tableArn) {
+        if (indexName == null || indexName.isBlank()) {
+            return tableArn;
+        }
+        int indexMarker = tableArn.indexOf("/index/");
+        String baseArn = indexMarker > 0 ? tableArn.substring(0, indexMarker) : tableArn;
+        return baseArn + "/index/" + indexName;
+    }
+
+    private String readJsonFirstRequestItemsTableKey(ContainerRequestContext ctx) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            JsonNode requestItems = node.get("RequestItems");
+            if (requestItems != null && requestItems.isObject()) {
+                var names = requestItems.fieldNames();
+                if (names.hasNext()) {
+                    return names.next();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     // ── Kinesis ──────────────────────────────────────────────────────────────────
@@ -220,7 +662,7 @@ public class ResourceArnBuilder {
                 readJsonArnField(ctx, "ARN"),
                 readJsonFirstArrayElement(ctx, "SecretIdList"));
         if (secretId == null || secretId.isBlank()) {
-            return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
+        return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
         }
         if (secretId.startsWith("arn:aws:secretsmanager:")) {
             return secretId;
@@ -804,7 +1246,7 @@ public class ResourceArnBuilder {
             if (key.equals(prefix) || key.startsWith(prefix + ".")) {
                 String v = e.getValue();
                 if (v != null && !v.isBlank()) {
-                    return v;
+            return v;
                 }
             }
         }

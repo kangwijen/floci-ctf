@@ -39,3 +39,15 @@ aws sts get-session-token --endpoint-url $AWS_ENDPOINT_URL
 ```
 
 `GetCallerIdentity` is commonly used in CI pipelines and integration tests as a quick connectivity check before running more complex tests.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Action | CTF behavior |
+|---|---|
+| `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy |
+| `AssumeRole` / `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` | Role trust policies are evaluated (`Principal`, `:root`, federated conditions); WebIdentity and SAML assertions are parsed for claim-based trust (no external IdP crypto validation) |
+| `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |
+
+STS control-plane calls still require SigV4 from a registered principal or the operator root pair.

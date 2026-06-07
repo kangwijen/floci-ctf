@@ -130,7 +130,7 @@ When a specific resource cannot be determined, the builder returns a service-sco
 
 **Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
 
-**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates the Floci HMAC (`FLOCI_AUTH_PRESIGN_SECRET`), `IamEnforcementFilter` evaluates S3 identity and bucket policies. The presign secret does not bypass IAM.
+**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth (secret from the registered IAM access key or operator root pair), `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential.
 
 ### Bypass rules
 
@@ -140,6 +140,7 @@ These identities bypass enforcement:
 |---|---|
 | Access key matching `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` and secret matching `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | Allowed when both are configured (operator root) |
 | No `Authorization` header | Allowed by default (health checks and unauthenticated paths) |
+| Non-SigV4 `Authorization` (Basic, Bearer, etc.) on AWS API paths | Denied when enforcement is enabled (HTTP 403); Cognito `/cognito-idp/oauth2/*` is exempt and uses OAuth client auth instead |
 | Unresolvable IAM action for the request | Allowed by default (unknown mappings are permissive) |
 
 When enforcement is enabled, access keys that are not registered in the IAM store are **denied** (HTTP 403). This closes the legacy `test`/`test` bypass path used in local development.
@@ -230,18 +231,17 @@ Use this profile when Floci backs a capture-the-flag or security exercise and yo
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true` | Verify SigV4 request signatures using the caller's secret access key |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | operator secret | Access key ID for operator provisioning |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | operator secret | Secret access key paired with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`; both must match for the operator bypass |
-| `FLOCI_AUTH_PRESIGN_SECRET` | operator secret | HMAC secret for S3 pre-signed URLs; change from default `local-emulator-secret` |
-
-The repository `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation by default. Export operator credentials and a unique pre-sign secret on the host before starting Compose:
+The repository `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation by default. Export operator credentials on the host before starting Compose:
 
 ```bash
 export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
 export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
-export FLOCI_AUTH_PRESIGN_SECRET="$(openssl rand -hex 32)"
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 docker compose up
 ```
+
+S3 presigned URLs use the same SigV4 query-string model as AWS. Sign with `aws s3 presign` using participant or operator IAM credentials, or use Floci's `PreSignedUrlGenerator` (requires `FLOCI_AUTH_ROOT_*` for built-in URL generation).
 
 ### Operator workflow
 
@@ -265,6 +265,8 @@ docker compose up
    ```
 
 Under strict enforcement, the legacy `test`/`test` credential pair and other unregistered keys are rejected. Only IAM-registered identities with policies that allow the action (or the configured root pair) succeed.
+
+**Cognito OAuth routes:** `/cognito-idp/oauth2/token` and `/cognito-idp/oauth2/userInfo` are not SigV4 APIs. Real Cognito uses `client_secret_basic` (HTTP Basic with `client_id:client_secret`) or `client_secret_post` for the token endpoint, and a Bearer access token for userInfo ([token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)). Floci skips IAM policy evaluation on these paths and lets `CognitoOAuthController` / `CognitoUserInfoController` validate registered app-client credentials. They are **not** listed in `SecurityBypassPaths` as health or internal routes. Under strict enforcement, unauthenticated calls to other paths are denied; OAuth routes still require client credentials or a Bearer token at the controller. A Cognito-issued Bearer JWT does **not** satisfy SigV4 on S3, IAM, or other emulated services — `IamEnforcementFilter` rejects non-SigV4 `Authorization` headers on the data plane.
 
 ### AWS CLI version compatibility
 

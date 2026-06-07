@@ -3,6 +3,8 @@ package io.github.hectorvent.floci.services.iam;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,5 +55,109 @@ class AssumeRoleTrustPolicyEvaluatorTest {
               "Action":"sts:AssumeRole"
             }]}""".formatted(CALLER);
         assertTrue(evaluator.isAssumeRoleTrusted(trust, CALLER, null));
+    }
+
+    @Test
+    void allowsAccountRootPrincipalForAnyUserInAccount() {
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"AWS":"arn:aws:iam::226767940554:root"},
+              "Action":"sts:AssumeRole"
+            }]}""";
+        assertTrue(evaluator.isAssumeRoleTrusted(trust, CALLER, null));
+    }
+
+    @Test
+    void matchesTrustActionForAssumeRoleWithWebIdentity() {
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"AWS":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity"
+            }]}""".formatted(CALLER);
+        assertTrue(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity"));
+        assertFalse(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRole"));
+    }
+
+    @Test
+    void allowsOidcFederatedPrincipalWithMatchingClaims() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{"StringEquals":{
+                "accounts.google.com:aud":"my-client-id",
+                "accounts.google.com:sub":"user-123"
+              }}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "accounts.google.com:aud", "my-client-id",
+                "accounts.google.com:sub", "user-123",
+                "aud", "my-client-id",
+                "sub", "user-123"));
+        assertTrue(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx));
+    }
+
+    @Test
+    void deniesOidcFederatedPrincipalWithWrongSubject() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{"StringEquals":{"accounts.google.com:sub":"expected-sub"}}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "accounts.google.com:sub", "other-sub",
+                "sub", "other-sub"));
+        assertFalse(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx));
+    }
+
+    @Test
+    void allowsSamlFederatedPrincipalWithMatchingClaims() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":saml-provider/CorpIdP";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithSAML",
+              "Condition":{"StringEquals":{
+                "SAML:iss":"https://idp.example.com",
+                "SAML:sub":"alice@example.com"
+              }}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "saml:iss", "https://idp.example.com",
+                "saml:sub", "alice@example.com",
+                "saml:doc", account + "/CorpIdP"));
+        assertTrue(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithSAML", ctx));
+    }
+
+    @Test
+    void deniesMismatchedOidcProviderArn() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity"
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(
+                "arn:aws:iam::" + account + ":oidc-provider/other.example.com", Map.of());
+        assertFalse(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx));
     }
 }

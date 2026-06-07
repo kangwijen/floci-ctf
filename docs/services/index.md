@@ -73,15 +73,50 @@ Operation counts are exact. For dispatch-table services (Query and JSON 1.1) eac
 
 **ECR** runs a shared `registry:2` container so the stock `docker` client can push and pull image bytes against repositories returned by the AWS-shaped control plane. **EKS** (real mode) starts a k3s container per cluster and exposes the Kubernetes API server on a host port. **OpenSearch** (real mode) starts an `opensearchproject/opensearch` container per domain and exposes the data-plane REST API on a host port.
 
+## CTF fork (this repository)
+
+The root `docker-compose.yml` enables a hardened profile by default:
+
+| Setting | Compose default |
+|---|---|
+| IAM enforcement | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true` |
+| Strict IAM | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED=true` |
+| SigV4 validation | `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
+| Internal routes hidden | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` |
+
+Notable CTF deltas on core services (full map in [AGENT.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENT.md)):
+
+| Area | Behavior when enforcement is on |
+|---|---|
+| [IAM](iam.md#ctf-hardening) | Identity + resource policies; scoped `Resource` ARNs; operator `FLOCI_AUTH_ROOT_*` bypass |
+| [S3](s3.md) | SigV4 presigned URLs; bucket policy merge after signature check |
+| [KMS](kms.md#ctf-fork) | Grant-based decrypt on HTTP when identity/key policy alone deny |
+| [STS](sts.md#ctf-fork) | `GetSessionToken` intersects session policy with parent user; WebIdentity/SAML trust conditions |
+| [Step Functions](step-functions.md#ctf-fork) | `aws-sdk` tasks for KMS, Secrets Manager, S3; `InProcessIamAuthorizer` on state machine role |
+| [DynamoDB](dynamodb.md#ctf-fork) | PartiQL maps to `dynamodb:PartiQL*` actions with table ARN from SQL |
+| Cognito OAuth | `/oauth2/*` uses client credentials; Bearer tokens do not bypass SigV4 on data plane |
+
 ## Common Setup
 
-Before calling any service, configure your AWS client to point to Floci:
+=== "CTF fork (operators / participants)"
 
-```bash
-export AWS_ENDPOINT_URL=http://localhost:4566
-export AWS_DEFAULT_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-```
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    # Operator provisioning only:
+    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+    ```
+
+    Participants use IAM `CreateAccessKey` output and must sign every request (SigV4). Prefer boto3 or AWS CLI v2; Alpine CLI v1 often fails signature checks under enforcement.
+
+=== "Permissive (upstream / local dev)"
+
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    export AWS_ACCESS_KEY_ID=test
+    export AWS_SECRET_ACCESS_KEY=test
+    ```
 
 `AWS_ENDPOINT_URL` is the standard env var recognised by the AWS CLI v2 and AWS SDKs v2+, so no `--endpoint-url` flag is needed on each command.

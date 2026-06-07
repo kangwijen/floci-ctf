@@ -160,3 +160,11 @@ http://localhost:4566/$POOL_ID
 ```
 
 This keeps the issuer, discovery document, JWKS URL, and token endpoint internally consistent for local JWT validation while supporting LocalStack-style confidential clients and resource-server-backed scopes.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- OAuth and well-known paths (`/oauth2/*`, `/.well-known/*`, pool discovery) accept client credentials and issue tokens without SigV4.
+- Cognito **data-plane** JSON API calls (`X-Amz-Target: AWSCognitoIdentityProviderService.*`) require SigV4 from a registered IAM principal; Bearer tokens from `/oauth2/token` do not bypass signature checks on those routes.
+- Attach `cognito-idp:*` (or scoped) policies to participant IAM users for admin-style pool operations.

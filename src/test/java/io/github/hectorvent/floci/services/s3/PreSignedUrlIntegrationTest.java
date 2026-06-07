@@ -75,9 +75,6 @@ class PreSignedUrlIntegrationTest {
     @Test
     @Order(4)
     void expiredPresignedUrlReturns403() {
-        // Create a URL with expired date by constructing manually
-        int port = io.restassured.RestAssured.port;
-
         // Use an obviously expired date (year 2020)
         String expiredPath = "/" + BUCKET + "/secret-file.txt"
                 + "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
@@ -92,11 +89,34 @@ class PreSignedUrlIntegrationTest {
             .get(expiredPath)
         .then()
             .statusCode(403)
-            .body(containsString("AccessDenied"));
+            .body(containsString("AccessDenied"))
+            .body(containsString("Request has expired"))
+            .body(containsString("<Expires>"))
+            .body(containsString("<ServerTime>"));
     }
 
     @Test
     @Order(5)
+    void invalidAmzDateReturnsAccessDeniedNotExpiredMessage() {
+        String invalidDatePath = "/" + BUCKET + "/secret-file.txt"
+                + "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                + "&X-Amz-Credential=test"
+                + "&X-Amz-Date=not-a-valid-date"
+                + "&X-Amz-Expires=3600"
+                + "&X-Amz-SignedHeaders=host"
+                + "&X-Amz-Signature=invalidsig";
+
+        given()
+        .when()
+            .get(invalidDatePath)
+        .then()
+            .statusCode(403)
+            .body(containsString("Invalid X-Amz-Date value."))
+            .body(not(containsString("Request has expired")));
+    }
+
+    @Test
+    @Order(6)
     void presignedPutUrl() {
         int port = io.restassured.RestAssured.port;
         String fullBaseUrl = "http://localhost:" + port;

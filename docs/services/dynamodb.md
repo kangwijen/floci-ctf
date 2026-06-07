@@ -157,4 +157,16 @@ aws dynamodb list-exports \
 ```
 
 The export writes to `s3://<bucket>/<prefix>/AWSDynamoDB/<exportId>/data/` as one or more `.json.gz` files, along with `manifest-summary.json` and `manifest-files.json` — the same layout as real AWS DynamoDB exports.
-```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, PartiQL statements map to scoped DynamoDB IAM actions and table ARNs parsed from the SQL:
+
+| Statement kind | IAM action |
+|---|---|
+| `SELECT` | `dynamodb:PartiQLSelect` |
+| `INSERT` | `dynamodb:PartiQLInsert` |
+| `UPDATE` | `dynamodb:PartiQLUpdate` |
+| `DELETE` | `dynamodb:PartiQLDelete` |
+
+Policies must allow the action on the target table ARN (for example `arn:aws:dynamodb:us-east-1:000000000000:table/MyTable`). Multi-table batch statements use the first resolved table ARN for scoping.

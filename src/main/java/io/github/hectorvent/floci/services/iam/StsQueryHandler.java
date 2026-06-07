@@ -70,7 +70,7 @@ public class StsQueryHandler {
         if (validation != null) {
             return validation;
         }
-        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        Response trustDeny = validateAssumeRoleTrust(params, authorization, "sts:AssumeRole");
         if (trustDeny != null) {
             return trustDeny;
         }
@@ -131,8 +131,9 @@ public class StsQueryHandler {
         String sessionArn = AwsArnUtils.Arn.of("sts", "", accountId, "federated-user/floci-session").toString();
         String federatedUserId = accountId + ":floci-session";
         String sessionPolicy = getParam(params, "Policy");
+        String parentAccessKeyId = accountResolver.extractAccessKeyId(authorization);
         iamService.registerSession(accessKeyId, sessionArn, expiration, sessionPolicy, secretKey,
-                federatedUserId, sessionArn);
+                federatedUserId, sessionArn, parentAccessKeyId);
 
         String result = credentialsXml(accessKeyId, secretKey, sessionToken, expiration);
         return Response.ok(AwsQueryResponse.envelope("GetSessionToken", AwsNamespaces.STS, result)).build();
@@ -143,7 +144,7 @@ public class StsQueryHandler {
         if (validation != null) {
             return validation;
         }
-        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        Response trustDeny = validateAssumeRoleTrust(params, authorization, "sts:AssumeRoleWithWebIdentity");
         if (trustDeny != null) {
             return trustDeny;
         }
@@ -151,6 +152,11 @@ public class StsQueryHandler {
         String sessionName = getParam(params, "RoleSessionName");
         String providerId = getParam(params, "ProviderId");
         int durationSeconds = getIntParam(params, "DurationSeconds", 3600);
+        String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
+        FederatedTrustContext federatedContext = FederatedTokenParser.parseWebIdentityToken(
+                getParam(params, "WebIdentityToken"),
+                providerId,
+                roleAccountId);
 
         String accessKeyId = "ASIA" + randomId(16);
         String secretKey = randomSecret(40);
@@ -161,7 +167,17 @@ public class StsQueryHandler {
         String accountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
         String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId, "assumed-role/" + roleName + "/" + sessionName).toString();
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
-        String provider = providerId != null && !providerId.isBlank() ? providerId : "accounts.google.com";
+        String provider = providerId != null && !providerId.isBlank()
+                ? providerId
+                : FederatedTokenParser.oidcProviderHost(
+                        federatedContext == null ? null : federatedContext.federatedPrincipal());
+        if (provider == null || provider.isBlank()) {
+            provider = "accounts.google.com";
+        }
+        String audience = federatedContext == null ? null
+                : federatedContext.conditionClaims().get("aud");
+        String subject = federatedContext == null ? null
+                : federatedContext.conditionClaims().get("sub");
 
         String sessionPolicy = getParam(params, "Policy");
         iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
@@ -175,8 +191,8 @@ public class StsQueryHandler {
                 .end("AssumedRoleUser")
                 .elem("PackedPolicySize", "0")
                 .elem("Provider", provider)
-                .elem("Audience", "sts.amazonaws.com")
-                .elem("SubjectFromWebIdentityToken", "web-identity-subject")
+                .elem("Audience", audience != null ? audience : "sts.amazonaws.com")
+                .elem("SubjectFromWebIdentityToken", subject != null ? subject : "web-identity-subject")
                 .build();
         return Response.ok(AwsQueryResponse.envelope("AssumeRoleWithWebIdentity", AwsNamespaces.STS, result)).build();
     }
@@ -186,7 +202,7 @@ public class StsQueryHandler {
         if (validation != null) {
             return validation;
         }
-        Response trustDeny = validateAssumeRoleTrust(params, authorization);
+        Response trustDeny = validateAssumeRoleTrust(params, authorization, "sts:AssumeRoleWithSAML");
         if (trustDeny != null) {
             return trustDeny;
         }
@@ -265,9 +281,26 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("DecodeAuthorizationMessage", AwsNamespaces.STS, result)).build();
     }
 
-    private Response validateAssumeRoleTrust(MultivaluedMap<String, String> params, String authorization) {
+    private Response validateAssumeRoleTrust(MultivaluedMap<String, String> params, String authorization,
+                                             String stsAction) {
         String roleArn = getParam(params, "RoleArn");
         if (roleArn == null || roleArn.isBlank()) {
+            return null;
+        }
+        FederatedTrustContext federatedContext = buildFederatedTrustContext(params, stsAction, roleArn);
+        if (isFederatedAssumeRoleAction(stsAction)) {
+            if (federatedContext == null) {
+                return AwsQueryResponse.error("AccessDenied",
+                        "User is not authorized to perform: " + stsAction + " on resource: " + roleArn,
+                        AwsNamespaces.STS, 403);
+            }
+            try {
+                iamService.validateAssumeRoleTrust(
+                        roleArn, federatedContext.federatedPrincipal(), getParam(params, "ExternalId"),
+                        stsAction, federatedContext);
+            } catch (AwsException e) {
+                return AwsQueryResponse.error(e.getErrorCode(), e.getMessage(), AwsNamespaces.STS, e.getHttpStatus());
+            }
             return null;
         }
         String accessKeyId = accountResolver.extractAccessKeyId(authorization);
@@ -276,15 +309,39 @@ public class StsQueryHandler {
                 accessKeyId, defaultAccountId, config.auth().rootAccessKeyId());
         if (caller.isEmpty()) {
             return AwsQueryResponse.error("AccessDenied",
-                    "User is not authorized to perform: sts:AssumeRole on resource: " + roleArn,
+                    "User is not authorized to perform: " + stsAction + " on resource: " + roleArn,
                     AwsNamespaces.STS, 403);
         }
         try {
-            iamService.validateAssumeRoleTrust(roleArn, caller.get().arn(), getParam(params, "ExternalId"));
+            iamService.validateAssumeRoleTrust(
+                    roleArn, caller.get().arn(), getParam(params, "ExternalId"), stsAction);
         } catch (AwsException e) {
             return AwsQueryResponse.error(e.getErrorCode(), e.getMessage(), AwsNamespaces.STS, e.getHttpStatus());
         }
         return null;
+    }
+
+    private FederatedTrustContext buildFederatedTrustContext(MultivaluedMap<String, String> params,
+                                                             String stsAction,
+                                                             String roleArn) {
+        String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
+        if ("sts:AssumeRoleWithWebIdentity".equals(stsAction)) {
+            return FederatedTokenParser.parseWebIdentityToken(
+                    getParam(params, "WebIdentityToken"),
+                    getParam(params, "ProviderId"),
+                    roleAccountId);
+        }
+        if ("sts:AssumeRoleWithSAML".equals(stsAction)) {
+            return FederatedTokenParser.parseSamlAssertion(
+                    getParam(params, "SAMLAssertion"),
+                    getParam(params, "PrincipalArn"));
+        }
+        return null;
+    }
+
+    private static boolean isFederatedAssumeRoleAction(String stsAction) {
+        return "sts:AssumeRoleWithWebIdentity".equals(stsAction)
+                || "sts:AssumeRoleWithSAML".equals(stsAction);
     }
 
     private Response validateRequired(MultivaluedMap<String, String> params, String... names) {

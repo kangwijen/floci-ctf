@@ -304,9 +304,6 @@ public interface EmulatorConfig {
         @WithDefault("false")
         boolean validateSignatures();
 
-        @WithDefault("local-emulator-secret")
-        String presignSecret();
-
         /**
          * When set, this access key ID bypasses IAM enforcement (root stand-in).
          * Env: FLOCI_AUTH_ROOT_ACCESS_KEY_ID. Leave unset for strict mode (no bypass).
@@ -457,6 +454,10 @@ public interface EmulatorConfig {
         boolean enabled();
 
         Optional<String> dockerNetwork();
+
+        /** Port on the Floci host for the CodeBuild container credentials HTTP server. */
+        @WithDefault("9172")
+        int containerCredentialsPort();
     }
 
     interface CodeDeployServiceConfig {
@@ -789,6 +790,10 @@ public interface EmulatorConfig {
 
         @WithDefault("256")
         int defaultCpuUnits();
+
+        /** Port on the Floci host for the ECS container credentials and task metadata HTTP server. */
+        @WithDefault("9170")
+        int containerCredentialsPort();
     }
 
     interface ResourceGroupsTaggingServiceConfig {
@@ -950,6 +955,10 @@ public interface EmulatorConfig {
 
         /** Docker network to attach Lambda containers to. Empty = default bridge. */
         Optional<String> dockerNetwork();
+
+        /** Port on the Floci host for the Lambda execution role credentials HTTP server. */
+        @WithDefault("9171")
+        int containerCredentialsPort();
 
         /**
          * Concurrent executions ceiling applied per region. AWS Lambda's

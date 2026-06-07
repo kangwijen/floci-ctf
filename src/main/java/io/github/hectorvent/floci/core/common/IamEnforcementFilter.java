@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
 import io.github.hectorvent.floci.services.iam.ResourcePolicyResolver;
+import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.s3.PreSignedUrlFilter;
@@ -36,8 +37,8 @@ import java.util.regex.Pattern;
  * <p>Evaluates identity-based policies and resource-based policies (S3 bucket policy,
  * Lambda resource policy, SQS/SNS/KMS/Secrets Manager policies) via {@link ResourcePolicyResolver}.
  *
- * <p>Pre-signed S3 URLs: after {@link PreSignedUrlFilter} validates the Floci HMAC, bucket
- * and identity policies are evaluated (HMAC secret does not bypass IAM).
+ * <p>Pre-signed S3 URLs: after {@link PreSignedUrlFilter} validates SigV4 query auth,
+ * bucket and identity policies are evaluated for the credential access key.
  */
 @Provider
 @ApplicationScoped
@@ -57,6 +58,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final ResourceArnBuilder arnBuilder;
     private final ResourcePolicyResolver resourcePolicyResolver;
     private final RegionResolver regionResolver;
+    private final KmsService kmsService;
 
     @Inject
     public IamEnforcementFilter(EmulatorConfig config,
@@ -66,7 +68,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 IamActionRegistry actionRegistry,
                                 ResourceArnBuilder arnBuilder,
                                 ResourcePolicyResolver resourcePolicyResolver,
-                                RegionResolver regionResolver) {
+                                RegionResolver regionResolver,
+                                KmsService kmsService) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
@@ -75,6 +78,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         this.arnBuilder = arnBuilder;
         this.resourcePolicyResolver = resourcePolicyResolver;
         this.regionResolver = regionResolver;
+        this.kmsService = kmsService;
     }
 
     @Override
@@ -84,6 +88,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         boolean strict = config.services().iam().strictEnforcementEnabled();
+        String path = ctx.getUriInfo().getPath();
 
         if (SecurityBypassPaths.isPresignedUrlRequest(ctx)) {
             if (Boolean.TRUE.equals(ctx.getProperty(PreSignedUrlFilter.PRESIGN_VERIFIED_PROPERTY))) {
@@ -99,12 +104,24 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        // Cognito OAuth uses client_id/secret Basic auth or Bearer JWT (RFC 6749), not SigV4.
+        // Controllers validate registered app clients; IAM policy evaluation does not apply here.
+        if (SecurityBypassPaths.isCognitoOAuthPath(path)) {
+            if (strict && SecurityBypassPaths.isCognitoOAuthUserInfoPath(path)) {
+                String oauthAuth = ctx.getHeaderString("Authorization");
+                if (oauthAuth == null || !oauthAuth.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                    LOG.infov("IAM strict enforcement DENY: missing Bearer token on {0}", path);
+                    ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
+                }
+            }
+            return;
+        }
+
         String auth = ctx.getHeaderString("Authorization");
         if (auth == null) {
             if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(
-                    ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())) {
-                LOG.infov("IAM strict enforcement DENY: missing Authorization header on {0}",
-                        ctx.getUriInfo().getPath());
+                    path, config.ctf().hideInternalEndpointsMode())) {
+                LOG.infov("IAM strict enforcement DENY: missing Authorization header on {0}", path);
                 ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
             }
             return;
@@ -112,6 +129,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String akid = accountResolver.extractAccessKeyId(auth);
         if (akid == null) {
+            LOG.infov("IAM enforcement DENY: non-SigV4 Authorization on {0}", path);
+            ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
             return;
         }
         if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
@@ -208,6 +227,16 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+        if (decision == Decision.DENY
+                && "kms".equals(credentialScope)
+                && kmsService.isGrantAuthorized(
+                        conditionCtx.get("aws:principalarn"),
+                        conditionCtx.get("aws:principalaccount"),
+                        resource,
+                        action,
+                        region)) {
+            return;
+        }
         if (decision == Decision.DENY) {
             LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));

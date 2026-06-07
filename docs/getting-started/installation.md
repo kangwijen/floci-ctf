@@ -2,6 +2,9 @@
 
 Floci can be run three ways: as a Docker image, as a pre-built native binary, or built from source.
 
+!!! info "CTF fork"
+    This repository builds `floci:local` with no baked-in `test`/`test` credentials. Use root `docker-compose.yml` and export `FLOCI_AUTH_ROOT_*` before starting. See [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md).
+
 ## Docker (Recommended)
 
 No installation required beyond Docker itself.
@@ -59,13 +62,23 @@ Both variants have identical startup time (~24 ms) and memory footprint (~13 MiB
 - Maven 3.9+
 - (Optional) GraalVM Mandrel for native compilation
 
-### Clone and run
+=== "CTF fork (this repo)"
 
-```bash
-git clone https://github.com/floci-io/floci.git
-cd floci
-mvn quarkus:dev          # dev mode with hot reload on port 4566
-```
+    ```bash
+    git clone https://github.com/kangwijen/floci-ctf.git
+    cd floci-ctf
+    export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
+    export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
+    docker compose up -d --build
+    ```
+
+=== "Upstream"
+
+    ```bash
+    git clone https://github.com/floci-io/floci.git
+    cd floci
+    mvn quarkus:dev          # dev mode with hot reload on port 4566
+    ```
 
 ### Build a production JAR
 

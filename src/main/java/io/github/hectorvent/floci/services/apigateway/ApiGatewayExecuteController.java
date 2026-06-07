@@ -885,7 +885,8 @@ public class ApiGatewayExecuteController {
         String errorMessage = null;
         try {
             JsonNode requestJson = objectMapper.readTree(transformedBody);
-            serviceResponse = serviceRouter.invoke(target.service(), target.action(), requestJson, region);
+            serviceResponse = serviceRouter.invoke(target.service(), target.action(), requestJson, region,
+                    integration.getCredentials());
         } catch (AwsException e) {
             errorType = e.getErrorCode();
             errorMessage = e.getMessage();

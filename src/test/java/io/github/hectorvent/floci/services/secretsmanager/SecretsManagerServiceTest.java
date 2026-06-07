@@ -1,7 +1,9 @@
 package io.github.hectorvent.floci.services.secretsmanager;
 
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
+import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.secretsmanager.model.Secret;
 import io.github.hectorvent.floci.services.secretsmanager.model.SecretVersion;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -9,8 +11,11 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -342,6 +347,65 @@ class SecretsManagerServiceTest {
         String nonExistent = "arn:aws:secretsmanager:us-east-1:000000000000:secret:does-not-exist";
         assertThrows(AwsException.class, () ->
                 service.getSecretValue(nonExistent, null, null, REGION));
+    }
+
+    @Test
+    void secretNameFromArnResourceSegmentStripsSuffix() {
+        assertEquals("ctf/lab/flag", SecretsManagerService.secretNameFromArnResourceSegment("ctf/lab/flag-000000"));
+        assertEquals("my-secret", SecretsManagerService.secretNameFromArnResourceSegment("my-secret-ABC123"));
+        assertEquals("plain-name", SecretsManagerService.secretNameFromArnResourceSegment("plain-name"));
+    }
+
+    @Test
+    void getSecretValueByIamPlaceholderArnSucceeds() {
+        Secret secret = service.createSecret("ctf/scoped-flag", "value", null, null, null, null, REGION);
+        String placeholderArn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:ctf/scoped-flag-000000";
+
+        SecretVersion version = service.getSecretValue(placeholderArn, null, null, REGION);
+
+        assertEquals("value", version.getSecretString());
+        assertEquals(secret.getArn(), service.describeSecret(placeholderArn, REGION).getArn());
+    }
+
+    @Test
+    void findSecretResourcePolicyByPlaceholderArn() {
+        Secret secret = service.createSecret("policy-secret", "value", null, null, null, null, REGION);
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"*"},
+               "Action":"secretsmanager:GetSecretValue","Resource":"*"}
+            ]}""";
+        service.putResourcePolicy(secret.getName(), policy, false, REGION);
+
+        String placeholderArn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:policy-secret-000000";
+        Optional<String> doc = service.findSecretResourcePolicyDocument(placeholderArn, REGION);
+
+        assertTrue(doc.isPresent());
+        assertEquals(policy, doc.get());
+    }
+
+    @Test
+    void kmsEnvelopeReturnsSecretBinaryDecryptableByKms() {
+        KmsService kmsService = new KmsService(
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new RegionResolver(REGION, "000000000000"));
+        SecretsManagerKmsSupport kmsSupport = new SecretsManagerKmsSupport(kmsService);
+        SecretsManagerService kmsServiceBacked = new SecretsManagerService(
+                new InMemoryStorage<>(), 30, new RegionResolver(REGION, "000000000000"), kmsSupport);
+
+        String keyId = kmsService.createKey("envelope-key", REGION).getKeyId();
+        kmsServiceBacked.createSecret("kms-wrapped", "flag{envelope}", null, null, keyId, null, REGION);
+
+        SecretVersion version = kmsServiceBacked.getSecretValue("kms-wrapped", null, null, REGION);
+
+        assertNull(version.getSecretString());
+        assertNotNull(version.getSecretBinary());
+
+        byte[] ciphertext = Base64.getDecoder().decode(version.getSecretBinary());
+        byte[] plaintext = kmsService.decrypt(ciphertext, REGION);
+        assertEquals("flag{envelope}", new String(plaintext, StandardCharsets.UTF_8));
     }
 
     @Test

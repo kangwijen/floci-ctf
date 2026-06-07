@@ -32,6 +32,14 @@
 | `FLOCI_SERVICES_SECRETSMANAGER_ENABLED` | `true` | Enable or disable the service |
 | `FLOCI_SERVICES_SECRETSMANAGER_DEFAULT_RECOVERY_WINDOW_DAYS` | `30` | Days before a deleted secret is permanently purged |
 
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- Data-plane calls require SigV4 from a registered IAM user or assumed role with `secretsmanager:*` (or scoped actions) on the secret ARN.
+- Resource policies merge with identity policies via `IamAuthorizationService` (same pattern as S3 bucket policies).
+- Secrets created without a customer-managed KMS key use a placeholder ARN suffix consistent with AWS envelope semantics; KMS decrypt for `GetSecretValue` follows [KMS grant and key policy rules](kms.md#ctf-fork) when a CMK is attached.
+
 ## Examples
 
 ```bash

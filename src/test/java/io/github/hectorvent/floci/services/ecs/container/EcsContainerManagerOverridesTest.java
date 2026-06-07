@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.ContainerInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
+import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
 import io.github.hectorvent.floci.services.ecs.model.ContainerOverride;
 import io.github.hectorvent.floci.services.ecs.model.EcsTask;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
@@ -46,6 +48,7 @@ class EcsContainerManagerOverridesTest {
     private ContainerBuilder.Builder builder;
     private ContainerLifecycleManager lifecycleManager;
     private EcsContainerManager manager;
+    private EcsContainerCredentialsServer credentialsServer;
 
     @BeforeEach
     void setUp() {
@@ -63,9 +66,12 @@ class EcsContainerManagerOverridesTest {
         ContainerDetector containerDetector = mock(ContainerDetector.class);
         EmulatorConfig config = mock(EmulatorConfig.class, RETURNS_DEEP_STUBS);
         RegionResolver regionResolver = mock(RegionResolver.class);
+        DockerHostResolver dockerHostResolver = mock(DockerHostResolver.class);
+        credentialsServer = mock(EcsContainerCredentialsServer.class);
+        when(dockerHostResolver.resolve()).thenReturn("127.0.0.1");
 
         manager = new EcsContainerManager(containerBuilder, lifecycleManager, logStreamer,
-                containerDetector, config, regionResolver);
+                containerDetector, config, regionResolver, dockerHostResolver, credentialsServer);
     }
 
     @Test
@@ -119,8 +125,10 @@ class EcsContainerManagerOverridesTest {
         // sidecar: no matching override -> launched with task-def command and env unchanged.
         assertEquals(List.of("sidecar-default"), commands.get(1),
                 "unmatched container should keep its task-def command");
-        assertEquals(List.of("SIDE_ONLY=s"), envs.get(1),
+        List<String> sidecarEnv = envs.get(1);
+        assertTrue(sidecarEnv.contains("SIDE_ONLY=s"),
                 "unmatched container should keep its task-def environment");
+        assertTrue(sidecarEnv.contains("AWS_DEFAULT_REGION=us-east-1"));
     }
 
     @Test
@@ -149,6 +157,37 @@ class EcsContainerManagerOverridesTest {
         assertTrue(appEnv.contains("PLAYER=ok"));
         assertFalse(appEnv.stream().anyMatch(e -> e.startsWith("AWS_ACCESS_KEY_ID=")));
         assertFalse(appEnv.stream().anyMatch(e -> e.startsWith("FLOCI_AUTH_")));
+    }
+
+    @Test
+    void taskRoleInjectsContainerCredentialsUri() {
+        ContainerDefinition app = containerDef("app", "app:latest",
+                List.of("app-default"),
+                List.of(new KeyValuePair("PLAYER", "ok")));
+        TaskDefinition taskDef = new TaskDefinition();
+        taskDef.setFamily("test-family");
+        taskDef.setTaskRoleArn("arn:aws:iam::000000000000:role/ecs-task-role");
+        taskDef.setContainerDefinitions(List.of(app));
+
+        when(credentialsServer.registerTask(anyString(), eq("abc123"),
+                eq("arn:aws:iam::000000000000:role/ecs-task-role"), eq("test-family"), eq("us-east-1")))
+                .thenReturn("cred-token");
+        when(credentialsServer.credentialsFullUri("127.0.0.1", "cred-token"))
+                .thenReturn("http://127.0.0.1:9170/v2/credentials/cred-token");
+        when(credentialsServer.metadataUriV4("127.0.0.1", "abc123"))
+                .thenReturn("http://127.0.0.1:9170/v4/abc123");
+
+        EcsTask task = new EcsTask();
+        task.setTaskArn("arn:aws:ecs:us-east-1:000000000000:task/test-cluster/abc123");
+        manager.startTask(task, taskDef, List.of(), "us-east-1");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> envCaptor = ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(builder).withEnv(envCaptor.capture());
+        List<String> appEnv = envCaptor.getValue();
+        assertTrue(appEnv.contains("AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:9170/v2/credentials/cred-token"));
+        assertTrue(appEnv.contains("ECS_CONTAINER_METADATA_URI_V4=http://127.0.0.1:9170/v4/abc123"));
+        assertTrue(appEnv.contains("AWS_DEFAULT_REGION=us-east-1"));
     }
 
     private static ContainerDefinition containerDef(String name, String image,

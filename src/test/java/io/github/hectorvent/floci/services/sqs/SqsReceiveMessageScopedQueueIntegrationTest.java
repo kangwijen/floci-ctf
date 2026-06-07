@@ -6,8 +6,11 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
@@ -18,6 +21,7 @@ import static org.hamcrest.Matchers.containsString;
 @QuarkusTest
 @TestProfile(CtfLabIamEnforcementProfile.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SqsReceiveMessageScopedQueueIntegrationTest {
 
     @TestHTTPResource("/")
@@ -73,6 +77,7 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
     }
 
     @Test
+    @Order(1)
     void receiveAllowedQueue() {
         String auth = "AWS4-HMAC-SHA256 Credential=" + playerAkid + "/20260227/us-east-1/sqs/aws4_request";
         given()
@@ -85,6 +90,7 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
     }
 
     @Test
+    @Order(2)
     void receiveDecoyQueueDenied() {
         String auth = "AWS4-HMAC-SHA256 Credential=" + playerAkid + "/20260227/us-east-1/sqs/aws4_request";
         given()
@@ -93,5 +99,30 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
                 .header("Authorization", auth)
                 .when().post("/")
                 .then().statusCode(403);
+    }
+
+    @Test
+    @Order(3)
+    void receiveAllowedQueueWithAlternateHostStillScoped() {
+        String rootSqs = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/sqs/aws4_request";
+        given()
+                .formParam("Action", "SendMessage")
+                .formParam("QueueUrl", allowedQueueUrl)
+                .formParam("MessageBody", "site-id=alt-host")
+                .header("Authorization", rootSqs)
+                .when().post("/")
+                .then().statusCode(200);
+
+        java.net.URI uri = java.net.URI.create(allowedQueueUrl);
+        String altHostUrl = "http://localhost.localstack.cloud:" + uri.getPort() + uri.getPath();
+        String auth = "AWS4-HMAC-SHA256 Credential=" + playerAkid + "/20260227/us-east-1/sqs/aws4_request";
+        given()
+                .formParam("Action", "ReceiveMessage")
+                .formParam("QueueUrl", altHostUrl)
+                .header("Authorization", auth)
+                .when().post("/")
+                .then().statusCode(200)
+                .body(containsString("site-id=alt-host"));
     }
 }

@@ -307,6 +307,38 @@ class IamEnforcementIntegrationTest {
     }
 
     @Test
+    void getSessionTokenSessionPolicyCannotExceedParentUserPolicy() {
+        String parentPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault"}
+            ]}""";
+        String sessionPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+            ]}""";
+        iamService.createUser("parent-user", "/");
+        String parentAccessKeyId = iamService.createAccessKey("parent-user").getAccessKeyId();
+        iamService.putUserPolicy("parent-user", "list-only", parentPolicy);
+        String sessionArn = "arn:aws:sts::000000000000:federated-user/floci-session";
+        iamService.registerSession(
+                "ASIATESTSESSION02",
+                sessionArn,
+                Instant.now().plusSeconds(3600),
+                sessionPolicy,
+                "secret",
+                "000000000000:floci-session",
+                sessionArn,
+                parentAccessKeyId);
+
+        CallerContext caller = iamService.resolveCallerContext("ASIATESTSESSION02");
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", sessionArn,
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
+    }
+
+    @Test
     void allowIamCreatePolicyVersionOnPolicyArn() {
         String policy = """
             {"Version":"2012-10-17","Statement":[
@@ -421,6 +453,47 @@ class IamEnforcementIntegrationTest {
                 "aws:principalarn", "arn:aws:iam::111122223333:user/reader",
                 "aws:principalaccount", "111122223333");
         assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::shared/key",
+                ctx));
+    }
+
+    @Test
+    void accountIdPrincipalDoesNotMatchIamUserInSameAccount() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"111122223333"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::shared/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", "arn:aws:iam::111122223333:user/reader",
+                "aws:principalaccount", "111122223333");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of()),
+                List.of(bucketPolicy),
+                "s3:GetObject",
+                "arn:aws:s3:::shared/key",
+                ctx));
+    }
+
+    @Test
+    void resourcePolicyRolePrincipalMatchesAssumedRoleSession() {
+        String bucketPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Principal":{"AWS":"arn:aws:iam::111122223333:role/DeployRole"},
+               "Action":"s3:GetObject",
+               "Resource":"arn:aws:s3:::shared/*"}
+            ]}""";
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn",
+                "arn:aws:sts::111122223333:assumed-role/DeployRole/session-1",
+                "aws:principalaccount", "111122223333");
+        assertEquals(Decision.ALLOW, evaluator.evaluate(
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",

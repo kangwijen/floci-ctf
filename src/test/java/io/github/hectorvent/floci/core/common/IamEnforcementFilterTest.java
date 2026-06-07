@@ -125,6 +125,14 @@ class IamEnforcementFilterTest {
         assertTrue(!IamEnforcementFilter.isInternalHealthOrInfoPath("/my-bucket"));
     }
 
+    @Test
+    void cognitoOAuthPathsRecognized() {
+        assertTrue(SecurityBypassPaths.isCognitoOAuthPath("/cognito-idp/oauth2/token"));
+        assertTrue(SecurityBypassPaths.isCognitoOAuthPath("cognito-idp/oauth2/userInfo"));
+        assertTrue(!SecurityBypassPaths.isCognitoOAuthPath("/cognito-idp/"));
+        assertTrue(!SecurityBypassPaths.isCognitoOAuthPath("/"));
+    }
+
     private static String entityString(Response r) {
         Object entity = r.getEntity();
         assertNotNull(entity, "response body should not be null");

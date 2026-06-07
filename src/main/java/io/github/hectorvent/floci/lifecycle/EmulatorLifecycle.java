@@ -6,6 +6,8 @@ import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.lifecycle.inithook.InitializationHook;
 import io.github.hectorvent.floci.lifecycle.inithook.InitializationHooksRunner;
 import io.github.hectorvent.floci.services.ec2.Ec2MetadataServer;
+import io.github.hectorvent.floci.services.codebuild.container.CodeBuildContainerCredentialsServer;
+import io.github.hectorvent.floci.services.ecs.container.EcsContainerCredentialsServer;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheContainerManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheMemcachedContainerManager;
@@ -13,6 +15,7 @@ import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheProxyMan
 import io.github.hectorvent.floci.services.lambda.DynamoDbStreamsEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.KinesisEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.SqsEventSourcePoller;
+import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
 import io.github.hectorvent.floci.services.pipes.PipesService;
 import io.github.hectorvent.floci.services.rds.RdsService;
 import io.github.hectorvent.floci.services.rds.container.RdsContainerManager;
@@ -57,6 +60,9 @@ public class EmulatorLifecycle {
     private final DynamoDbStreamsEventSourcePoller dynamodbStreamsPoller;
     private final PipesService pipesService;
     private final Ec2MetadataServer ec2MetadataServer;
+    private final EcsContainerCredentialsServer ecsContainerCredentialsServer;
+    private final LambdaContainerCredentialsServer lambdaContainerCredentialsServer;
+    private final CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer;
     private final EcrRegistryManager ecrRegistryManager;
     private final InitLifecycleState initLifecycleState;
 
@@ -75,6 +81,9 @@ public class EmulatorLifecycle {
                              DynamoDbStreamsEventSourcePoller dynamodbStreamsPoller,
                              PipesService pipesService,
                              Ec2MetadataServer ec2MetadataServer,
+                             EcsContainerCredentialsServer ecsContainerCredentialsServer,
+                             LambdaContainerCredentialsServer lambdaContainerCredentialsServer,
+                             CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer,
                              EcrRegistryManager ecrRegistryManager,
                              InitLifecycleState initLifecycleState) {
         this.storageFactory = storageFactory;
@@ -92,6 +101,9 @@ public class EmulatorLifecycle {
         this.dynamodbStreamsPoller = dynamodbStreamsPoller;
         this.pipesService = pipesService;
         this.ec2MetadataServer = ec2MetadataServer;
+        this.ecsContainerCredentialsServer = ecsContainerCredentialsServer;
+        this.lambdaContainerCredentialsServer = lambdaContainerCredentialsServer;
+        this.codeBuildContainerCredentialsServer = codeBuildContainerCredentialsServer;
         this.ecrRegistryManager = ecrRegistryManager;
         this.initLifecycleState = initLifecycleState;
     }
@@ -126,6 +138,27 @@ public class EmulatorLifecycle {
         if (config.services().ec2().enabled() && !config.services().ec2().mock()) {
             ec2MetadataServer.start().exceptionally(ex -> {
                 LOG.warnv("EC2 IMDS server failed to start: {0}", ex.getMessage());
+                return null;
+            });
+        }
+
+        if (config.services().ecs().enabled() && !config.services().ecs().mock()) {
+            ecsContainerCredentialsServer.start().exceptionally(ex -> {
+                LOG.warnv("ECS container credentials server failed to start: {0}", ex.getMessage());
+                return null;
+            });
+        }
+
+        if (config.services().lambda().enabled()) {
+            lambdaContainerCredentialsServer.start().exceptionally(ex -> {
+                LOG.warnv("Lambda container credentials server failed to start: {0}", ex.getMessage());
+                return null;
+            });
+        }
+
+        if (config.services().codebuild().enabled()) {
+            codeBuildContainerCredentialsServer.start().exceptionally(ex -> {
+                LOG.warnv("CodeBuild container credentials server failed to start: {0}", ex.getMessage());
                 return null;
             });
         }
@@ -189,6 +222,15 @@ public class EmulatorLifecycle {
     void onStop(@Observes ShutdownEvent ignored) {
         if (config.services().ec2().enabled() && !config.services().ec2().mock()) {
             ec2MetadataServer.stop();
+        }
+        if (config.services().ecs().enabled() && !config.services().ecs().mock()) {
+            ecsContainerCredentialsServer.stop();
+        }
+        if (config.services().lambda().enabled()) {
+            lambdaContainerCredentialsServer.stop();
+        }
+        if (config.services().codebuild().enabled()) {
+            codeBuildContainerCredentialsServer.stop();
         }
         elastiCacheProxyManager.stopAll();
         rdsProxyManager.stopAll();

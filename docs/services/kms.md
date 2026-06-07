@@ -39,7 +39,13 @@
 
 ## Grant Support Scope
 
-Grant lifecycle operations (`CreateGrant`, `ListGrants`, `ListRetirableGrants`, `RevokeGrant`, `RetireGrant`) are supported. However, grant lifecycle support **does not** imply grant-based authorization enforcement on cryptographic operations (`Encrypt`, `Decrypt`, `Sign`, `Verify`, `GenerateDataKey`, etc.). Grants are stored and queryable but are not evaluated during crypto operations.
+Grant lifecycle operations (`CreateGrant`, `ListGrants`, `ListRetirableGrants`, `RevokeGrant`, `RetireGrant`) are supported.
+
+In permissive mode, grants are stored and queryable but are **not** evaluated during cryptographic operations (`Encrypt`, `Decrypt`, `Sign`, `Verify`, `GenerateDataKey`, etc.).
+
+## CTF fork {#ctf-fork}
+
+When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evaluate grants after identity and key policy checks. A valid grant for the caller principal and operation can allow `Decrypt` (and related crypto actions) when IAM alone would deny. In-process calls from Step Functions `aws-sdk` tasks do not evaluate grants yet; use the state machine execution role's IAM policy for those paths.
 
 ## Configuration
 

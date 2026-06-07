@@ -15,9 +15,16 @@ class ContainerEnvHardeningTest {
     @Test
     void blocksAwsAndFlociAuthKeys() {
         assertTrue(ContainerEnvHardening.isBlocked("AWS_ACCESS_KEY_ID"));
-        assertTrue(ContainerEnvHardening.isBlocked("FLOCI_AUTH_PRESIGN_SECRET"));
         assertTrue(ContainerEnvHardening.isBlocked("floci_auth_custom"));
         assertFalse(ContainerEnvHardening.isBlocked("CHALLENGE_FLAG"));
+    }
+
+    @Test
+    void blocksCredentialBypassEnvKeys() {
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_CONTAINER_CREDENTIALS_FULL_URI"));
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_EC2_METADATA_SERVICE_ENDPOINT"));
+        assertTrue(ContainerEnvHardening.isBlocked("ECS_CONTAINER_METADATA_URI_V4"));
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_SHARED_CREDENTIALS_FILE"));
     }
 
     @Test
@@ -31,6 +38,16 @@ class ContainerEnvHardeningTest {
 
         assertEquals("scanner", env.get("PLAYER_ROLE"));
         assertFalse(env.containsKey("AWS_SECRET_ACCESS_KEY"));
+    }
+
+    @Test
+    void userEnvCannotInjectContainerCredentialsUri() {
+        Map<String, String> env = new LinkedHashMap<>();
+        ContainerEnvHardening.putAllIfAllowed(env, Map.of(
+                "AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://attacker/creds",
+                "PLAYER_VAR", "ok"));
+        assertFalse(env.containsKey("AWS_CONTAINER_CREDENTIALS_FULL_URI"));
+        assertEquals("ok", env.get("PLAYER_VAR"));
     }
 
     @Test

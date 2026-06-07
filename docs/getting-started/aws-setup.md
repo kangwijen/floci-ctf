@@ -1,17 +1,31 @@
 # AWS CLI & SDK Setup
 
-Floci accepts any non-empty credentials — no real AWS account is needed.
+Floci accepts any non-empty credentials in permissive mode — no real AWS account is needed. The **CTF fork** in this repository requires registered IAM access keys (or the operator root pair) and valid SigV4 signatures when enforcement is enabled.
 
 ## Environment Variables
 
-The simplest approach for local development:
+=== "CTF fork"
 
-```bash
-export AWS_ENDPOINT_URL=http://localhost:4566
-export AWS_DEFAULT_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-```
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    # Operator only:
+    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+    ```
+
+    S3 presigned URLs use AWS SigV4 query auth. Sign with `aws s3 presign` using a registered IAM user's credentials, or the operator root pair. Verification resolves the secret from `X-Amz-Credential` (IAM store or root); there is no separate presign HMAC secret.
+
+=== "Permissive"
+
+    The simplest approach for local development:
+
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    export AWS_ACCESS_KEY_ID=test
+    export AWS_SECRET_ACCESS_KEY=test
+    ```
 
 ## AWS CLI Profile
 

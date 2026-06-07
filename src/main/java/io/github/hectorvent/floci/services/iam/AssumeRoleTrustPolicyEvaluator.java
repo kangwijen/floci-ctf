@@ -39,11 +39,31 @@ public class AssumeRoleTrustPolicyEvaluator {
     public boolean isAssumeRoleTrusted(String trustPolicyDocument,
                                         String callerPrincipalArn,
                                         String externalId) {
+        return isAssumeRoleTrusted(trustPolicyDocument, callerPrincipalArn, externalId, "sts:AssumeRole");
+    }
+
+    /**
+     * @param stsAction STS API being invoked, e.g. {@code sts:AssumeRoleWithWebIdentity}
+     */
+    public boolean isAssumeRoleTrusted(String trustPolicyDocument,
+                                        String callerPrincipalArn,
+                                        String externalId,
+                                        String stsAction) {
+        return isAssumeRoleTrusted(trustPolicyDocument, callerPrincipalArn, externalId, stsAction, null);
+    }
+
+    public boolean isAssumeRoleTrusted(String trustPolicyDocument,
+                                        String callerPrincipalArn,
+                                        String externalId,
+                                        String stsAction,
+                                        FederatedTrustContext federatedContext) {
         if (trustPolicyDocument == null || trustPolicyDocument.isBlank()) {
             return false;
         }
+        String requestedAction = stsAction == null || stsAction.isBlank() ? "sts:AssumeRole" : stsAction;
         String callerArn = callerPrincipalArn == null ? "" : callerPrincipalArn;
         String callerAccount = AwsArnUtils.accountOrDefault(callerArn, "");
+        String federatedPrincipal = federatedContext == null ? null : federatedContext.federatedPrincipal();
 
         Map<String, String> conditionCtx = new LinkedHashMap<>();
         if (externalId != null && !externalId.isBlank()) {
@@ -52,6 +72,13 @@ public class AssumeRoleTrustPolicyEvaluator {
         conditionCtx.put("aws:principalarn", callerArn);
         if (!callerAccount.isBlank()) {
             conditionCtx.put("aws:principalaccount", callerAccount);
+        }
+        if (federatedContext != null) {
+            federatedContext.conditionClaims().forEach((key, value) -> {
+                if (key != null && value != null) {
+                    conditionCtx.put(key.toLowerCase(), value);
+                }
+            });
         }
 
         try {
@@ -64,7 +91,8 @@ public class AssumeRoleTrustPolicyEvaluator {
                 stmtList.add(statements);
             }
             for (JsonNode stmt : stmtList) {
-                if (matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx)) {
+                if (matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx,
+                        requestedAction, federatedPrincipal)) {
                     return true;
                 }
             }
@@ -77,27 +105,29 @@ public class AssumeRoleTrustPolicyEvaluator {
     private boolean matchesTrustStatement(JsonNode stmt,
                                           String callerArn,
                                           String callerAccount,
-                                          Map<String, String> conditionCtx) {
+                                          Map<String, String> conditionCtx,
+                                          String requestedAction,
+                                          String federatedPrincipal) {
         if (!"Allow".equalsIgnoreCase(stmt.path("Effect").asText())) {
             return false;
         }
-        if (!matchesTrustAction(stmt.get("Action"))) {
+        if (!matchesTrustAction(stmt.get("Action"), requestedAction)) {
             return false;
         }
-        if (!PolicyPrincipalMatcher.matchesPrincipalDimension(
-                stmt.get("Principal"), stmt.get("NotPrincipal"), callerArn, callerAccount)) {
+        if (!PolicyPrincipalMatcher.matchesTrustPrincipalDimension(
+                stmt.get("Principal"), stmt.get("NotPrincipal"), callerArn, callerAccount, federatedPrincipal)) {
             return false;
         }
         return matchesTrustConditions(stmt.get("Condition"), conditionCtx);
     }
 
-    private boolean matchesTrustAction(JsonNode actionNode) {
+    private boolean matchesTrustAction(JsonNode actionNode, String requestedAction) {
         if (actionNode == null) {
             return false;
         }
         List<String> actions = nodeToList(actionNode);
         for (String action : actions) {
-            if (IamPolicyEvaluator.globMatches(action, "sts:AssumeRole")
+            if (IamPolicyEvaluator.globMatches(action, requestedAction)
                     || IamPolicyEvaluator.globMatches(action, "sts:*")
                     || "*".equals(action)) {
                 return true;
@@ -147,7 +177,7 @@ public class AssumeRoleTrustPolicyEvaluator {
 
             boolean keyMatch = false;
             for (String condValue : condValues) {
-                if (evaluateSingleCondition(baseOp, ctxValue, condValue)) {
+                if (evaluateSingleCondition(baseOp, ctxValue, condValue, condKey)) {
                     keyMatch = true;
                     break;
                 }
@@ -159,14 +189,14 @@ public class AssumeRoleTrustPolicyEvaluator {
         return true;
     }
 
-    private boolean evaluateSingleCondition(String operator, String ctxValue, String condValue) {
+    private boolean evaluateSingleCondition(String operator, String ctxValue, String condValue, String condKey) {
         return switch (operator) {
-            case "StringEquals" -> ctxValue.equals(condValue);
-            case "StringNotEquals" -> !ctxValue.equals(condValue);
-            case "StringEqualsIgnoreCase" -> ctxValue.equalsIgnoreCase(condValue);
-            case "StringNotEqualsIgnoreCase" -> !ctxValue.equalsIgnoreCase(condValue);
-            case "StringLike" -> IamPolicyEvaluator.globMatches(condValue, ctxValue);
-            case "StringNotLike" -> !IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            case "StringEquals" -> matchesStringEquals(ctxValue, condValue, condKey);
+            case "StringNotEquals" -> !matchesStringEquals(ctxValue, condValue, condKey);
+            case "StringEqualsIgnoreCase" -> matchesStringEqualsIgnoreCase(ctxValue, condValue, condKey);
+            case "StringNotEqualsIgnoreCase" -> !matchesStringEqualsIgnoreCase(ctxValue, condValue, condKey);
+            case "StringLike" -> matchesStringLike(ctxValue, condValue, condKey);
+            case "StringNotLike" -> !matchesStringLike(ctxValue, condValue, condKey);
             case "ArnEquals", "ArnLike" -> IamPolicyEvaluator.globMatches(condValue, ctxValue);
             case "ArnNotEquals", "ArnNotLike" -> !IamPolicyEvaluator.globMatches(condValue, ctxValue);
             default -> {
@@ -174,6 +204,58 @@ public class AssumeRoleTrustPolicyEvaluator {
                 yield false;
             }
         };
+    }
+
+    private static boolean matchesStringEquals(String ctxValue, String condValue, String condKey) {
+        if (isMultiValuedConditionKey(condKey)) {
+            return containsDelimitedValue(ctxValue, condValue, true);
+        }
+        return ctxValue.equals(condValue);
+    }
+
+    private static boolean matchesStringEqualsIgnoreCase(String ctxValue, String condValue, String condKey) {
+        if (isMultiValuedConditionKey(condKey)) {
+            return containsDelimitedValue(ctxValue, condValue, false);
+        }
+        return ctxValue.equalsIgnoreCase(condValue);
+    }
+
+    private static boolean matchesStringLike(String ctxValue, String condValue, String condKey) {
+        if (isMultiValuedConditionKey(condKey)) {
+            for (String value : splitDelimitedValues(ctxValue)) {
+                if (IamPolicyEvaluator.globMatches(condValue, value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return IamPolicyEvaluator.globMatches(condValue, ctxValue);
+    }
+
+    private static boolean isMultiValuedConditionKey(String condKey) {
+        return condKey != null && (condKey.endsWith(":amr") || "amr".equals(condKey));
+    }
+
+    private static boolean containsDelimitedValue(String ctxValue, String condValue, boolean caseSensitive) {
+        for (String value : splitDelimitedValues(ctxValue)) {
+            if (caseSensitive ? value.equals(condValue) : value.equalsIgnoreCase(condValue)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> splitDelimitedValues(String ctxValue) {
+        if (ctxValue == null || ctxValue.isBlank()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (String part : ctxValue.split(",")) {
+            if (!part.isBlank()) {
+                values.add(part.trim());
+            }
+        }
+        return values;
     }
 
     private Map<String, Map<String, List<String>>> parseConditions(JsonNode condNode) {

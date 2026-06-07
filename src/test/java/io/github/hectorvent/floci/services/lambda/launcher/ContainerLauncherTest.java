@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
+import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.lambda.runtime.RuntimeApiServer;
 import io.github.hectorvent.floci.services.lambda.runtime.RuntimeApiServerFactory;
@@ -27,8 +28,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,6 +50,7 @@ class ContainerLauncherTest {
     @Mock EmbeddedDnsServer embeddedDnsServer;
     @Mock RuntimeApiServer runtimeApiServer;
     @Mock DockerClient dockerClient;
+    @Mock LambdaContainerCredentialsServer credentialsServer;
 
     @TempDir
     Path tempDir;
@@ -65,6 +69,7 @@ class ContainerLauncherTest {
         when(services.lambda()).thenReturn(lambda);
         when(lambda.dockerNetwork()).thenReturn(Optional.empty());
         lenient().when(lambda.awsConfigPath()).thenReturn(Optional.empty());
+        lenient().when(lambda.containerCredentialsPort()).thenReturn(9171);
         when(config.docker()).thenReturn(docker);
         when(docker.logMaxSize()).thenReturn("10m");
         when(docker.logMaxFile()).thenReturn("3");
@@ -77,10 +82,13 @@ class ContainerLauncherTest {
         ContainerBuilder containerBuilder = new ContainerBuilder(config, dockerHostResolver, embeddedDnsServer);
         launcher = new ContainerLauncher(containerBuilder, lifecycleManager, logStreamer, imageResolver,
                 runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager, embeddedDnsServer,
-                mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class));
+                mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class), credentialsServer);
+
+        lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 
         when(runtimeApiServerFactory.create()).thenReturn(runtimeApiServer);
         when(runtimeApiServer.getPort()).thenReturn(9000);
+        lenient().when(runtimeApiServer.stop()).thenReturn(CompletableFuture.completedFuture(null));
         when(dockerHostResolver.resolve()).thenReturn("127.0.0.1");
 
         when(lifecycleManager.create(any())).thenReturn("container-123");
@@ -264,7 +272,7 @@ class ContainerLauncherTest {
     }
 
     @Test
-    void launchFunction_userEnvironmentOverridesDefaultCredentials() throws Exception {
+    void launchFunction_userEnvironmentCannotInjectAwsCredentials() throws Exception {
         Path codePath = Files.createDirectory(tempDir.resolve("creds-override"));
 
         LambdaFunction fn = new LambdaFunction();
@@ -274,7 +282,8 @@ class ContainerLauncherTest {
         fn.setCodeLocalPath(codePath.toString());
         fn.setEnvironment(Map.of(
                 "AWS_ACCESS_KEY_ID", "user-key",
-                "AWS_SECRET_ACCESS_KEY", "user-secret"));
+                "AWS_SECRET_ACCESS_KEY", "user-secret",
+                "CHALLENGE_FLAG", "flag{test}"));
 
         launcher.launch(fn);
 
@@ -282,32 +291,9 @@ class ContainerLauncherTest {
         verify(lifecycleManager).create(specCaptor.capture());
 
         List<String> env = specCaptor.getValue().env();
-        // Docker honours the last occurrence of a duplicate Env entry, so user
-        // overrides must appear after the Floci defaults.
-        int defaultKeyIdx = -1;
-        int userKeyIdx = -1;
-        int defaultSecretIdx = -1;
-        int userSecretIdx = -1;
-        for (int i = 0; i < env.size(); i++) {
-            if (env.get(i).startsWith("AWS_ACCESS_KEY_ID=") && userKeyIdx < 0 && !env.get(i).equals("AWS_ACCESS_KEY_ID=user-key")) {
-                defaultKeyIdx = i;
-            }
-            if (env.get(i).equals("AWS_ACCESS_KEY_ID=user-key")) userKeyIdx = i;
-            if (env.get(i).startsWith("AWS_SECRET_ACCESS_KEY=") && userSecretIdx < 0 && !env.get(i).equals("AWS_SECRET_ACCESS_KEY=user-secret")) {
-                defaultSecretIdx = i;
-            }
-            if (env.get(i).equals("AWS_SECRET_ACCESS_KEY=user-secret")) userSecretIdx = i;
-        }
-        assertTrue(defaultKeyIdx >= 0, "default AWS_ACCESS_KEY_ID still present");
-        assertTrue(userKeyIdx > defaultKeyIdx,
-                "user AWS_ACCESS_KEY_ID must appear after the default");
-        assertTrue(defaultSecretIdx >= 0, "default AWS_SECRET_ACCESS_KEY still present");
-        assertTrue(userSecretIdx > defaultSecretIdx,
-                "user AWS_SECRET_ACCESS_KEY must appear after the default");
-
-        // AWS_SESSION_TOKEN was not overridden so the default remains.
-        assertEquals(1, env.stream().filter(e -> e.startsWith("AWS_SESSION_TOKEN=")).count(),
-                "AWS_SESSION_TOKEN should retain its default exactly once");
+        assertTrue(env.contains("CHALLENGE_FLAG=flag{test}"));
+        assertFalse(env.stream().anyMatch(e -> e.equals("AWS_ACCESS_KEY_ID=user-key")));
+        assertFalse(env.stream().anyMatch(e -> e.equals("AWS_SECRET_ACCESS_KEY=user-secret")));
     }
 
     @Test
@@ -442,5 +428,58 @@ class ContainerLauncherTest {
         assertTrue(specCaptor.getValue().binds().stream()
                         .noneMatch(b -> b.getVolume().getPath().equals("/opt/aws-config")),
                 "no .aws bind mount when awsConfigPath is absent");
+    }
+
+    @Test
+    void launchFunction_withExecutionRole_injectsContainerCredentialsUri() throws Exception {
+        Path codePath = Files.createDirectory(tempDir.resolve("exec-role"));
+
+        LambdaFunction fn = new LambdaFunction();
+        fn.setFunctionName("exec-role-fn");
+        fn.setRuntime("nodejs20.x");
+        fn.setHandler("index.handler");
+        fn.setCodeLocalPath(codePath.toString());
+        fn.setRole("arn:aws:iam::000000000000:role/lambda-exec");
+
+        when(credentialsServer.registerFunction(
+                eq("exec-role-fn"),
+                eq("arn:aws:iam::000000000000:role/lambda-exec"),
+                eq("us-east-1"))).thenReturn("cred-token-1");
+        when(credentialsServer.credentialsFullUri("127.0.0.1", "cred-token-1"))
+                .thenReturn("http://127.0.0.1:9171/v2/credentials/cred-token-1");
+
+        launcher.launch(fn);
+
+        ArgumentCaptor<ContainerSpec> specCaptor = ArgumentCaptor.forClass(ContainerSpec.class);
+        verify(lifecycleManager).create(specCaptor.capture());
+
+        List<String> env = specCaptor.getValue().env();
+        assertTrue(env.contains("AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:9171/v2/credentials/cred-token-1"));
+        assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_ACCESS_KEY_ID=")),
+                "operator credentials must not be injected when execution role is set");
+        assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_SECRET_ACCESS_KEY=")),
+                "operator credentials must not be injected when execution role is set");
+    }
+
+    @Test
+    void stopFunction_unregistersExecutionRoleCredentials() throws Exception {
+        Path codePath = Files.createDirectory(tempDir.resolve("stop-creds"));
+
+        LambdaFunction fn = new LambdaFunction();
+        fn.setFunctionName("stop-creds-fn");
+        fn.setRuntime("nodejs20.x");
+        fn.setHandler("index.handler");
+        fn.setCodeLocalPath(codePath.toString());
+        fn.setRole("arn:aws:iam::000000000000:role/lambda-exec");
+
+        when(credentialsServer.registerFunction(any(), any(), any())).thenReturn("cred-token-stop");
+        when(credentialsServer.credentialsFullUri(any(), eq("cred-token-stop")))
+                .thenReturn("http://127.0.0.1:9171/v2/credentials/cred-token-stop");
+
+        ContainerHandle handle = launcher.launch(fn);
+        launcher.stop(handle);
+
+        verify(credentialsServer).unregisterFunction(
+                eq("stop-creds-fn"), eq(java.util.List.of("cred-token-stop")));
     }
 }

@@ -43,6 +43,38 @@ public final class SecurityBypassPaths {
         return ctx.getUriInfo().getQueryParameters().containsKey("X-Amz-Algorithm");
     }
 
+    /**
+     * Cognito hosted-UI OAuth routes ({@code /oauth2/token}, {@code /oauth2/userInfo}).
+     * AWS authenticates these with app-client {@code client_secret_basic} or Bearer JWT,
+     * not SigV4. They are excluded from {@link IamEnforcementFilter} policy evaluation.
+     */
+    public static boolean isCognitoOAuthPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        String normalized = normalizePath(path);
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        return isCognitoOAuthTokenPath(normalized) || isCognitoOAuthUserInfoPath(normalized);
+    }
+
+    public static boolean isCognitoOAuthTokenPath(String path) {
+        return "/cognito-idp/oauth2/token".equals(normalizeLeadingSlash(path));
+    }
+
+    public static boolean isCognitoOAuthUserInfoPath(String path) {
+        return "/cognito-idp/oauth2/userInfo".equals(normalizeLeadingSlash(path));
+    }
+
+    private static String normalizeLeadingSlash(String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+        String normalized = normalizePath(path);
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
+    }
+
     public static String normalizePath(String path) {
         if (path == null || path.isEmpty()) {
             return "";

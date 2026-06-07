@@ -943,6 +943,46 @@ class KmsServiceTest {
                 kmsService.putKeyPolicy("non-existent", "{}", REGION));
     }
 
+    @Test
+    void isGrantAuthorizedAllowsDecryptForGrantee() {
+        KmsKey key = kmsService.createKey("grant-auth-key", REGION);
+        String grantee = "arn:aws:iam::000000000000:user/grantee";
+        kmsService.createGrant(key.getKeyId(), grantee, List.of("Decrypt"), REGION);
+
+        assertTrue(kmsService.isGrantAuthorized(
+                grantee,
+                "000000000000",
+                key.getArn(),
+                "kms:Decrypt",
+                REGION));
+    }
+
+    @Test
+    void isGrantAuthorizedDeniesWithoutMatchingGrant() {
+        KmsKey key = kmsService.createKey("grant-auth-key", REGION);
+
+        assertFalse(kmsService.isGrantAuthorized(
+                "arn:aws:iam::000000000000:user/other",
+                "000000000000",
+                key.getArn(),
+                "kms:Decrypt",
+                REGION));
+    }
+
+    @Test
+    void isGrantAuthorizedDeniesControlPlaneActions() {
+        KmsKey key = kmsService.createKey("grant-auth-key", REGION);
+        String grantee = "arn:aws:iam::000000000000:user/grantee";
+        kmsService.createGrant(key.getKeyId(), grantee, List.of("Decrypt"), REGION);
+
+        assertFalse(kmsService.isGrantAuthorized(
+                grantee,
+                "000000000000",
+                key.getArn(),
+                "kms:PutKeyPolicy",
+                REGION));
+    }
+
     // ── Issue #290 — Key Rotation ───────────────────────────────────────────
 
     @Test

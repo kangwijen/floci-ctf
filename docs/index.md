@@ -8,6 +8,11 @@
 
 ---
 
+!!! warning "CTF fork (this repository)"
+    This tree is **floci-ctf**, a security-hardened fork for CTF and security exercises. Compose enables IAM enforcement, strict mode, and SigV4 validation by default. Operator credentials use `FLOCI_AUTH_ROOT_*`; participants need IAM access keys and SigV4 on every call. `test`/`test` and legacy HMAC presign are not supported.
+
+    Fork operator and agent docs: [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md) and [AGENT.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENT.md). IAM detail: [CTF hardening](services/iam.md#ctf-hardening).
+
 Floci is a fast, free, and open-source local AWS service emulator built for developers who need reliable AWS services in development and CI without cost, complexity, or vendor lock-in.
 
 ## Supported Services
@@ -83,27 +88,39 @@ Floci emulates 53 AWS services. See the [Services Overview](services/index.md) f
 
 ## Quick Start
 
-```yaml title="docker-compose.yml"
-services:
-  floci:
-    image: floci/floci:latest
-    ports:
-      - "4566:4566"
-    volumes:
-      # Local directory bind mount (default)
-      - ./data:/app/data
-      
-      # OR named volume (optional):
-      # - floci-data:/app/data
+=== "CTF fork (operators)"
 
-#volumes:
-#  floci-data:
-```
+    Build or use the hardened image from this repo. Export operator root credentials before `docker compose up`:
 
-```bash
-docker compose up -d
-aws --endpoint-url http://localhost:4566 s3 mb s3://my-bucket
-```
+    ```bash
+    export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
+    export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
+    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+    docker compose up -d
+    ```
+
+    Provision participant IAM users with the root pair, then issue scoped policies and `CreateAccessKey`. See [CTF hardening](services/iam.md#ctf-hardening).
+
+=== "Upstream-style (permissive)"
+
+    ```yaml title="docker-compose.yml"
+    services:
+      floci:
+        image: floci/floci:latest
+        ports:
+          - "4566:4566"
+        volumes:
+          - ./data:/app/data
+    ```
+
+    ```bash
+    docker compose up -d
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_ACCESS_KEY_ID=test
+    export AWS_SECRET_ACCESS_KEY=test
+    aws s3 mb s3://my-bucket
+    ```
 
 All 51 AWS services are immediately available at `http://localhost:4566`.
 

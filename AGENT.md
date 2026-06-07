@@ -44,7 +44,6 @@ Set operator env on the **host**, then start Compose:
 ```bash
 export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
 export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
-export FLOCI_AUTH_PRESIGN_SECRET="$(openssl rand -hex 32)"
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 docker compose up -d
@@ -93,7 +92,7 @@ Operator smoke: `GET http://localhost:4566/health` (not `/_floci/health` unless 
 
 - Using `test`/`test` like upstream docs
 - Root access key ID without paired secret (operator SigV4 fails)
-- Default or missing `FLOCI_AUTH_PRESIGN_SECRET`
+- Presigned URLs signed with unknown access keys (only registered IAM keys or operator root verify)
 - Giving operator root creds to players
 - Expecting `GetCallerIdentity` to return `:root` for IAM user keys
 - Expecting player `AWS_*` in Lambda/ECS/CodeBuild env (stripped)
@@ -107,7 +106,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Action | Policy `Resource` | Request target |
 |--------|-------------------|----------------|
 | `iam:CreateAccessKey` | `arn:aws:iam::ACCOUNT:user/name` | `UserName` in form body |
-| `dynamodb:GetItem` | `arn:aws:dynamodb:REGION:ACCOUNT:table/name` | `TableName` in JSON |
+| `dynamodb:GetItem` / `Query` | `arn:aws:dynamodb:REGION:ACCOUNT:table/name` (and `.../index/name` for GSI) | `TableName`, `IndexName`, or `RequestItems` key in JSON |
+| `dynamodb:PartiQL*` | Same table ARN | `Statement` SQL (`FROM`/`INTO`/`UPDATE` table) on `ExecuteStatement` |
 | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:REGION:ACCOUNT:secret:name-*` | `SecretId` |
 | `kms:Decrypt` | `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` | `KeyId` or Floci `kms:v2:` blob in `CiphertextBlob` |
 | `sqs:ReceiveMessage` | `arn:aws:sqs:REGION:ACCOUNT:queue` | `QueueUrl` |
@@ -122,6 +122,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`), presigned POST.
 
+**In-process IAM:** When `floci.services.iam.enforcement-enabled=true`, `InProcessIamAuthorizer` always denies SFN/APIGW calls without an execution role (state machine `roleArn` or integration `credentials`). Strict mode is not required for that check; when a role ARN is present, identity and resource policies are evaluated like HTTP.
+
 ---
 
 ## CTF implementation map
@@ -131,15 +133,26 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | HTTP IAM + SigV4 | `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths` |
 | Identity policies | `IamPolicyEvaluator`, `IamActionRegistry`, `IamService`, `ResourceArnBuilder` |
 | Resource policies | `ResourcePolicyResolver`, `PolicyPrincipalMatcher` |
-| STS | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `IamUnrestrictedActions` |
+| STS / federated trust | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `FederatedTokenParser`, `PolicyPrincipalMatcher` |
+| S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator.validatePresignedUrl` |
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
-| Containers | `ContainerEnvHardening`, `OperatorCredentialEnv`, `ContainerLauncher`, `EcsContainerManager`, `CodeBuildRunner` |
+| KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
+| In-process IAM | `InProcessIamAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
+| Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
+| Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
 | Compose / image | `docker-compose.yml`, `docker/Dockerfile` (no `test`/`test`) |
 
-**Do not assume:** `IamAuthorizationService`, `StsCallerGuard`, `CtfCredentialHardening`, `EcsContainerCredentialsServer`, in-process APIGW/SFN caller context.
+**Do not assume:** `IamAuthorizationService`, `StsCallerGuard` exist as separate classes (HTTP enforcement is in `IamEnforcementFilter`).
 
-**Known gaps:** KMS grants API; Cognito OAuth bypass; in-process SFN/APIGW to KMS/Secrets; full AWS SigV4 presign; `GetSessionToken` parent-policy intersection; ECS task role is metadata only (no container creds endpoint).
+**Known gaps (prioritize next):**
+- Presigned POST, SigV4a, SSE query params in S3 presign
+- Federated JWT/SAML crypto validation (claims parsed without signature verification; emulator scope)
+- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
+- Lambda/CodeBuild end-to-end IAM integration test (container fetches creds URI and calls scoped API)
+- ECS/Lambda link-local `169.254.170.2` wire parity (creds on host ports 9170/9171/9172)
+- Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
+- In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
 
 ---
 
@@ -148,11 +161,11 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Surface | Hardened with Compose CTF env? |
 |---------|-------------------------------|
 | HTTP `:4566` | Yes (`SigV4ValidationFilter` + `IamEnforcementFilter`) |
-| S3 presigned query URLs | Partial (`PreSignedUrlFilter`) |
+| S3 presigned query URLs | Yes (`PreSignedUrlFilter` SigV4; IAM or root credential secrets only) |
 | RDS / ElastiCache Redis TCP | Partial (token SigV4, not full IAM per query) |
-| Cognito OAuth | No |
-| SFN / APIGW in-process | No |
-| ECS task role at runtime | No (metadata only) |
+| Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
+| SFN / APIGW in-process | Yes when enforcement on (`InProcessIamAuthorizer`; SFN aws-sdk KMS/Secrets/S3 tasks) |
+| Lambda / CodeBuild / ECS runtime creds | Partial (container credentials URIs on 9171/9172/9170; not link-local) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
 
@@ -185,10 +198,10 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 ./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
 ```
 
-**IAM scoping (optional, with enforcement profile tests):**
+**Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,StsAssumeRoleTrustIntegrationTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest
 ```
 
 **E2E against running instance:** `./mvnw test -pl compatibility-tests/sdk-test-java -Dtest=IamEnforcementTest`

@@ -2,6 +2,9 @@
 
 This guide gets Floci running and verifies that AWS CLI commands work against it in under five minutes.
 
+!!! info "CTF fork"
+    This repository ships with IAM enforcement, strict mode, and SigV4 validation enabled in `docker-compose.yml`. Use the **CTF fork** tabs below for operator setup, or see [CTF hardening](../services/iam.md#ctf-hardening). For permissive upstream behavior, build with enforcement disabled or use [floci-io/floci](https://github.com/floci-io/floci).
+
 ## Step 1 — Start Floci
 
 === "Native (recommended)"
@@ -54,6 +57,18 @@ This guide gets Floci running and verifies that AWS CLI commands work against it
     docker compose up -d
     ```
 
+=== "CTF fork (this repo)"
+
+    ```bash
+    git clone https://github.com/kangwijen/floci-ctf.git
+    cd floci-ctf
+    export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
+    export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
+    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+    docker compose up -d
+    ```
+
 === "Build from source"
 
     ```bash
@@ -64,16 +79,31 @@ This guide gets Floci running and verifies that AWS CLI commands work against it
 
 ## Step 2 — Configure AWS CLI
 
-Floci accepts any dummy credentials — no real AWS account needed.
+=== "CTF fork"
 
-```bash
-export AWS_ENDPOINT_URL=http://localhost:4566
-export AWS_DEFAULT_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-```
+    Operator provisioning (root bypasses enforcement when both `FLOCI_AUTH_ROOT_*` values match):
 
-Add these to your shell profile (`.bashrc` / `.zshrc`) so they persist across sessions.
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
+    ```
+
+    Create participant users with IAM, attach policies, and distribute `CreateAccessKey` credentials. Every participant call must be SigV4-signed.
+
+=== "Permissive"
+
+    Floci accepts any dummy credentials — no real AWS account needed.
+
+    ```bash
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    export AWS_DEFAULT_REGION=us-east-1
+    export AWS_ACCESS_KEY_ID=test
+    export AWS_SECRET_ACCESS_KEY=test
+    ```
+
+    Add these to your shell profile (`.bashrc` / `.zshrc`) so they persist across sessions.
 
 ## Step 3 — Verify the Setup
 

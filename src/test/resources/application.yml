@@ -41,7 +41,8 @@ floci:
 
   auth:
     validate-signatures: false
-    presign-secret: test-secret
+    root-access-key-id: AKIATESTPRESIGN01
+    root-secret-access-key: test-presign-root-secret-32chars!!
 
   security:
     disable-cors-headers: false

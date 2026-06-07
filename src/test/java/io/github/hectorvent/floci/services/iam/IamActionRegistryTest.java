@@ -120,6 +120,58 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void resolvesJson11GetItemFromXAmzTarget() {
+        ContainerRequestContext ctx = dynamodbTargetCtx("DynamoDB_20120810.GetItem");
+        assertEquals("dynamodb:GetItem", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void resolvesJson11QueryFromXAmzTarget() {
+        ContainerRequestContext ctx = dynamodbTargetCtx("DynamoDB_20120810.Query");
+        assertEquals("dynamodb:Query", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void executeStatementSelectMapsToPartiQLSelect() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.ExecuteStatement",
+                "{\"Statement\":\"SELECT * FROM \\\"Music\\\" WHERE Artist = ?\"}");
+        assertEquals("dynamodb:PartiQLSelect", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void executeStatementInsertMapsToPartiQLInsert() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.ExecuteStatement",
+                "{\"Statement\":\"INSERT INTO Flowers VALUE {'Name': ?}\"}");
+        assertEquals("dynamodb:PartiQLInsert", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void executeStatementUpdateMapsToPartiQLUpdate() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.ExecuteStatement",
+                "{\"Statement\":\"UPDATE EyeColors SET IsRecessive = ? WHERE Color = ?\"}");
+        assertEquals("dynamodb:PartiQLUpdate", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void executeStatementDeleteMapsToPartiQLDelete() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.ExecuteStatement",
+                "{\"Statement\":\"DELETE FROM \\\"Music\\\" WHERE Artist = ?\"}");
+        assertEquals("dynamodb:PartiQLDelete", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
+    void batchExecuteStatementUsesFirstStatementForAction() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.BatchExecuteStatement",
+                "{\"Statements\":[{\"Statement\":\"UPDATE Eggs SET Style = ? WHERE Variety = ?\"}]}");
+        assertEquals("dynamodb:PartiQLUpdate", registry.resolve("dynamodb", ctx));
+    }
+
+    @Test
     void returnsNullForUnknownRestJsonRoute() {
         ContainerRequestContext ctx = mockCtx(
                 "POST", "/some/unknown/path",
@@ -130,6 +182,30 @@ class IamActionRegistryTest {
     }
 
     // -------------------------------------------------------------------------
+
+    private static ContainerRequestContext dynamodbTargetCtx(String target) {
+        ContainerRequestContext ctx = Mockito.mock(ContainerRequestContext.class);
+        UriInfo uriInfo = Mockito.mock(UriInfo.class);
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(uriInfo.getPath()).thenReturn("/");
+        when(ctx.getUriInfo()).thenReturn(uriInfo);
+        when(ctx.getMediaType()).thenReturn(MediaType.valueOf("application/x-amz-json-1.0"));
+        when(ctx.getMethod()).thenReturn("POST");
+        when(ctx.getHeaderString("X-Amz-Target")).thenReturn(target);
+        return ctx;
+    }
+
+    private static ContainerRequestContext dynamodbTargetWithBody(String target, String body) {
+        AtomicReference<InputStream> streamRef = new AtomicReference<>(
+                new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+        ContainerRequestContext ctx = dynamodbTargetCtx(target);
+        when(ctx.getEntityStream()).thenAnswer(inv -> streamRef.get());
+        doAnswer(inv -> {
+            streamRef.set(inv.getArgument(0));
+            return null;
+        }).when(ctx).setEntityStream(any(InputStream.class));
+        return ctx;
+    }
 
     private static ContainerRequestContext mockCtx(String method, String path,
                                                    MultivaluedMap<String, String> queryParams,

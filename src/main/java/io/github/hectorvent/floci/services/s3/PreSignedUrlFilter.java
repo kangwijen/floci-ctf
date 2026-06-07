@@ -1,7 +1,9 @@
 package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
+import io.github.hectorvent.floci.services.iam.IamService;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -12,21 +14,29 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.Optional;
+
 @Provider
 @ApplicationScoped
 @Priority(Priorities.AUTHENTICATION + 10)
 public class PreSignedUrlFilter implements ContainerRequestFilter {
 
-    /** Set after expiry check and optional HMAC verification succeed. */
+    /** Set after expiry check and optional SigV4 verification succeed. */
     public static final String PRESIGN_VERIFIED_PROPERTY = "floci.s3.presign.verified";
 
     private final PreSignedUrlGenerator presignGenerator;
     private final EmulatorConfig config;
+    private final IamService iamService;
 
     @Inject
-    public PreSignedUrlFilter(PreSignedUrlGenerator presignGenerator, EmulatorConfig config) {
+    public PreSignedUrlFilter(PreSignedUrlGenerator presignGenerator,
+                              EmulatorConfig config,
+                              IamService iamService) {
         this.presignGenerator = presignGenerator;
         this.config = config;
+        this.iamService = iamService;
     }
 
     @Override
@@ -35,6 +45,12 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
 
         String algorithm = queryParams.getFirst("X-Amz-Algorithm");
         if (algorithm == null) {
+            return;
+        }
+
+        if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Unsupported X-Amz-Algorithm value."));
             return;
         }
 
@@ -47,8 +63,9 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
         String amzDate = queryParams.getFirst("X-Amz-Date");
         String expiresStr = queryParams.getFirst("X-Amz-Expires");
         String signature = queryParams.getFirst("X-Amz-Signature");
+        String credential = queryParams.getFirst("X-Amz-Credential");
 
-        if (amzDate == null || expiresStr == null || signature == null) {
+        if (amzDate == null || expiresStr == null || signature == null || credential == null) {
             requestContext.abortWith(errorResponse(403, "AccessDenied",
                     "Missing required pre-signed URL parameters."));
             return;
@@ -63,25 +80,44 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             return;
         }
 
-        if (presignGenerator.isExpired(amzDate, expires)) {
+        Optional<Instant> signedAt = presignGenerator.parseAmzDate(amzDate);
+        if (signedAt.isEmpty()) {
             requestContext.abortWith(errorResponse(403, "AccessDenied",
-                    "Request has expired."));
+                    "Invalid X-Amz-Date value."));
+            return;
+        }
+
+        if (presignGenerator.isExpired(signedAt.get(), expires)) {
+            requestContext.abortWith(expiredResponse(signedAt.get(), expires));
             return;
         }
 
         if (presignGenerator.shouldValidateSignatures()) {
-            String path = requestContext.getUriInfo().getPath();
-            String[] parts = path.split("/", 3);
-            if (parts.length < 3) {
+            String path = requestContext.getUriInfo().getRequestUri().getRawPath();
+            String rawQuery = requestContext.getUriInfo().getRequestUri().getRawQuery();
+            String host = requestContext.getHeaderString("Host");
+            if (host == null || host.isBlank()) {
                 requestContext.abortWith(errorResponse(403, "AccessDenied",
-                        "Invalid pre-signed URL path."));
+                        "Missing Host header for pre-signed URL validation."));
                 return;
             }
-            String bucket = parts[1];
-            String key = parts[2];
-            String method = requestContext.getMethod();
 
-            if (!presignGenerator.verifySignature(method, bucket, key, amzDate, expires, signature)) {
+            String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
+            Optional<String> secret = resolvePresignSecret(accessKeyId);
+            if (secret.isEmpty()) {
+                requestContext.abortWith(errorResponse(403, "AccessDenied",
+                        "Unknown credentials for pre-signed URL."));
+                return;
+            }
+
+            SigV4RequestValidator.Result sigv4Result = SigV4RequestValidator.validatePresignedUrl(
+                    requestContext.getMethod(),
+                    path,
+                    rawQuery,
+                    host,
+                    secret.get());
+
+            if (sigv4Result != SigV4RequestValidator.Result.VALID) {
                 requestContext.abortWith(errorResponse(403, "SignatureDoesNotMatch",
                         "The request signature we calculated does not match the signature you provided."));
                 return;
@@ -89,6 +125,33 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
         }
 
         requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+    }
+
+    private Optional<String> resolvePresignSecret(String accessKeyId) {
+        if (accessKeyId != null) {
+            Optional<String> fromIam = iamService.findSecretKey(accessKeyId);
+            if (fromIam.isPresent()) {
+                return fromIam;
+            }
+            if (config.auth().rootAccessKeyId().filter(accessKeyId::equals).isPresent()) {
+                return config.auth().resolveRootSecretAccessKey();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Response expiredResponse(Instant signedAt, int expiresSeconds) {
+        Instant expiresAt = presignGenerator.expirationTime(signedAt, expiresSeconds);
+        String xml = new XmlBuilder()
+                .raw("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+                .start("Error")
+                  .elem("Code", "AccessDenied")
+                  .elem("Message", "Request has expired")
+                  .elem("Expires", DateTimeFormatter.ISO_INSTANT.format(expiresAt))
+                  .elem("ServerTime", DateTimeFormatter.ISO_INSTANT.format(Instant.now()))
+                .end("Error")
+                .build();
+        return Response.status(403).entity(xml).type(MediaType.APPLICATION_XML).build();
     }
 
     private Response errorResponse(int status, String code, String message) {

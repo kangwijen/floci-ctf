@@ -221,6 +221,7 @@ class LambdaImageConfigTest {
         @Mock EmbeddedDnsServer embeddedDnsServer;
         @Mock RuntimeApiServer runtimeApiServer;
         @Mock DockerClient dockerClient;
+        @Mock io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer credentialsServer;
 
         ContainerLauncher launcher;
 
@@ -243,7 +244,9 @@ class LambdaImageConfigTest {
             ContainerBuilder containerBuilder = new ContainerBuilder(config, dockerHostResolver, embeddedDnsServer);
             launcher = new ContainerLauncher(containerBuilder, lifecycleManager, logStreamer, imageResolver,
                     runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager, embeddedDnsServer,
-                    mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class));
+                    mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class), credentialsServer);
+
+            lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 
             when(runtimeApiServerFactory.create()).thenReturn(runtimeApiServer);
             when(runtimeApiServer.getPort()).thenReturn(9000);

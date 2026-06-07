@@ -28,9 +28,8 @@ Floci is configured exclusively through environment variables. Every option belo
 
 | Variable | Default | Description |
 |---|---|---|
-| `FLOCI_AUTH_VALIDATE_SIGNATURES` | `false` | When `true`, verifies SigV4 `Authorization` headers on inbound AWS API requests (IAM keys from the IAM store or the root operator pair). Also verifies Floci S3 pre-signed URLs via `FLOCI_AUTH_PRESIGN_SECRET` |
-| `FLOCI_AUTH_PRESIGN_SECRET` | `local-emulator-secret` | Secret used to sign and verify Floci-generated S3 pre-signed URLs (not real AWS SigV4) |
-| `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | _(none)_ | Access key ID that bypasses IAM enforcement for operator provisioning. Leave unset for strict mode with no privileged bypass |
+| `FLOCI_AUTH_VALIDATE_SIGNATURES` | `false` | When `true`, verifies SigV4 `Authorization` headers on inbound AWS API requests and validates S3 pre-signed URL signatures (IAM access key secret or operator root pair) |
+| `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | _(none)_ | Access key ID that bypasses IAM enforcement for operator provisioning. Also used by built-in S3 presign URL generation. Leave unset for strict mode with no privileged bypass |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | _(none)_ | Secret access key paired with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` for SigV4 validation when `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
 
 ## Browser CORS
