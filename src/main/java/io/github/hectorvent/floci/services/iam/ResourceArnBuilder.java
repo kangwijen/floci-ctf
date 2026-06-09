@@ -96,6 +96,7 @@ public class ResourceArnBuilder {
             case "es"                   -> buildOpenSearchArn(path, region, accountId);
             case "servicediscovery"     -> buildServiceDiscoveryArn(ctx, region, accountId);
             case "appsync"              -> buildAppSyncArn(ctx, path, region, accountId);
+            case "eks"                  -> buildEksArn(path, region, accountId);
             default                    -> "*";
         };
     }
@@ -1183,7 +1184,9 @@ public class ResourceArnBuilder {
             return AwsArnUtils.Arn.of("athena", region, accountId,
                     "query-execution/" + executionId).toString();
         }
-        String workGroup = readJsonStringField(ctx, "WorkGroup");
+        String workGroup = firstNonBlank(
+                readJsonStringField(ctx, "WorkGroup"),
+                readJsonStringField(ctx, "Name"));
         if (workGroup != null && !workGroup.isBlank()) {
             return AwsArnUtils.Arn.of("athena", region, accountId, "workgroup/" + workGroup).toString();
         }
@@ -1198,6 +1201,37 @@ public class ResourceArnBuilder {
             return AwsArnUtils.Arn.of("es", region, accountId, "domain/" + domain).toString();
         }
         return AwsArnUtils.Arn.of("es", region, accountId, "domain/*").toString();
+    }
+
+    // ── EKS ──────────────────────────────────────────────────────────────────────
+
+    private static final Pattern EKS_CLUSTER =
+            Pattern.compile("/clusters/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EKS_NODEGROUP =
+            Pattern.compile("/clusters/([^/]+)/node-groups/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildEksArn(String path, String region, String accountId) {
+        if (path == null || path.isBlank()) {
+            return AwsArnUtils.Arn.of("eks", region, accountId, "cluster/*").toString();
+        }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        Matcher ng = EKS_NODEGROUP.matcher(normalized);
+        if (ng.find()) {
+            return AwsArnUtils.Arn.of("eks", region, accountId,
+                    "nodegroup/" + ng.group(1) + "/" + ng.group(2) + "/*").toString();
+        }
+        if (normalized.matches(".*/node-groups/?$")) {
+            Matcher clusterForNg = EKS_CLUSTER.matcher(normalized);
+            if (clusterForNg.find()) {
+                return AwsArnUtils.Arn.of("eks", region, accountId,
+                        "nodegroup/" + clusterForNg.group(1) + "/*").toString();
+            }
+        }
+        Matcher cluster = EKS_CLUSTER.matcher(normalized);
+        if (cluster.find()) {
+            return AwsArnUtils.Arn.of("eks", region, accountId, "cluster/" + cluster.group(1)).toString();
+        }
+        return AwsArnUtils.Arn.of("eks", region, accountId, "cluster/*").toString();
     }
 
     // ── AppSync ──────────────────────────────────────────────────────────────────

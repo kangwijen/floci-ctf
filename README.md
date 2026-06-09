@@ -21,7 +21,7 @@
 
 A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.23**, Quarkus **3.36.0**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
-For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENT.md](./AGENT.md).
+For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
 ## What changed
 
@@ -44,9 +44,9 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
 
-**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `PreSignedUrlFilter` (SigV4 presign), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENT.md](./AGENT.md#ctf-implementation-map).
+**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `PreSignedUrlFilter` (SigV4 presign), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 
-After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENT.md](./AGENT.md#upstream-sync).
+After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENTS.md](./AGENTS.md#upstream-sync).
 
 ## Quick start (operators)
 
@@ -145,15 +145,15 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 
 | Topic | Location |
 |---|---|
-| Operators, agents, `floci:local` | [AGENT.md](./AGENT.md) |
+| Operators, agents, `floci:local` | [AGENTS.md](./AGENTS.md) |
 | Fork delta summary (this file) | [README.md](./README.md) |
 | CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |
 
-## Upstream 1.5.23 highlights
+## Upstream highlights
 
-Merged from [floci-io/floci](https://github.com/floci-io/floci) tag **1.5.23**:
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.23** and follow-on commits:
 
 | Area | Change |
 |---|---|
@@ -164,6 +164,14 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) tag **1.5.23**:
 | Glue | Table version checks enforced |
 | Step Functions | `Catch` honored on Lambda task failures |
 | EC2 | `AttachTime` in `describe-instances` network interface response |
+| EKS | Managed node groups (create/describe/list/delete); IAM REST rules in fork |
+| ELBv2 | `DescribeLoadBalancers` availability zones aligned with AWS |
+| CloudFormation | `AWS::StepFunctions::StateMachine` provisioning |
+| SES | Event publishing to Firehose, EventBridge, CloudWatch |
+| EC2 VPC | Default security group and main route table on `CreateVpc` |
+| Athena | `CreateWorkGroup` aligned with AWS; scoped `Name` ARN in fork |
+| Glue | Catalog name normalization, `BatchDeleteTable`, column parameters |
+| Core | `StorageBackedMap` for service state persistence |
 
 ## Upstream sync
 

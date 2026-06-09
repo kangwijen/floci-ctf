@@ -84,7 +84,7 @@ The root `docker-compose.yml` enables a hardened profile by default:
 | SigV4 validation | `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
 | Internal routes hidden | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` |
 
-Notable CTF deltas on core services (full map in [AGENT.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENT.md)):
+Notable CTF deltas on core services (full map in [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md)):
 
 | Area | Behavior when enforcement is on |
 |---|---|

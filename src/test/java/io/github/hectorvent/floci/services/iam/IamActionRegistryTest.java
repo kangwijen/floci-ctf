@@ -182,6 +182,16 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void resolvesEksCreateNodegroupFromRestPath() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/clusters/my-cluster/node-groups",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"nodegroupName\":\"ng1\"}");
+        assertEquals("eks:CreateNodegroup", registry.resolve("eks", ctx));
+    }
+
+    @Test
     void resolvesAppSyncGetGraphqlApiFromRestPath() {
         ContainerRequestContext ctx = mockCtx(
                 "GET", "/v1/apis/abc123",

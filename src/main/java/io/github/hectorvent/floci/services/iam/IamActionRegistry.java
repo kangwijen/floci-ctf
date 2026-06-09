@@ -107,7 +107,17 @@ public class IamActionRegistry {
         rule("appsync", "DELETE", "^/v1/apis/[^/]+/types/[^/]+/resolvers/[^/]+/?$", "appsync:DeleteResolver"),
         rule("appsync", "POST",   "^/v1/apis/[^/]+/schemacreation/?$",         "appsync:StartSchemaCreation"),
         rule("appsync", "GET",    "^/v1/apis/[^/]+/schemacreation/?$",         "appsync:GetSchemaCreationStatus"),
-        rule("appsync", "GET",    "^/v1/apis/[^/]+/schema/?$",                 "appsync:GetIntrospectionSchema")
+        rule("appsync", "GET",    "^/v1/apis/[^/]+/schema/?$",                 "appsync:GetIntrospectionSchema"),
+
+        // ── EKS (REST JSON) ────────────────────────────────────────────────────
+        rule("eks", "POST",   "^/clusters/?$",                                    "eks:CreateCluster"),
+        rule("eks", "GET",    "^/clusters/?$",                                    "eks:ListClusters"),
+        rule("eks", "GET",    "^/clusters/[^/]+/?$",                              "eks:DescribeCluster"),
+        rule("eks", "DELETE", "^/clusters/[^/]+/?$",                              "eks:DeleteCluster"),
+        rule("eks", "POST",   "^/clusters/[^/]+/node-groups/?$",                  "eks:CreateNodegroup"),
+        rule("eks", "GET",    "^/clusters/[^/]+/node-groups/?$",                  "eks:ListNodegroups"),
+        rule("eks", "GET",    "^/clusters/[^/]+/node-groups/[^/]+/?$",            "eks:DescribeNodegroup"),
+        rule("eks", "DELETE", "^/clusters/[^/]+/node-groups/[^/]+/?$",            "eks:DeleteNodegroup")
     );
 
     private static ActionRule rule(String service, String method, String path, String action) {

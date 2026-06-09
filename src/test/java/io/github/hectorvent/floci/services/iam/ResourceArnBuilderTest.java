@@ -551,6 +551,27 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void eksCreateNodegroupBuildsClusterScopedNodegroupWildcard() {
+        ContainerRequestContext ctx = pathCtx("/clusters/my-cluster/node-groups", jsonBodyCtx("{}"));
+        String arn = builder.build("eks", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:eks:us-east-1:222222222222:nodegroup/my-cluster/*", arn);
+    }
+
+    @Test
+    void eksDescribeNodegroupBuildsNodegroupArnFromPath() {
+        ContainerRequestContext ctx = pathCtx("/clusters/my-cluster/node-groups/workers", jsonBodyCtx("{}"));
+        String arn = builder.build("eks", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:eks:us-east-1:222222222222:nodegroup/my-cluster/workers/*", arn);
+    }
+
+    @Test
+    void athenaCreateWorkGroupBuildsWorkgroupArnFromName() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"analytics\"}");
+        String arn = builder.build("athena", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:athena:us-east-1:222222222222:workgroup/analytics", arn);
+    }
+
+    @Test
     void appSyncCreateGraphqlApiBuildsApisWildcard() {
         ContainerRequestContext ctx = pathCtx("/v1/apis", jsonBodyCtx("{}"));
         String arn = builder.build("appsync", ctx, REGION, ACCOUNT);
