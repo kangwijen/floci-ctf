@@ -20,17 +20,29 @@ Floci is configured exclusively through environment variables. Every option belo
 
 ## CTF hardening
 
+**floci-ctf** enables these in [docker-compose.yml](https://github.com/kangwijen/floci-ctf/blob/main/docker-compose.yml). Operator workflow: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
+
 | Variable | Default | Description |
 |---|---|---|
-| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | `false`: expose Floci introspection routes. `true` (default): return HTTP 404 for `/_floci/*` and `/_localstack/*` (including `/_floci/ecr/gc`). `all`: also hide `/health` |
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | `false`: expose introspection routes. `true` (default): HTTP 404 for `/_floci/*`, `/_localstack/*`, and `/_aws/*` (including `/_floci/ecr/gc` and AWS inspection APIs). `all`: also hide `/health` |
+| `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | When `true`, evaluate IAM identity and resource policies on HTTP API calls. `true` in this fork's Compose profile |
+| `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | When `true` with enforcement enabled, deny missing auth, unregistered access keys, unknown IAM action mappings, and invalid presigned URLs instead of allowing them through. `true` in this fork's Compose profile |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | When `true`, STS web identity and SAML assertions must be structurally valid, JWT `exp` must be in the future, `alg=none` is rejected, SAML must contain a `Signature` element, and JWT crypto is verified when signing keys are configured below |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HMAC secret for HS256 web identity JWT verification (CTF labs) |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per OIDC provider host HMAC secret for HS256 verification (for example `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__accounts_google_com`) |
+| `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM-encoded RSA public key for RS256 web identity JWT verification |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | When link-local URI mode is off: bind credential HTTP servers to `127.0.0.1` only (ports 9170/9171/9172). Ignored when link-local URI mode is on (servers bind `0.0.0.0`) |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2/v2/credentials/{token}` (no port) and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; credential servers bind `0.0.0.0`. Lambda/ECS/CodeBuild containers need `extra_hosts: ["169.254.170.2:host-gateway"]` |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
 
 ## Authentication
 
 | Variable | Default | Description |
 |---|---|---|
-| `FLOCI_AUTH_VALIDATE_SIGNATURES` | `false` | When `true`, verifies SigV4 `Authorization` headers on inbound AWS API requests and validates S3 pre-signed URL signatures (IAM access key secret or operator root pair) |
-| `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | _(none)_ | Access key ID that bypasses IAM enforcement for operator provisioning. Also used by built-in S3 presign URL generation. Leave unset for strict mode with no privileged bypass |
+| `FLOCI_AUTH_VALIDATE_SIGNATURES` | `false` | When `true`, verifies SigV4 `Authorization` headers on inbound AWS API requests and validates S3 pre-signed URL signatures (IAM access key secret or operator root pair). `true` in this fork's Compose profile |
+| `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | _(none)_ | Access key ID that bypasses IAM enforcement for operator provisioning. Also used by built-in S3 presign URL generation. Leave unset for strict mode with no privileged bypass. No baked-in `test`/`test` in the CTF Docker image |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | _(none)_ | Secret access key paired with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` for SigV4 validation when `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
+| `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | When `true`, `X-Forwarded-For` may populate `aws:sourceip` in IAM condition evaluation. Default `false` (CTF-safe). Enable only behind a trusted reverse proxy |
 
 ## Browser CORS
 
@@ -114,6 +126,8 @@ Floci's embedded DNS server always resolves the following wildcard suffixes to F
 | Variable | Default | Description |
 |---|---|---|
 | `FLOCI_DNS_EXTRA_SUFFIXES` | _(none)_ | Comma-separated list of additional hostname suffixes to resolve to Floci's container IP. Use this for custom domains beyond the built-in ones above (e.g. a private internal suffix). |
+| `FLOCI_DNS_CONTAINER_FALLBACK_ENABLED` | `true` | When `true`, append public resolvers to spawned containers' DNS config and use them as the embedded forwarder's upstream fallback so Lambda and CodeBuild can resolve public hostnames. Set `false` in offline or locked-down networks |
+| `FLOCI_DNS_CONTAINER_FALLBACK_SERVERS` | `8.8.8.8,8.8.4.4` | Comma-separated public DNS servers used when container fallback is enabled |
 
 ---
 
@@ -206,8 +220,8 @@ See [Initialization Hooks](./initialization-hooks.md) for lifecycle phases and s
 | Variable | Default | Description |
 |---|---|---|
 | `FLOCI_SERVICES_IAM_ENABLED` | `true` | Enable the IAM service |
-| `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | When `true`, enforce IAM policies on API calls. Leave `false` for most local development scenarios |
-| `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | When `true` with enforcement enabled, deny unregistered access keys and unknown IAM action mappings instead of allowing them through |
+| `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | When `true`, enforce IAM policies on API calls. See [CTF hardening](#ctf-hardening) for the fork Compose default |
+| `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | When `true` with enforcement enabled, deny unregistered access keys and unknown IAM action mappings instead of allowing them through. See [CTF hardening](#ctf-hardening) |
 
 ### KMS
 

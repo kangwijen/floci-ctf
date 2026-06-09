@@ -172,6 +172,21 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void batchExecuteStatementResolvesAllStatementActions() {
+        ContainerRequestContext ctx = dynamodbTargetWithBody(
+                "DynamoDB_20120810.BatchExecuteStatement",
+                """
+                {"Statements":[
+                  {"Statement":"SELECT * FROM \\"Orders\\""},
+                  {"Statement":"INSERT INTO \\"Other\\" VALUE {'pk': ?}"}
+                ]}""");
+        var actions = registry.resolveAllDynamoDbBatchActions(ctx);
+        assertEquals(2, actions.size());
+        assertEquals("dynamodb:PartiQLSelect", actions.get(0));
+        assertEquals("dynamodb:PartiQLInsert", actions.get(1));
+    }
+
+    @Test
     void resolvesAppSyncCreateGraphqlApiFromRestPath() {
         ContainerRequestContext ctx = mockCtx(
                 "POST", "/v1/apis",

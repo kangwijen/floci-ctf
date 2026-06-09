@@ -14,9 +14,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -405,6 +407,114 @@ class SigV4RequestValidatorTest {
         SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrl(
                 "GET", path, rawQuery, host, secretKey);
         assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validatePresignedPostPolicy_acceptsValidSignature() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        String amzDate = "20130524T000000Z";
+        String dateStamp = "20130524";
+        String credential = accessKeyId + "/" + dateStamp + "/us-east-1/s3/aws4_request";
+        String policyJson = "{\"expiration\":\"2013-08-07T12:00:00.000Z\",\"conditions\":[]}";
+        String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
+        String signature = SigV4RequestValidator.computePresignedPostSignature(
+                policyBase64, credential, secretKey);
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedPostPolicy(
+                policyBase64,
+                "AWS4-HMAC-SHA256",
+                credential,
+                amzDate,
+                signature,
+                secretKey);
+
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validatePresignedPostPolicy_rejectsTamperedSignature() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        String amzDate = "20130524T000000Z";
+        String credential = accessKeyId + "/20130524/us-east-1/s3/aws4_request";
+        String policyBase64 = Base64.getEncoder().encodeToString("{}".getBytes(StandardCharsets.UTF_8));
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedPostPolicy(
+                policyBase64,
+                "AWS4-HMAC-SHA256",
+                credential,
+                amzDate,
+                "deadbeef",
+                secretKey);
+
+        assertEquals(SigV4RequestValidator.Result.INVALID_SIGNATURE, result);
+    }
+
+    @Test
+    void validatePresignedUrl_acceptsSseQueryParamsInSignedHeaders() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        String amzDate = "20130524T000000Z";
+        String dateStamp = "20130524";
+        String region = "us-east-1";
+        String service = "s3";
+        String credentialScope = dateStamp + "/" + region + "/" + service + "/aws4_request";
+        String credentialValue = accessKeyId + "/" + credentialScope;
+        String host = "examplebucket.s3.amazonaws.com";
+        String path = "/encrypted-object.txt";
+        String kmsKeyId = "arn:aws:kms:us-east-1:000000000000:key/12345678-1234-1234-1234-123456789012";
+        String encryptionContext = Base64.getEncoder().encodeToString(
+                "{\"department\":\"finance\"}".getBytes(StandardCharsets.UTF_8));
+        String signedHeaders = "host;x-amz-server-side-encryption;x-amz-server-side-encryption-aws-kms-key-id;"
+                + "x-amz-server-side-encryption-context";
+
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+        params.put("X-Amz-Credential", credentialValue);
+        params.put("X-Amz-Date", amzDate);
+        params.put("X-Amz-Expires", "86400");
+        params.put("X-Amz-SignedHeaders", signedHeaders);
+        params.put("X-Amz-Server-Side-Encryption", "aws:kms");
+        params.put("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id", kmsKeyId);
+        params.put("X-Amz-Server-Side-Encryption-Context", encryptionContext);
+        String rawQueryWithoutSignature = params.entrySet().stream()
+                .map(e -> SigV4RequestValidator.awsUriEncode(e.getKey(), true)
+                        + "="
+                        + SigV4RequestValidator.awsUriEncode(e.getValue(), true))
+                .collect(Collectors.joining("&"));
+
+        String signature = SigV4RequestValidator.computePresignedSignature(
+                "PUT",
+                path,
+                rawQueryWithoutSignature,
+                host,
+                secretKey,
+                amzDate,
+                signedHeaders,
+                region,
+                service,
+                dateStamp,
+                credentialScope);
+
+        String rawQuery = rawQueryWithoutSignature + "&X-Amz-Signature=" + signature;
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrl(
+                "PUT", path, rawQuery, host, secretKey);
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validatePresignedUrl_rejectsSigV4aAlgorithm() {
+        String rawQuery = "X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256"
+                + "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"
+                + "&X-Amz-Date=20130524T000000Z"
+                + "&X-Amz-Expires=86400"
+                + "&X-Amz-SignedHeaders=host"
+                + "&X-Amz-Signature=abc123";
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrl(
+                "GET", "/object.txt", rawQuery, "examplebucket.s3.amazonaws.com", "secret");
+        assertEquals(SigV4RequestValidator.Result.INVALID_AUTHORIZATION, result);
     }
 
     @Test

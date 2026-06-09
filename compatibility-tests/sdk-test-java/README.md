@@ -81,6 +81,16 @@ mvn test -Dtest=CloudMapIamEnforcementIntegrationTest
 
 Other test classes still default to `test`/`test` and expect permissive mode unless you override credentials globally.
 
+### CI (floci-ctf fork)
+
+`.github/workflows/compatibility.yml` runs `ctf-compat-java` on pull requests: Floci starts with CTF Compose-equivalent env (`FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED`, strict mode, SigV4) and executes `IamEnforcementTest` only. The default `compat-test` matrix still uses permissive Floci for upstream parity.
+
+Run the broader local probe set (adds Cloud Map and AppSync enforcement tests):
+
+```bash
+cd compatibility-tests && just test-ctf-java
+```
+
 ## Docker
 
 ```bash

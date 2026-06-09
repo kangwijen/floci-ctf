@@ -15,8 +15,11 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -546,6 +549,22 @@ public class ResourceArnBuilder {
      * and {@code UPDATE} table targets per the
      * <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html">PartiQL reference</a>.
      */
+    /**
+     * Builds table ARNs for every PartiQL statement in a {@code BatchExecuteStatement} body.
+     */
+    public List<String> buildAllDynamoDbPartiQLResources(ContainerRequestContext ctx,
+                                                         String region, String accountId) {
+        List<String> statementTexts = readAllBatchStatementTexts(ctx);
+        if (statementTexts.isEmpty()) {
+            return List.of();
+        }
+        List<String> arns = new ArrayList<>(statementTexts.size());
+        for (String statement : statementTexts) {
+            arns.add(dynamoDbTableArnFromPartiQL(statement, region, accountId));
+        }
+        return arns;
+    }
+
     static String extractPartiQLTableName(String statement) {
         if (statement == null || statement.isBlank()) {
             return null;
@@ -590,14 +609,49 @@ public class ResourceArnBuilder {
     }
 
     private static String jsonFirstBatchStatement(JsonNode node) {
+        List<String> all = jsonAllBatchStatementTexts(node);
+        return all.isEmpty() ? null : all.getFirst();
+    }
+
+    private List<String> readAllBatchStatementTexts(ContainerRequestContext ctx) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            return jsonAllBatchStatementTexts(node);
+        } catch (Exception ignored) {
+        }
+        return List.of();
+    }
+
+    private static List<String> jsonAllBatchStatementTexts(JsonNode node) {
         JsonNode statements = node.get("Statements");
-        if (statements != null && statements.isArray() && !statements.isEmpty()) {
-            JsonNode first = statements.get(0);
-            if (first != null) {
-                return jsonText(first, "Statement");
+        if (statements == null || !statements.isArray() || statements.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(statements.size());
+        for (JsonNode entry : statements) {
+            if (entry != null) {
+                String text = jsonText(entry, "Statement");
+                if (text != null) {
+                    out.add(text);
+                }
             }
         }
-        return null;
+        return Collections.unmodifiableList(out);
+    }
+
+    private static String dynamoDbTableArnFromPartiQL(String statement, String region, String accountId) {
+        String tableName = extractPartiQLTableName(statement);
+        if (tableName == null || tableName.isBlank()) {
+            return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
+        }
+        if (tableName.startsWith("arn:")) {
+            return tableName;
+        }
+        return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
     }
 
     private static String firstRegexGroup(Pattern quoted, String quotedInput,

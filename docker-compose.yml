@@ -23,6 +23,10 @@ services:
       FLOCI_AUTH_VALIDATE_SIGNATURES: "true"
       # true = hide /_floci/* and /_localstack/* from players; all = also hide /health
       FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS: "true"
+      FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST: "true"
+      # Link-local cred URIs (http://169.254.170.2/v2/credentials/{token}); servers bind 0.0.0.0 on 9170/9171/9172.
+      # Lambda/ECS/CodeBuild containers need: extra_hosts: ["169.254.170.2:host-gateway"]
+      FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI: "true"
       FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY: ${FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY}
       FLOCI_SERVICES_DOCKER_NETWORK: floci_default
       FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"

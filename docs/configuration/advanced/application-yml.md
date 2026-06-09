@@ -30,6 +30,62 @@ environment:
 
 See [Docker Compose — Multi-container networking](../docker-compose.md#multi-container-networking) for a full example.
 
+## CTF fork settings
+
+**floci-ctf** ships IAM enforcement, strict mode, and SigV4 off in `application.yml` for local dev; [docker-compose.yml](https://github.com/kangwijen/floci-ctf/blob/main/docker-compose.yml) turns them on. See [README.md](../../../README.md) and [AGENTS.md](../../../AGENTS.md).
+
+### `floci.ctf`
+
+Maps to `FLOCI_CTF_*` environment variables.
+
+| Setting | Env variable | Default | Description |
+|---|---|---|---|
+| `floci.ctf.hide-internal-endpoints` | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | `false`: expose introspection routes. `true`: HTTP 404 for `/_floci/*`, `/_localstack/*`, and `/_aws/*`. `all`: also hide `/health` |
+| `floci.ctf.container-credentials-bind-localhost` | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind credential servers to `127.0.0.1` when link-local URI mode is off |
+| `floci.ctf.container-credentials-use-link-local-uri` | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | AWS link-local credential URIs; servers bind `0.0.0.0` |
+| `floci.ctf.container-credentials-link-local-host` | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Host in link-local credential URIs |
+| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML `Signature` required; crypto when keys configured |
+| `floci.ctf.federated-jwt-hmac-secret` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 HMAC secret for web identity JWT verification |
+| `floci.ctf.federated-jwt-hmac-secrets` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*` | _(none)_ | Per OIDC provider host HS256 secrets |
+| `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
+
+```yaml
+floci:
+  ctf:
+    hide-internal-endpoints: true
+    container-credentials-bind-localhost: true
+    container-credentials-use-link-local-uri: true
+    container-credentials-link-local-host: 169.254.170.2
+    validate-federated-tokens: false
+    # federated-jwt-hmac-secret: lab-secret
+    # federated-jwt-hmac-secrets:
+    #   accounts.google.com: provider-secret
+    # federated-jwt-rs256-public-key-pem: |
+    #   -----BEGIN PUBLIC KEY-----
+    #   ...
+    #   -----END PUBLIC KEY-----
+```
+
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `/health` | `/_floci/*`, `/_localstack/*`, `/_aws/*` |
+|---|---|---|
+| `false` | 200 | reachable |
+| `true` (default) | 200 | 404 |
+| `all` | 404 | 404 |
+
+### `floci.auth.trust-forwarded-headers`
+
+| Setting | Env variable | Default | Description |
+|---|---|---|---|
+| `floci.auth.trust-forwarded-headers` | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | When `true`, `X-Forwarded-For` may set `aws:sourceip` in IAM conditions. Default ignores forwarded headers (CTF-safe) |
+
+### IAM enforcement (Compose profile)
+
+| Setting | Env variable | Default in repo Compose |
+|---|---|---|
+| `floci.services.iam.enforcement-enabled` | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `true` |
+| `floci.services.iam.strict-enforcement-enabled` | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `true` |
+| `floci.auth.validate-signatures` | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true` |
+
 ## Full Reference
 
 The block below mirrors `src/main/resources/application.yml`, it's the effective set of keys Floci ships with. Some supported keys are omitted here (for example `floci.init-hooks.*`) but can still be provided via YAML or environment variables.
@@ -75,9 +131,24 @@ floci:
     # Via env var (comma-separated): FLOCI_DNS_EXTRA_SUFFIXES=localhost.localstack.cloud,other.internal
     # extra-suffixes:
     #   - localhost.localstack.cloud
+    container-fallback-enabled: true         # FLOCI_DNS_CONTAINER_FALLBACK_ENABLED
+    container-fallback-servers:            # FLOCI_DNS_CONTAINER_FALLBACK_SERVERS=1.1.1.1,1.0.0.1
+      - 8.8.8.8
+      - 8.8.4.4
+
+  ctf:
+    hide-internal-endpoints: true          # FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS — false | true | all
+    container-credentials-bind-localhost: true   # FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST
+    container-credentials-use-link-local-uri: true   # FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI
+    container-credentials-link-local-host: 169.254.170.2   # FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST
+    validate-federated-tokens: false       # FLOCI_CTF_VALIDATE_FEDERATED_TOKENS
+    # federated-jwt-hmac-secret:           # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET
+    # federated-jwt-hmac-secrets:          # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>
+    # federated-jwt-rs256-public-key-pem:  # FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM
 
   auth:
-    validate-signatures: false               # Set to true to enforce AWS SigV4 validation
+    validate-signatures: false               # FLOCI_AUTH_VALIDATE_SIGNATURES
+    # trust-forwarded-headers: false       # FLOCI_AUTH_TRUST_FORWARDED_HEADERS
     # root-access-key-id / root-secret-access-key — operator bypass and built-in S3 presign signing
 
   tls:
@@ -140,7 +211,8 @@ floci:
 
     iam:
       enabled: true
-      enforcement-enabled: false        # Set to true to enforce IAM policies on all requests
+      enforcement-enabled: false        # FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED
+      # strict-enforcement-enabled: false  # FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED
 
     elasticache:
       enabled: true
@@ -253,6 +325,18 @@ All keys in this table are declared on `EmulatorConfig` and accept environment v
 | `FLOCI_DEFAULT_ACCOUNT_ID`                         | `000000000000`   | Default AWS account ID used in ARNs                           |
 | `FLOCI_ECR_BASE_URI`                               | `public.ecr.aws` | Base URI used when pulling container images (e.g. Lambda)     |
 | `FLOCI_DNS_EXTRA_SUFFIXES`                         | *(unset)*        | Comma-separated extra hostname suffixes the embedded DNS server resolves to Floci's container IP. E.g. `localhost.localstack.cloud,localhost.example.internal` |
+| `FLOCI_DNS_CONTAINER_FALLBACK_ENABLED`             | `true`           | Append public resolvers to spawned container DNS; upstream fallback for embedded forwarder |
+| `FLOCI_DNS_CONTAINER_FALLBACK_SERVERS`             | `8.8.8.8,8.8.4.4` | Comma-separated fallback DNS servers when container fallback is enabled |
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS`                | `true`           | `false` / `true` / `all` — hide `/_floci/*`, `/_localstack/*`, `/_aws/*`; `all` also hides `/health` |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST`   | `true`           | Bind container credential HTTP servers to loopback only |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS`              | `false`          | Structural federated token checks; crypto when HMAC/RS256 keys configured |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET`               | _(none)_         | Shared HS256 secret for web identity JWT verification |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*`           | _(none)_         | Per-provider HS256 secrets |
+| `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM`      | _(none)_         | PEM RSA public key for RS256 web identity JWT verification |
+| `FLOCI_AUTH_TRUST_FORWARDED_HEADERS`               | `false`          | Trust `X-Forwarded-For` for `aws:sourceip` in IAM conditions |
+| `FLOCI_AUTH_VALIDATE_SIGNATURES`                   | `false`          | Enforce SigV4 on inbound API requests and S3 presigned query URLs |
+| `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`                    | *(unset)*        | Operator access key; bypasses IAM enforcement when paired with root secret |
+| `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY`                | *(unset)*        | Operator secret for SigV4 validation |
 | `FLOCI_SERVICES_SSM_MAX_PARAMETER_HISTORY`         | `5`              | Max parameter versions kept                                   |
 | `FLOCI_SERVICES_SQS_DEFAULT_VISIBILITY_TIMEOUT`    | `30`             | Default visibility timeout (seconds)                          |
 | `FLOCI_SERVICES_SQS_MAX_MESSAGE_SIZE`              | `262144`         | Max message size (bytes)                                      |

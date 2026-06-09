@@ -134,6 +134,9 @@ public final class SigV4RequestValidator {
             }
 
             String algorithm = queryParam(rawQuery, "X-Amz-Algorithm");
+            if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
+                return Result.INVALID_AUTHORIZATION;
+            }
             if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
                 return Result.INVALID_AUTHORIZATION;
             }
@@ -178,6 +181,73 @@ public final class SigV4RequestValidator {
         } catch (Exception e) {
             return Result.INVALID_SIGNATURE;
         }
+    }
+
+    /**
+     * Validates an S3 presigned POST policy signature (SigV4).
+     *
+     * <p>StringToSign is {@code hex(SHA256(policyBase64))} where {@code policyBase64} is the
+     * base64 policy string from the form field. Signature is
+     * {@code hex(HMAC-SHA256(signingKey, StringToSign))} with the signing key derived from
+     * {@code credential} date, region, and service.
+     */
+    public static Result validatePresignedPostPolicy(String policyBase64,
+                                                     String algorithm,
+                                                     String credential,
+                                                     String amzDate,
+                                                     String providedSignature,
+                                                     String secretKey) {
+        try {
+            if (policyBase64 == null || policyBase64.isBlank()) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            if (credential == null || credential.isBlank()
+                    || amzDate == null || amzDate.isBlank()
+                    || providedSignature == null || providedSignature.isBlank()) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String[] credParts = credential.split("/");
+            if (credParts.length < 5) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            String date = credParts[1];
+            String region = credParts[2];
+            String service = credParts[3];
+
+            String expectedSignature = computePresignedPostSignature(
+                    policyBase64, credential, secretKey);
+
+            if (MessageDigest.isEqual(
+                    expectedSignature.getBytes(StandardCharsets.UTF_8),
+                    providedSignature.getBytes(StandardCharsets.UTF_8))) {
+                return Result.VALID;
+            }
+            return Result.INVALID_SIGNATURE;
+        } catch (Exception e) {
+            return Result.INVALID_SIGNATURE;
+        }
+    }
+
+    /**
+     * Computes the SigV4 signature for an S3 presigned POST policy.
+     */
+    public static String computePresignedPostSignature(String policyBase64,
+                                                       String credential,
+                                                       String secretKey) throws Exception {
+        String[] credParts = credential.split("/");
+        if (credParts.length < 5) {
+            throw new IllegalArgumentException("Invalid X-Amz-Credential");
+        }
+        String date = credParts[1];
+        String region = credParts[2];
+        String service = credParts[3];
+        String stringToSign = sha256Hex(policyBase64);
+        byte[] signingKey = deriveSigningKey(secretKey, date, region, service);
+        return hexEncode(hmacSha256(signingKey, stringToSign));
     }
 
     /**

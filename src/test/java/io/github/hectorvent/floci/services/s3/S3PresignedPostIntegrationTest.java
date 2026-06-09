@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.s3;
 
+import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -21,8 +22,14 @@ import static org.hamcrest.Matchers.*;
 class S3PresignedPostIntegrationTest {
 
     private static final String BUCKET = "presigned-post-bucket";
+    private static final String ACCESS_KEY_ID = "AKIATESTPRESIGN01";
+    private static final String SECRET_KEY = "test-presign-root-secret-32chars!!";
+    private static final String REGION = "us-east-1";
     private static final DateTimeFormatter AMZ_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+
+    private record PostSigFields(String credential, String amzDate, String signature) {
+    }
 
     @Test
     @Order(1)
@@ -43,15 +50,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, contentType, 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", contentType)
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "test-file.txt", fileContent.getBytes(StandardCharsets.UTF_8), contentType)
         .when()
             .post("/" + BUCKET)
@@ -80,15 +88,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "application/octet-stream", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "application/octet-stream")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "binary-data.bin", binaryData, "application/octet-stream")
         .when()
             .post("/" + BUCKET)
@@ -116,15 +125,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "too-large.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
@@ -203,15 +213,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "application/json", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "application/json")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "typed-file.json", fileContent.getBytes(StandardCharsets.UTF_8), "application/octet-stream")
         .when()
             .post("/" + BUCKET)
@@ -250,15 +261,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "text/plain", 1, 100);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "within-range.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
@@ -274,15 +286,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "image/png", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "image/gif")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "ct-mismatch.png", fileContent.getBytes(StandardCharsets.UTF_8), "image/gif")
         .when()
             .post("/" + BUCKET)
@@ -303,15 +316,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, "uploads/expected-key.txt", "text/plain", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "wrong-key.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
@@ -332,15 +346,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildStartsWithPolicy(BUCKET, "uploads/", "text/", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "prefix-test.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
@@ -356,15 +371,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildStartsWithPolicy(BUCKET, "uploads/", "text/", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "wrong-prefix.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
@@ -388,6 +404,7 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "image/png", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         String responseBody =
             given()
@@ -395,9 +412,9 @@ class S3PresignedPostIntegrationTest {
                 .multiPart("Content-Type", "image/gif")
                 .multiPart("policy", policyBase64)
                 .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-                .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-                .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-                .multiPart("x-amz-signature", "dummysignature")
+                .multiPart("x-amz-credential", sig.credential())
+                .multiPart("x-amz-date", sig.amzDate())
+                .multiPart("x-amz-signature", sig.signature())
                 .multiPart("file", "xml-error-check.png", fileContent.getBytes(StandardCharsets.UTF_8), "image/gif")
             .when()
                 .post("/" + BUCKET)
@@ -428,6 +445,7 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "image/png", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         // Send with capital-P "Policy" and mismatched Content-Type — should be rejected
         given()
@@ -435,9 +453,9 @@ class S3PresignedPostIntegrationTest {
             .multiPart("Content-Type", "image/gif")
             .multiPart("Policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "capital-p-reject.png", fileContent.getBytes(StandardCharsets.UTF_8), "image/gif")
         .when()
             .post("/" + BUCKET)
@@ -459,21 +477,51 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("Policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("file", "capital-p-ok.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
         .when()
             .post("/" + BUCKET)
         .then()
             .statusCode(204)
             .header("ETag", notNullValue());
+    }
+
+    @Test
+    @Order(98)
+    void presignedPostRejectsInvalidSignature() {
+        String key = "uploads/bad-signature.txt";
+        String fileContent = "bad signature test";
+
+        String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
+        String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
+
+        given()
+            .multiPart("key", key)
+            .multiPart("Content-Type", "text/plain")
+            .multiPart("policy", policyBase64)
+            .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", "deadbeef")
+            .multiPart("file", "bad-signature.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
+        .when()
+            .post("/" + BUCKET)
+        .then()
+            .statusCode(403)
+            .contentType("application/xml")
+            .body(hasXPath("/Error/Code", equalTo("AccessDenied")))
+            .body(hasXPath("/Error/Message", equalTo(
+                    "The request signature we calculated does not match the signature you provided.")));
     }
 
     @Test
@@ -484,15 +532,16 @@ class S3PresignedPostIntegrationTest {
 
         String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
         String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
 
         given()
             .multiPart("key", key)
             .multiPart("Content-Type", "text/plain")
             .multiPart("policy", policyBase64)
             .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
-            .multiPart("x-amz-credential", "AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/s3/aws4_request")
-            .multiPart("x-amz-date", AMZ_DATE_FORMAT.format(Instant.now()))
-            .multiPart("x-amz-signature", "dummysignature")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
             .multiPart("x-amz-meta-source", "camera")
             .multiPart("x-amz-meta-owner", "test-user")
             .multiPart("file", "with-metadata.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
@@ -545,6 +594,19 @@ class S3PresignedPostIntegrationTest {
                   ]
                 }
                 """.formatted(expiration, bucket, key, contentType, minSize, maxSize);
+    }
+
+    private PostSigFields signPost(String policyBase64, Instant when) {
+        String amzDate = AMZ_DATE_FORMAT.format(when);
+        String dateStamp = amzDate.substring(0, 8);
+        String credential = ACCESS_KEY_ID + "/" + dateStamp + "/" + REGION + "/s3/aws4_request";
+        try {
+            String signature = SigV4RequestValidator.computePresignedPostSignature(
+                    policyBase64, credential, SECRET_KEY);
+            return new PostSigFields(credential, amzDate, signature);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to sign presigned POST policy", e);
+        }
     }
 
     private String buildStartsWithPolicy(String bucket, String keyPrefix, String contentTypePrefix,

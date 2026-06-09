@@ -583,6 +583,32 @@ class IamServiceTest {
     }
 
     @Test
+    void purgeExpiredSessionsRemovesOnlyExpiredEntries() {
+        String expiredAkid = "ASIAEXPIREDPURGE001";
+        String activeAkid = "ASIAACTIVEPURGE0001";
+        iamService.registerSession(
+                expiredAkid,
+                "arn:aws:iam::000000000000:role/expired",
+                Instant.now().minusSeconds(120),
+                null,
+                "expired-secret-key-value-0123456789",
+                null,
+                null);
+        iamService.registerSession(
+                activeAkid,
+                "arn:aws:iam::000000000000:role/active",
+                Instant.now().plusSeconds(3600),
+                null,
+                "active-secret-key-value-0123456789",
+                null,
+                null);
+
+        assertEquals(1, iamService.purgeExpiredSessions());
+        assertTrue(iamService.findSecretKey(expiredAkid).isEmpty());
+        assertEquals("active-secret-key-value-0123456789", iamService.findSecretKey(activeAkid).orElseThrow());
+    }
+
+    @Test
     void findSecretKeyRejectsExpiredSessionCredentials() {
         String sessionAkid = "ASIAEXPIREDSESSION01";
         iamService.registerSession(

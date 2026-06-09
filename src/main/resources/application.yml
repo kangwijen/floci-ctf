@@ -104,6 +104,17 @@ floci:
   ctf:
     # false | true (default) | all — hide unauthenticated /_floci/*, /_localstack/*, and optionally /health
     hide-internal-endpoints: true
+    # Bind Lambda/ECS/CodeBuild container credential HTTP to localhost only (when link-local URI is off)
+    container-credentials-bind-localhost: true
+    # AWS link-local credential URIs (http://169.254.170.2/v2/credentials/{token}); binds servers to 0.0.0.0
+    container-credentials-use-link-local-uri: true
+    container-credentials-link-local-host: 169.254.170.2
+    # Optional JWT/SAML validation for AssumeRoleWithWebIdentity / SAML
+    validate-federated-tokens: false
+    # federated-jwt-hmac-secret:           # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET
+    # federated-jwt-hmac-secrets:          # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>
+    #   accounts.google.com: lab-secret
+    # federated-jwt-rs256-public-key-pem:  # FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM
 
   auth:
     validate-signatures: false

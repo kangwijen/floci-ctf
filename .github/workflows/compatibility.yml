@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Default compat-test matrix uses permissive Floci (no IAM enforcement) for upstream SDK parity.
+# CTF fork IAM probes run in ctf-compat-java with Compose-equivalent env vars.
+
 jobs:
   build:
     name: Build floci image
@@ -161,3 +164,90 @@ jobs:
       - name: Dump floci logs
         if: failure()
         run: docker logs floci
+
+  ctf-compat-java:
+    name: CTF IAM enforcement (sdk-test-java)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CTF_CI_ROOT_ACCESS_KEY_ID: AKIACTFCIROOT00001
+      CTF_CI_ROOT_SECRET_ACCESS_KEY: ctf-ci-root-secret-32chars!!!!!!
+    steps:
+      - name: Download floci image
+        uses: actions/download-artifact@v8
+        with:
+          name: floci-image
+          path: /tmp
+
+      - name: Load floci image
+        run: gunzip -c /tmp/floci-image.tar.gz | docker load
+
+      - name: Create Docker network
+        run: docker network create compat-ctf-net
+
+      - name: Start floci with CTF security profile
+        run: |
+          DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+          docker run -d --name floci-ctf --network compat-ctf-net \
+            -p 4566:4566 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            --group-add "$DOCKER_GID" \
+            -e FLOCI_BASE_URL=http://floci-ctf:4566 \
+            -e FLOCI_SERVICES_DOCKER_NETWORK=compat-ctf-net \
+            -e FLOCI_HOSTNAME=floci-ctf \
+            -e FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true \
+            -e FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED=true \
+            -e FLOCI_AUTH_VALIDATE_SIGNATURES=true \
+            -e FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true \
+            -e FLOCI_AUTH_ROOT_ACCESS_KEY_ID="$CTF_CI_ROOT_ACCESS_KEY_ID" \
+            -e FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="$CTF_CI_ROOT_SECRET_ACCESS_KEY" \
+            -e FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED=true \
+            -e FLOCI_TLS_ENABLED=true \
+            -e FLOCI_SERVICES_EC2_MOCK=true \
+            floci:test
+
+      - name: Wait for floci to be ready
+        run: timeout 60 bash -c 'until curl -sf http://localhost:4566/ >/dev/null 2>&1; do sleep 1; done'
+
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: compatibility-tests/sdk-test-java
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build sdk-test-java image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: compatibility-tests/sdk-test-java
+          load: true
+          tags: compat-sdk-test-java-ctf
+          cache-from: type=gha,scope=sdk-test-java-ctf
+          cache-to: type=gha,scope=sdk-test-java-ctf,mode=max
+
+      - name: Run IamEnforcementTest
+        id: ctf-tests
+        run: |
+          mkdir -p test-results
+          FLOCI_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "compat-ctf-net").IPAddress}}' floci-ctf)
+          docker run --rm --network compat-ctf-net \
+            --dns "${FLOCI_IP}" \
+            -e FLOCI_ENDPOINT=http://floci-ctf:4566 \
+            -e FLOCI_S3_VHOST_ENDPOINT=http://floci-ctf:4566 \
+            -e AWS_ACCESS_KEY_ID="$CTF_CI_ROOT_ACCESS_KEY_ID" \
+            -e AWS_SECRET_ACCESS_KEY="$CTF_CI_ROOT_SECRET_ACCESS_KEY" \
+            -v "$(pwd)/test-results:/results" \
+            --entrypoint bash \
+            compat-sdk-test-java-ctf \
+            -c 'status=0; mvn test -q -Dtest=IamEnforcementTest -Dorg.slf4j.simpleLogger.defaultLogLevel=warn || status=$?; if [ -d target/surefire-reports ]; then cp target/surefire-reports/TEST-*.xml /results/ 2>/dev/null || true; fi; exit $status'
+
+      - name: Generate test summary
+        if: always() && steps.ctf-tests.outcome != 'skipped'
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2
+        with:
+          paths: test-results/*.xml
+
+      - name: Dump floci logs
+        if: failure()
+        run: docker logs floci-ctf

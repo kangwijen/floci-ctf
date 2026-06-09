@@ -156,7 +156,8 @@ public class StsQueryHandler {
         FederatedTrustContext federatedContext = FederatedTokenParser.parseWebIdentityToken(
                 getParam(params, "WebIdentityToken"),
                 providerId,
-                roleAccountId);
+                roleAccountId,
+                FederatedTokenValidationConfig.from(config.ctf()));
 
         String accessKeyId = "ASIA" + randomId(16);
         String secretKey = randomSecret(40);
@@ -325,16 +326,19 @@ public class StsQueryHandler {
                                                              String stsAction,
                                                              String roleArn) {
         String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
+        FederatedTokenValidationConfig validationConfig = FederatedTokenValidationConfig.from(config.ctf());
         if ("sts:AssumeRoleWithWebIdentity".equals(stsAction)) {
             return FederatedTokenParser.parseWebIdentityToken(
                     getParam(params, "WebIdentityToken"),
                     getParam(params, "ProviderId"),
-                    roleAccountId);
+                    roleAccountId,
+                    validationConfig);
         }
         if ("sts:AssumeRoleWithSAML".equals(stsAction)) {
             return FederatedTokenParser.parseSamlAssertion(
                     getParam(params, "SAMLAssertion"),
-                    getParam(params, "PrincipalArn"));
+                    getParam(params, "PrincipalArn"),
+                    validationConfig);
         }
         return null;
     }

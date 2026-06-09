@@ -188,7 +188,7 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 
 **Resource-based policies (HTTP):** S3 bucket policy, Lambda resource policy, SQS queue policy, SNS topic policy, KMS key policy (see above).
 
-**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals, presigned POST (`policy` form field).
+**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. S3 presigned POST policy SigV4 is validated in `S3Controller` when signature form fields are present.
 
 ### Assumed roles
 
@@ -233,6 +233,19 @@ Use this profile when Floci backs a capture-the-flag or security exercise and yo
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true` | Verify SigV4 request signatures using the caller's secret access key |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | operator secret | Access key ID for operator provisioning |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | operator secret | Secret access key paired with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`; both must match for the operator bypass |
+
+Optional CTF controls (see [environment variables](../configuration/environment-variables.md#ctf-hardening)):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | Hide `/_floci/*`, `/_localstack/*`, `/_aws/*`; `all` also hides `/health` |
+| `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | Trust `X-Forwarded-For` for `aws:sourceip` (enable only behind a trusted proxy) |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML `Signature` required on `AssumeRoleWithWebIdentity` / SAML |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 secret for web identity JWT verification when validation is enabled |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per-provider HS256 secrets (for example `accounts_google.com`) |
+| `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind Lambda/CodeBuild/ECS credential HTTP servers to `127.0.0.1` |
+
 The repository `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation by default. Export operator credentials on the host before starting Compose:
 
 ```bash

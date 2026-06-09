@@ -31,6 +31,7 @@ class LambdaContainerCredentialsServerTest {
     private Vertx vertx;
     private LambdaContainerCredentialsServer server;
     private IamService iamService;
+    private EmulatorConfig.CtfConfig ctf;
     private HttpClient httpClient;
     private int port;
 
@@ -44,7 +45,11 @@ class LambdaContainerCredentialsServerTest {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
         EmulatorConfig.LambdaServiceConfig lambda = mock(EmulatorConfig.LambdaServiceConfig.class);
+        ctf = mock(EmulatorConfig.CtfConfig.class);
         when(config.services()).thenReturn(services);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.containerCredentialsBindLocalhost()).thenReturn(true);
+        when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(false);
         when(services.lambda()).thenReturn(lambda);
         when(config.defaultAccountId()).thenReturn("000000000000");
         port = findFreePort();
@@ -86,7 +91,7 @@ class LambdaContainerCredentialsServerTest {
         assertTrue(response.body().contains("\"AccessKeyId\":\"ASIA"));
         assertTrue(response.body().contains("\"RoleArn\":\"arn:aws:iam::000000000000:role/lambda-exec-role\""));
         verify(iamService).registerSession(anyString(), eq("arn:aws:iam::000000000000:role/lambda-exec-role"),
-                any(Instant.class), isNull(), anyString(), anyString(), anyString());
+                any(Instant.class), isNull(), anyString(), anyString(), anyString(), isNull(), anyString());
     }
 
     @Test
@@ -119,6 +124,19 @@ class LambdaContainerCredentialsServerTest {
     void credentialsFullUriUsesConfiguredPort() {
         String uri = server.credentialsFullUri("127.0.0.1", "abc-token");
         assertEquals("http://127.0.0.1:" + port + "/v2/credentials/abc-token", uri);
+    }
+
+    @Test
+    void credentialsRelativeUriReturnsPathOnly() {
+        assertEquals("/v2/credentials/abc-token", server.credentialsRelativeUri("abc-token"));
+    }
+
+    @Test
+    void credentialsFullUriUsesLinkLocalHostWhenEnabled() {
+        when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(true);
+        when(ctf.containerCredentialsLinkLocalHost()).thenReturn("169.254.170.2");
+        assertEquals("http://169.254.170.2/v2/credentials/abc-token",
+                server.credentialsFullUri("ignored-host", "abc-token"));
     }
 
     private static int findFreePort() throws Exception {

@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.ecs.container;
 
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsUriBuilder;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
@@ -40,6 +41,7 @@ public class EcsContainerCredentialsServer {
     private final Vertx vertx;
     private final EmulatorConfig config;
     private final IamService iamService;
+    private final ContainerCredentialsUriBuilder uriBuilder;
 
     /** credential token -> registration */
     private final Map<String, CredentialRegistration> tokenToRegistration = new ConcurrentHashMap<>();
@@ -53,6 +55,8 @@ public class EcsContainerCredentialsServer {
         this.vertx = vertx;
         this.config = config;
         this.iamService = iamService;
+        this.uriBuilder = new ContainerCredentialsUriBuilder(
+                config, () -> config.services().ecs().containerCredentialsPort());
     }
 
     /**
@@ -89,8 +93,11 @@ public class EcsContainerCredentialsServer {
     }
 
     public String credentialsFullUri(String hostAddress, String credentialToken) {
-        int port = config.services().ecs().containerCredentialsPort();
-        return "http://" + hostAddress + ":" + port + "/v2/credentials/" + credentialToken;
+        return uriBuilder.credentialsFullUri(hostAddress, credentialToken);
+    }
+
+    public String credentialsRelativeUri(String credentialToken) {
+        return uriBuilder.credentialsRelativeUri(credentialToken);
     }
 
     public String metadataUriV4(String hostAddress, String taskId) {
@@ -108,10 +115,11 @@ public class EcsContainerCredentialsServer {
         router.get("/v4/:taskId").handler(this::handleTaskMetadata);
         router.get("/v4/:taskId/task").handler(this::handleTaskMetadata);
 
+        String bindHost = uriBuilder.resolveBindHost();
         httpServer = vertx.createHttpServer();
-        httpServer.requestHandler(router).listen(port, result -> {
+        httpServer.requestHandler(router).listen(port, bindHost, result -> {
             if (result.succeeded()) {
-                LOG.infof("ECS container credentials server listening on port %d", port);
+                LOG.infof("ECS container credentials server listening on %s:%d", bindHost, port);
                 future.complete(null);
             } else {
                 LOG.warnf("ECS container credentials server failed to start on port %d: %s",

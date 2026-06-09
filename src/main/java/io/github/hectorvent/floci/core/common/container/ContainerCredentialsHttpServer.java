@@ -39,6 +39,7 @@ public final class ContainerCredentialsHttpServer {
     private final IamService iamService;
     private final IntSupplier portSupplier;
     private final String label;
+    private final ContainerCredentialsUriBuilder uriBuilder;
 
     private final Map<String, CredentialRegistration> tokenToRegistration = new ConcurrentHashMap<>();
 
@@ -51,6 +52,7 @@ public final class ContainerCredentialsHttpServer {
         this.iamService = iamService;
         this.portSupplier = portSupplier;
         this.label = label;
+        this.uriBuilder = new ContainerCredentialsUriBuilder(config, portSupplier);
         this.log = Logger.getLogger(ContainerCredentialsHttpServer.class.getName() + "." + label);
     }
 
@@ -81,8 +83,11 @@ public final class ContainerCredentialsHttpServer {
     }
 
     public String credentialsFullUri(String hostAddress, String credentialToken) {
-        int port = portSupplier.getAsInt();
-        return "http://" + hostAddress + ":" + port + "/v2/credentials/" + credentialToken;
+        return uriBuilder.credentialsFullUri(hostAddress, credentialToken);
+    }
+
+    public String credentialsRelativeUri(String credentialToken) {
+        return uriBuilder.credentialsRelativeUri(credentialToken);
     }
 
     public CompletableFuture<Void> start() {
@@ -93,10 +98,11 @@ public final class ContainerCredentialsHttpServer {
         router.route().handler(BodyHandler.create());
         router.get("/v2/credentials/:token").handler(this::handleCredentials);
 
+        String bindHost = uriBuilder.resolveBindHost();
         httpServer = vertx.createHttpServer();
-        httpServer.requestHandler(router).listen(port, result -> {
+        httpServer.requestHandler(router).listen(port, bindHost, result -> {
             if (result.succeeded()) {
-                log.infof("%s container credentials server listening on port %d", label, port);
+                log.infof("%s container credentials server listening on %s:%d", label, bindHost, port);
                 future.complete(null);
             } else {
                 log.warnf("%s container credentials server failed to start on port %d: %s",

@@ -44,7 +44,11 @@ class EcsContainerCredentialsServerTest {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
         EmulatorConfig.EcsServiceConfig ecs = mock(EmulatorConfig.EcsServiceConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
         when(config.services()).thenReturn(services);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.containerCredentialsBindLocalhost()).thenReturn(true);
+        when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(false);
         when(services.ecs()).thenReturn(ecs);
         when(config.defaultAccountId()).thenReturn("000000000000");
         port = findFreePort();
@@ -88,7 +92,7 @@ class EcsContainerCredentialsServerTest {
         assertTrue(response.body().contains("\"AccessKeyId\":\"ASIA"));
         assertTrue(response.body().contains("\"RoleArn\":\"arn:aws:iam::000000000000:role/ecs-task-role\""));
         verify(iamService).registerSession(anyString(), eq("arn:aws:iam::000000000000:role/ecs-task-role"),
-                any(Instant.class), isNull(), anyString(), anyString(), anyString());
+                any(Instant.class), isNull(), anyString(), anyString(), anyString(), isNull(), anyString());
     }
 
     @Test

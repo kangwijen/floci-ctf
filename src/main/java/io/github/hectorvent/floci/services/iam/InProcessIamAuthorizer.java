@@ -24,6 +24,11 @@ import java.util.Map;
  * <p>When enforcement is enabled and a caller role ARN is supplied, identity and resource
  * policies are evaluated the same way as HTTP requests. Calls without an execution role
  * are always denied when enforcement is on.
+ *
+ * <p>Grant fallback mirrors {@link io.github.hectorvent.floci.core.common.IamEnforcementFilter}:
+ * only KMS data-plane grants ({@link KmsService#isGrantAuthorized}) can authorize when identity
+ * and resource policies deny. S3, Secrets Manager, and other services have no grant model in
+ * this emulator.
  */
 @ApplicationScoped
 public class InProcessIamAuthorizer {

@@ -23,11 +23,12 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
-import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Core IAM business logic — users, groups, roles, policies, access keys, instance profiles.
@@ -38,6 +39,7 @@ public class IamService {
 
     private static final Logger LOG = Logger.getLogger(IamService.class);
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static final int SESSION_PURGE_LOOKUP_INTERVAL = 100;
 
     private final StorageBackend<String, IamUser> users;
     private final StorageBackend<String, IamGroup> groups;
@@ -48,6 +50,7 @@ public class IamService {
     private final StorageBackend<String, SessionCredential> sessions;
     private final RegionResolver regionResolver;
     private final AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator;
+    private final AtomicInteger sessionLookupCount = new AtomicInteger();
 
     @Inject
     public IamService(StorageFactory storageFactory,
@@ -870,6 +873,7 @@ public class IamService {
     // =========================================================================
 
     public Optional<String> findSecretKey(String accessKeyId) {
+        maybePurgeExpiredSessions();
         Optional<String> userSecret = accessKeys.get(accessKeyId).map(AccessKey::getSecretAccessKey);
         if (userSecret.isPresent()) {
             return userSecret;
@@ -955,6 +959,7 @@ public class IamService {
     }
 
     public Optional<String> findSessionToken(String accessKeyId) {
+        maybePurgeExpiredSessions();
         Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
         if (sessionOpt.isEmpty()) {
             return Optional.empty();
@@ -969,6 +974,31 @@ public class IamService {
             return Optional.empty();
         }
         return Optional.of(token);
+    }
+
+    /**
+     * Removes session credentials whose expiration is before now.
+     *
+     * @return number of sessions removed
+     */
+    public int purgeExpiredSessions() {
+        Instant now = Instant.now();
+        List<String> expiredKeys = new ArrayList<>();
+        for (SessionCredential session : sessions.scan(key -> true)) {
+            if (session.getExpiration() != null && session.getExpiration().isBefore(now)) {
+                expiredKeys.add(session.getAccessKeyId());
+            }
+        }
+        for (String key : expiredKeys) {
+            sessions.delete(key);
+        }
+        return expiredKeys.size();
+    }
+
+    private void maybePurgeExpiredSessions() {
+        if (sessionLookupCount.incrementAndGet() % SESSION_PURGE_LOOKUP_INTERVAL == 0) {
+            purgeExpiredSessions();
+        }
     }
 
     /**

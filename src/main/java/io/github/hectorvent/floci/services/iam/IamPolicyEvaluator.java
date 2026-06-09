@@ -11,6 +11,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,9 +43,17 @@ public class IamPolicyEvaluator {
     public enum Decision { ALLOW, DENY }
 
     private static final Logger LOG = Logger.getLogger(IamPolicyEvaluator.class);
+    private static final int POLICY_PARSE_CACHE_MAX = 500;
 
     private final ObjectMapper objectMapper;
     private final EmulatorConfig config;
+    private final Map<String, List<PolicyStatement>> policyParseCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, List<PolicyStatement>> eldest) {
+                    return size() > POLICY_PARSE_CACHE_MAX;
+                }
+            });
 
     @Inject
     public IamPolicyEvaluator(ObjectMapper objectMapper, EmulatorConfig config) {
@@ -487,6 +496,16 @@ public class IamPolicyEvaluator {
     }
 
     private List<PolicyStatement> parseStatements(String document) throws Exception {
+        List<PolicyStatement> cached = policyParseCache.get(document);
+        if (cached != null) {
+            return cached;
+        }
+        List<PolicyStatement> parsed = parseStatementsUncached(document);
+        policyParseCache.put(document, List.copyOf(parsed));
+        return parsed;
+    }
+
+    private List<PolicyStatement> parseStatementsUncached(String document) throws Exception {
         JsonNode root = objectMapper.readTree(document);
         JsonNode stmtNode = root.path("Statement");
         List<PolicyStatement> result = new ArrayList<>();

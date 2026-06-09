@@ -22,7 +22,17 @@ public final class SigV4HttpTestSupport {
 
     private SigV4HttpTestSupport() {}
 
+    private static final String EMPTY_PAYLOAD_HASH =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
     public record SignedHeaders(String authorization, String amzDate, String contentSha256) {}
+
+    public record SignedRestHeaders(
+            String authorization,
+            String amzDate,
+            String contentSha256,
+            String securityToken
+    ) {}
 
     public static SignedHeaders signFormPost(
             String host,
@@ -74,6 +84,115 @@ public final class SigV4HttpTestSupport {
                 + ", SignedHeaders=" + signedHeaders
                 + ", Signature=" + signature;
         return new SignedHeaders(authorization, amzDate, payloadHash);
+    }
+
+    public static SignedRestHeaders signRestGet(
+            String host,
+            int port,
+            String path,
+            String accessKeyId,
+            String secretKey,
+            String sessionToken,
+            String region,
+            String service,
+            Instant timestamp
+    ) throws Exception {
+        String payloadHash = EMPTY_PAYLOAD_HASH;
+        String amzDate = DATETIME_FMT.format(timestamp);
+        String date = amzDate.substring(0, 8);
+        String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+        String credential = accessKeyId + "/" + credentialScope;
+        String hostHeader = host + ":" + port;
+
+        Map<String, String> headerValues = new LinkedHashMap<>();
+        headerValues.put("host", hostHeader);
+        headerValues.put("x-amz-content-sha256", payloadHash);
+        headerValues.put("x-amz-date", amzDate);
+        if (sessionToken != null && !sessionToken.isBlank()) {
+            headerValues.put("x-amz-security-token", sessionToken);
+        }
+
+        String signedHeaders = String.join(";",
+                headerValues.keySet().stream().sorted().toList());
+
+        String canonicalHeaders = Arrays.stream(signedHeaders.split(";"))
+                .map(name -> name + ":" + trimHeaderValue(headerValues.get(name)))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("") + "\n";
+
+        String canonicalRequest = "GET\n"
+                + SigV4RequestValidator.canonicalUri(path) + "\n"
+                + SigV4RequestValidator.canonicalQueryString("") + "\n"
+                + canonicalHeaders + "\n"
+                + signedHeaders + "\n"
+                + payloadHash;
+
+        String stringToSign = "AWS4-HMAC-SHA256\n"
+                + amzDate + "\n"
+                + credentialScope + "\n"
+                + sha256Hex(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+
+        byte[] signingKey = deriveSigningKey(secretKey, date, region, service);
+        String signature = hexEncode(hmacSha256(signingKey, stringToSign));
+        String authorization = "AWS4-HMAC-SHA256 Credential=" + credential
+                + ", SignedHeaders=" + signedHeaders
+                + ", Signature=" + signature;
+        return new SignedRestHeaders(authorization, amzDate, payloadHash, sessionToken);
+    }
+
+    public static SignedRestHeaders signRestPut(
+            String host,
+            int port,
+            String path,
+            byte[] body,
+            String accessKeyId,
+            String secretKey,
+            String sessionToken,
+            String region,
+            String service,
+            Instant timestamp
+    ) throws Exception {
+        String payloadHash = sha256Hex(body);
+        String amzDate = DATETIME_FMT.format(timestamp);
+        String date = amzDate.substring(0, 8);
+        String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+        String credential = accessKeyId + "/" + credentialScope;
+        String hostHeader = host + ":" + port;
+
+        Map<String, String> headerValues = new LinkedHashMap<>();
+        headerValues.put("host", hostHeader);
+        headerValues.put("x-amz-content-sha256", payloadHash);
+        headerValues.put("x-amz-date", amzDate);
+        if (sessionToken != null && !sessionToken.isBlank()) {
+            headerValues.put("x-amz-security-token", sessionToken);
+        }
+
+        String signedHeaders = String.join(";",
+                headerValues.keySet().stream().sorted().toList());
+
+        String canonicalHeaders = Arrays.stream(signedHeaders.split(";"))
+                .map(name -> name + ":" + trimHeaderValue(headerValues.get(name)))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("") + "\n";
+
+        String canonicalRequest = "PUT\n"
+                + SigV4RequestValidator.canonicalUri(path) + "\n"
+                + SigV4RequestValidator.canonicalQueryString("") + "\n"
+                + canonicalHeaders + "\n"
+                + signedHeaders + "\n"
+                + payloadHash;
+
+        String stringToSign = "AWS4-HMAC-SHA256\n"
+                + amzDate + "\n"
+                + credentialScope + "\n"
+                + sha256Hex(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+
+        byte[] signingKey = deriveSigningKey(secretKey, date, region, service);
+        String signature = hexEncode(hmacSha256(signingKey, stringToSign));
+        String authorization = "AWS4-HMAC-SHA256 Credential=" + credential
+                + ", SignedHeaders=" + signedHeaders
+                + ", Signature=" + signature;
+        return new SignedRestHeaders(authorization, amzDate, payloadHash, sessionToken);
     }
 
     private static String trimHeaderValue(String value) {

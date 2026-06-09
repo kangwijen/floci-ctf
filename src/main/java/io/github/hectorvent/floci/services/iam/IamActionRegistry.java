@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -231,6 +233,22 @@ public class IamActionRegistry {
      *
      * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-iam.html">PartiQL IAM</a>
      */
+    /**
+     * Resolves IAM actions for each statement in a {@code BatchExecuteStatement} body.
+     */
+    public List<String> resolveAllDynamoDbBatchActions(ContainerRequestContext ctx) {
+        List<String> statementTexts = readAllPartiQLStatements(ctx);
+        if (statementTexts.isEmpty()) {
+            return List.of();
+        }
+        List<String> actions = new ArrayList<>(statementTexts.size());
+        for (String statement : statementTexts) {
+            String actionSuffix = mapPartiQLStatementToActionSuffix(statement);
+            actions.add(actionSuffix != null ? "dynamodb:" + actionSuffix : null);
+        }
+        return Collections.unmodifiableList(actions);
+    }
+
     static String resolveDynamoDbPartiQLAction(String operationName, ContainerRequestContext ctx) {
         if (!"ExecuteStatement".equals(operationName) && !"BatchExecuteStatement".equals(operationName)) {
             return null;
@@ -267,26 +285,37 @@ public class IamActionRegistry {
     }
 
     private static String readPartiQLStatement(ContainerRequestContext ctx) {
+        List<String> all = readAllPartiQLStatements(ctx);
+        return all.isEmpty() ? null : all.getFirst();
+    }
+
+    private static List<String> readAllPartiQLStatements(ContainerRequestContext ctx) {
         byte[] body = bufferBody(ctx);
         if (body == null || body.length == 0) {
-            return null;
+            return List.of();
         }
         try {
             JsonNode node = OBJECT_MAPPER.readTree(body);
-            JsonNode statement = node.get("Statement");
-            if (statement != null && statement.isTextual()) {
-                return statement.asText();
-            }
             JsonNode statements = node.get("Statements");
             if (statements != null && statements.isArray() && !statements.isEmpty()) {
-                JsonNode first = statements.get(0).get("Statement");
-                if (first != null && first.isTextual()) {
-                    return first.asText();
+                List<String> out = new ArrayList<>(statements.size());
+                for (JsonNode entry : statements) {
+                    if (entry != null) {
+                        JsonNode statement = entry.get("Statement");
+                        if (statement != null && statement.isTextual()) {
+                            out.add(statement.asText());
+                        }
+                    }
                 }
+                return Collections.unmodifiableList(out);
+            }
+            JsonNode statement = node.get("Statement");
+            if (statement != null && statement.isTextual()) {
+                return List.of(statement.asText());
             }
         } catch (Exception ignored) {
         }
-        return null;
+        return List.of();
     }
 
     private static byte[] bufferBody(ContainerRequestContext ctx) {

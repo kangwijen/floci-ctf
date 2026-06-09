@@ -2,11 +2,14 @@ package io.github.hectorvent.floci.services.s3;
 
 import static io.github.hectorvent.floci.services.s3.S3RequestParser.hasQueryParam;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
+import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesParts;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesResult;
@@ -85,15 +88,21 @@ public class S3Controller {
     private final S3SelectService s3SelectService;
     private final RegionResolver regionResolver;
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
+    private final IamService iamService;
+    private final EmulatorConfig emulatorConfig;
 
     @Inject
     public S3Controller(S3Service s3Service, S3SelectService s3SelectService,
                         RegionResolver regionResolver,
-                        io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest) {
+                        io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
+                        IamService iamService,
+                        EmulatorConfig emulatorConfig) {
         this.s3Service = s3Service;
         this.s3SelectService = s3SelectService;
         this.regionResolver = regionResolver;
         this.currentVertxRequest = currentVertxRequest;
+        this.iamService = iamService;
+        this.emulatorConfig = emulatorConfig;
     }
 
     // --- Bucket operations ---
@@ -2147,8 +2156,10 @@ public class S3Controller {
             lcFields.put(e.getKey().toLowerCase(Locale.ROOT), e.getValue());
         }
 
-        // Validate policy conditions if present
         String policy = lcFields.get("policy");
+        validatePresignedPostSignature(lcFields);
+
+        // Validate policy conditions if present
         if (policy != null && !policy.isEmpty()) {
             validatePolicyConditions(policy, bucket, lcFields, fileData.length);
         }
@@ -2190,6 +2201,50 @@ public class S3Controller {
                 .header("ETag", obj.getETag())
                 .header("Location", bucket + "/" + key)
                 .build();
+    }
+
+    private void validatePresignedPostSignature(Map<String, String> lcFields) {
+        String policy = lcFields.get("policy");
+        String algorithm = lcFields.get("x-amz-algorithm");
+        String credential = lcFields.get("x-amz-credential");
+        String amzDate = lcFields.get("x-amz-date");
+        String signature = lcFields.get("x-amz-signature");
+
+        boolean hasAllSigFields = policy != null && !policy.isEmpty()
+                && algorithm != null && !algorithm.isEmpty()
+                && credential != null && !credential.isEmpty()
+                && amzDate != null && !amzDate.isEmpty()
+                && signature != null && !signature.isEmpty();
+        if (!hasAllSigFields) {
+            return;
+        }
+
+        String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
+        Optional<String> secret = resolvePresignSecret(accessKeyId);
+        if (secret.isEmpty()) {
+            throw new AwsException("AccessDenied",
+                    "The request signature we calculated does not match the signature you provided.", 403);
+        }
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedPostPolicy(
+                policy, algorithm, credential, amzDate, signature, secret.get());
+        if (result != SigV4RequestValidator.Result.VALID) {
+            throw new AwsException("AccessDenied",
+                    "The request signature we calculated does not match the signature you provided.", 403);
+        }
+    }
+
+    private Optional<String> resolvePresignSecret(String accessKeyId) {
+        if (accessKeyId != null) {
+            Optional<String> fromIam = iamService.findSecretKey(accessKeyId);
+            if (fromIam.isPresent()) {
+                return fromIam;
+            }
+            if (emulatorConfig.auth().rootAccessKeyId().filter(accessKeyId::equals).isPresent()) {
+                return emulatorConfig.auth().resolveRootSecretAccessKey();
+            }
+        }
+        return Optional.empty();
     }
 
     private void validatePolicyConditions(String policyBase64, String bucket,

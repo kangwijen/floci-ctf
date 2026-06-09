@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.core.common.CtfHideInternalEndpointsMode;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @ConfigMapping(prefix = "floci")
@@ -351,6 +352,57 @@ public interface EmulatorConfig {
         default CtfHideInternalEndpointsMode hideInternalEndpointsMode() {
             return CtfHideInternalEndpointsMode.parse(hideInternalEndpoints());
         }
+
+        /**
+         * When {@code true} (default), container credential HTTP servers bind to {@code 127.0.0.1} only.
+         * Env: {@code FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST}.
+         */
+        @WithDefault("true")
+        boolean containerCredentialsBindLocalhost();
+
+        /**
+         * When {@code true} (default), inject AWS link-local container credential URIs
+         * ({@code http://169.254.170.2/v2/credentials/{token}} with no port) and bind credential
+         * HTTP servers to {@code 0.0.0.0} so Docker workloads using
+         * {@code extra_hosts: 169.254.170.2:host-gateway} can reach them.
+         * Env: {@code FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI}.
+         */
+        @WithDefault("true")
+        boolean containerCredentialsUseLinkLocalUri();
+
+        /**
+         * Link-local host for container credential URIs when
+         * {@link #containerCredentialsUseLinkLocalUri()} is {@code true}.
+         * Env: {@code FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST}.
+         */
+        @WithDefault("169.254.170.2")
+        String containerCredentialsLinkLocalHost();
+
+        /**
+         * When {@code true}, federated OIDC JWTs must be structurally valid, non-expired ({@code exp}),
+         * and cryptographically verified when signing keys are configured.
+         * Env: {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS}.
+         */
+        @WithDefault("false")
+        boolean validateFederatedTokens();
+
+        /**
+         * Shared HMAC secret for HS256 web identity JWT verification in CTF labs.
+         * Env: {@code FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET}.
+         */
+        Optional<String> federatedJwtHmacSecret();
+
+        /**
+         * Per OIDC provider host HMAC secrets for HS256 verification.
+         * Env prefix: {@code FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>}.
+         */
+        Map<String, String> federatedJwtHmacSecrets();
+
+        /**
+         * PEM-encoded RSA public key for RS256 web identity JWT verification.
+         * Env: {@code FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM}.
+         */
+        Optional<String> federatedJwtRs256PublicKeyPem();
     }
 
     interface ServicesConfig {

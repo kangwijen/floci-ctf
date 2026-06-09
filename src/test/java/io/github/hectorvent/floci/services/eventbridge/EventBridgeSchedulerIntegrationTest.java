@@ -313,7 +313,37 @@ class EventBridgeSchedulerIntegrationTest {
             public AuthConfig auth() { return null; }
             @Override
             public CtfConfig ctf() {
-                return () -> "true";
+                return new CtfConfig() {
+                    @Override
+                    public String hideInternalEndpoints() { return "true"; }
+
+                    @Override
+                    public boolean containerCredentialsBindLocalhost() { return true; }
+
+                    @Override
+                    public boolean containerCredentialsUseLinkLocalUri() { return true; }
+
+                    @Override
+                    public String containerCredentialsLinkLocalHost() { return "169.254.170.2"; }
+
+                    @Override
+                    public boolean validateFederatedTokens() { return false; }
+
+                    @Override
+                    public java.util.Optional<String> federatedJwtHmacSecret() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Map<String, String> federatedJwtHmacSecrets() {
+                        return java.util.Map.of();
+                    }
+
+                    @Override
+                    public java.util.Optional<String> federatedJwtRs256PublicKeyPem() {
+                        return java.util.Optional.empty();
+                    }
+                };
             }
             @Override
             public SecurityConfig security() { return null; }

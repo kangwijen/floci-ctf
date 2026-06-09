@@ -124,7 +124,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
-**Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`), presigned POST.
+**Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
 
 **In-process IAM:** When `floci.services.iam.enforcement-enabled=true`, `InProcessIamAuthorizer` always denies SFN/APIGW calls without an execution role (state machine `roleArn` or integration `credentials`). Strict mode is not required for that check; when a role ARN is present, identity and resource policies are evaluated like HTTP.
 
@@ -149,16 +149,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Do not assume:** `IamAuthorizationService`, `StsCallerGuard` exist as separate classes (HTTP enforcement is in `IamEnforcementFilter`).
 
-**Known gaps (prioritize next):**
-- Presigned POST SigV4 policy signature verification (multipart bypasses IAM strict missing-auth; controller validates conditions)
-- SigV4a, SSE query params in S3 presign
-- Federated JWT/SAML crypto validation (claims parsed without signature verification; emulator scope)
-- Container credentials HTTP endpoints (UUID token; bind to task network in production CTF)
-- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
-- Lambda/CodeBuild end-to-end IAM integration test (container fetches creds URI and calls scoped API)
-- ECS/Lambda link-local `169.254.170.2` wire parity (creds on host ports 9170/9171/9172)
-- Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
-- In-process IAM grants: KMS grant fallback mirrors HTTP; other grant types not checked
+**Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
 ---
 
@@ -171,7 +162,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | RDS / ElastiCache Redis TCP | Partial (token SigV4, not full IAM per query) |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
 | SFN / APIGW in-process | Yes when enforcement on (`InProcessIamAuthorizer`; SFN aws-sdk KMS/Secrets/S3 tasks) |
-| Lambda / CodeBuild / ECS runtime creds | Partial (container credentials URIs on 9171/9172/9170; not link-local) |
+| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
 
@@ -201,18 +192,32 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **E2E against running instance:** `./mvnw test -pl compatibility-tests/sdk-test-java -Dtest=IamEnforcementTest`
 
 On Windows with Docker Desktop, set `DOCKER_HOST` so Maven can reach Docker before container tests (for example `npipe:////./pipe/docker_engine` in PowerShell). Default `floci.docker.docker-host` is `unix:///var/run/docker.sock`.
+
+---
+
+## CI workflows
+
+| Workflow | Job | When | Notes |
+|----------|-----|------|-------|
+| `.github/workflows/ci.yml` | `test` | PR/push to `main` (`src/**`, `pom.xml`) | Full unit and integration suite |
+| `.github/workflows/ci.yml` | `ctf-regression` | Same triggers | CTF hardening subset via `@QuarkusTest` profiles |
+| `.github/workflows/ci.yml` | `dependency-scan` | Same triggers | Trivy `pom.xml` scan, CRITICAL/HIGH, report-only (`exit-code: 0`) |
+| `.github/workflows/compatibility.yml` | `compat-test` | PR (`compatibility-tests/**`, Dockerfiles) | Permissive Floci for upstream SDK parity |
+| `.github/workflows/compatibility.yml` | `ctf-compat-java` | Same triggers | `IamEnforcementTest` with IAM + strict + SigV4 env |
+
+**Local CTF compat (broader than CI):** from `compatibility-tests/`, `just test-ctf-java` runs `IamEnforcementTest`, `CloudMapIamEnforcementIntegrationTest`, and `AppSyncIamEnforcementIntegrationTest` against a CTF-configured instance.
 
 ---
 

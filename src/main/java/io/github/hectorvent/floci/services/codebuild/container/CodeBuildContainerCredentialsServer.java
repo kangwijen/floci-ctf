@@ -40,6 +40,10 @@ public class CodeBuildContainerCredentialsServer {
         return delegate.credentialsFullUri(hostAddress, credentialToken);
     }
 
+    public String credentialsRelativeUri(String credentialToken) {
+        return delegate.credentialsRelativeUri(credentialToken);
+    }
+
     public CompletableFuture<Void> start() {
         return delegate.start();
     }

@@ -203,6 +203,11 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                           String region,
                                           String accountId,
                                           boolean strict) {
+        if (isDynamoDbBatchExecuteStatement(credentialScope, ctx)) {
+            evaluateDynamoDbBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
+
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
             if (strict) {
@@ -243,6 +248,85 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if (decision == Decision.DENY) {
             LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+        }
+    }
+
+    private static boolean isDynamoDbBatchExecuteStatement(String credentialScope, ContainerRequestContext ctx) {
+        if (!"dynamodb".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        return target != null && target.endsWith(".BatchExecuteStatement");
+    }
+
+    private void evaluateDynamoDbBatchAndAbortIfDenied(ContainerRequestContext ctx,
+                                                       String credentialScope,
+                                                       String akid,
+                                                       String region,
+                                                       String accountId,
+                                                       boolean strict) {
+        List<String> actions = actionRegistry.resolveAllDynamoDbBatchActions(ctx);
+        List<String> resources = arnBuilder.buildAllDynamoDbPartiQLResources(ctx, region, accountId);
+
+        if (actions.isEmpty()) {
+            if (strict) {
+                String unknownAction = credentialScope + ":*";
+                LOG.infov("IAM strict enforcement DENY: empty BatchExecuteStatement scope={0}", credentialScope);
+                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse("dynamodb:BatchExecuteStatement", credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+        int count = Math.min(actions.size(), resources.size());
+
+        for (int i = 0; i < count; i++) {
+            String action = actions.get(i);
+            if (action == null) {
+                if (strict) {
+                    String unknownAction = credentialScope + ":*";
+                    LOG.infov("IAM strict enforcement DENY: unmapped PartiQL statement index={0}", i);
+                    ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+                }
+                continue;
+            }
+
+            if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+                continue;
+            }
+
+            String resource = resources.get(i);
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+            if (decision == Decision.DENY
+                    && "kms".equals(credentialScope)
+                    && kmsService.isGrantAuthorized(
+                            conditionCtx.get("aws:principalarn"),
+                            conditionCtx.get("aws:principalaccount"),
+                            resource,
+                            action,
+                            region)) {
+                continue;
+            }
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} batchIndex={3}",
+                        akid, action, resource, i);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+        }
+
+        if (actions.size() != resources.size() && strict) {
+            String unknownAction = credentialScope + ":*";
+            LOG.infov("IAM strict enforcement DENY: BatchExecuteStatement action/resource count mismatch");
+            ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
         }
     }
 

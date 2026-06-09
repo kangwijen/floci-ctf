@@ -206,6 +206,8 @@ public class ContainerLauncher {
         if (credentialToken != null) {
             env.add("AWS_CONTAINER_CREDENTIALS_FULL_URI="
                     + credentialsServer.credentialsFullUri(hostAddress, credentialToken));
+            env.add("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI="
+                    + credentialsServer.credentialsRelativeUri(credentialToken));
         } else if (awsConfigPath.isEmpty()) {
             // Host operator credentials last so function env cannot override them.
             OperatorCredentialEnv.addIfPresent(env);

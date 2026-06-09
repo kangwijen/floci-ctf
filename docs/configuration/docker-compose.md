@@ -172,7 +172,8 @@ The repository root `docker-compose.yml` enables a CTF hardening profile by defa
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `"true"` | Verify SigV4 request signatures |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | `${FLOCI_AUTH_ROOT_ACCESS_KEY_ID}` | Operator access key ID (host passthrough) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | `${FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY}` | Operator secret key paired with the root access key ID |
-| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `"true"` | Hide unauthenticated `/_floci/*` and `/_localstack/*`; use `all` to hide `/health` too |
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `"true"` | Hide unauthenticated `/_floci/*`, `/_localstack/*`, and `/_aws/*`; use `all` to hide `/health` too |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `"true"` | Bind Lambda/CodeBuild/ECS credential servers to `127.0.0.1` only |
 
 Export the root credential pair on the host before `docker compose up`. The same values are typically mirrored into `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for operator CLI use and S3 presign signing. See [IAM CTF hardening](../services/iam.md#ctf-hardening) for the full operator workflow.
 

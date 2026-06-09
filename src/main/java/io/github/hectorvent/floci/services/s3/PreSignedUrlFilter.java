@@ -48,6 +48,11 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             return;
         }
 
+        if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "SigV4a (AWS4-ECDSA-P256-SHA256) is not supported."));
+            return;
+        }
         if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
             requestContext.abortWith(errorResponse(403, "AccessDenied",
                     "Unsupported X-Amz-Algorithm value."));

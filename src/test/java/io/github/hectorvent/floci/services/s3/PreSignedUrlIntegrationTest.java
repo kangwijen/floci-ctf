@@ -262,6 +262,26 @@ class PreSignedUrlIntegrationTest {
     }
 
     @Test
+    @Order(18)
+    void sigV4aPresignedUrlIsRejectedAsUnsupported() {
+        String sigV4aPath = "/" + BUCKET + "/secret-file.txt"
+                + "?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256"
+                + "&X-Amz-Credential=AKIATESTPRESIGN01/20260205/us-east-1/s3/aws4_request"
+                + "&X-Amz-Date=20260205T120000Z"
+                + "&X-Amz-Expires=3600"
+                + "&X-Amz-SignedHeaders=host"
+                + "&X-Amz-Signature=abc123";
+
+        given()
+        .when()
+            .get(sigV4aPath)
+        .then()
+            .statusCode(403)
+            .body(containsString("AccessDenied"))
+            .body(containsString("SigV4a (AWS4-ECDSA-P256-SHA256) is not supported"));
+    }
+
+    @Test
     @Order(99)
     void cleanUp() {
         given().when().delete("/" + BUCKET + "/secret-file.txt").then().statusCode(204);

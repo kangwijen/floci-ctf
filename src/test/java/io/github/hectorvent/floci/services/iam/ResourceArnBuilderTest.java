@@ -302,6 +302,19 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void dynamodbBatchExecuteStatementBuildsAllTableArns() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statements":[
+                  {"Statement":"SELECT * FROM \\"Orders\\""},
+                  {"Statement":"INSERT INTO \\"Other\\" VALUE {'pk': ?}"}
+                ]}""");
+        var arns = builder.buildAllDynamoDbPartiQLResources(ctx, REGION, ACCOUNT);
+        assertEquals(2, arns.size());
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Orders", arns.get(0));
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Other", arns.get(1));
+    }
+
+    @Test
     void extractPartiQLTableNameReturnsNullForBlankStatement() {
         assertNull(ResourceArnBuilder.extractPartiQLTableName("  "));
     }
