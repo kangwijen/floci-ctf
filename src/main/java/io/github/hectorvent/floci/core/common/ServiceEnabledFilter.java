@@ -2,7 +2,9 @@ package io.github.hectorvent.floci.core.common;
 
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.container.ResourceInfo;
@@ -15,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Provider
+@Priority(Priorities.AUTHENTICATION - 200)
 public class ServiceEnabledFilter implements ContainerRequestFilter {
 
     private static final ObjectMapper CBOR_MAPPER = new ObjectMapper(new CBORFactory());

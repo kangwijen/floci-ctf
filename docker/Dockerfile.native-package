@@ -60,7 +60,7 @@ LABEL org.opencontainers.image.title="Floci" \
 EXPOSE 4566
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
-    CMD curl -f http://localhost:4566/_floci/health || exit 1
+    CMD curl -f http://localhost:4566/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/app/application", "-Dquarkus.http.host=0.0.0.0"]

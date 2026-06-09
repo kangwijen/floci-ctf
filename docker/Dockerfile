@@ -59,7 +59,7 @@ VOLUME /app/data
 EXPOSE 4566 6379-6399
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
-    CMD wget -q --spider http://localhost:4566/_floci/health || exit 1
+    CMD wget -q --spider http://localhost:4566/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "/app/quarkus-app/quarkus-run.jar"]

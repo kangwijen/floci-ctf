@@ -874,9 +874,20 @@ public class IamService {
         if (userSecret.isPresent()) {
             return userSecret;
         }
-        return sessions.get(accessKeyId)
-                .map(SessionCredential::getSecretAccessKey)
-                .filter(s -> s != null && !s.isBlank());
+        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        SessionCredential session = sessionOpt.get();
+        if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
+            sessions.delete(accessKeyId);
+            return Optional.empty();
+        }
+        String secret = session.getSecretAccessKey();
+        if (secret == null || secret.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(secret);
     }
 
     // =========================================================================
@@ -921,13 +932,43 @@ public class IamService {
                                 String sessionPolicyDocument, String secretAccessKey,
                                 String callerIdentityUserId, String callerIdentityArn,
                                 String parentAccessKeyId) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                callerIdentityUserId, callerIdentityArn, parentAccessKeyId, null);
+    }
+
+    public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
+                                String sessionPolicyDocument, String secretAccessKey,
+                                String callerIdentityUserId, String callerIdentityArn,
+                                String parentAccessKeyId, String sessionToken) {
         SessionCredential session = new SessionCredential(
                 sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument);
         session.setSecretAccessKey(secretAccessKey);
         session.setCallerIdentityUserId(callerIdentityUserId);
         session.setCallerIdentityArn(callerIdentityArn);
         session.setParentAccessKeyId(parentAccessKeyId);
+        session.setSessionToken(sessionToken);
         sessions.put(sessionAccessKeyId, session);
+    }
+
+    public static boolean isTemporaryAccessKey(String accessKeyId) {
+        return accessKeyId != null && accessKeyId.startsWith("ASIA");
+    }
+
+    public Optional<String> findSessionToken(String accessKeyId) {
+        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        SessionCredential session = sessionOpt.get();
+        if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
+            sessions.delete(accessKeyId);
+            return Optional.empty();
+        }
+        String token = session.getSessionToken();
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(token);
     }
 
     /**

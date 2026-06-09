@@ -21,6 +21,8 @@ public class SessionCredential {
     private String callerIdentityArn;
     /** Long-term access key that issued this session ({@code GetSessionToken}); used for policy intersection. */
     private String parentAccessKeyId;
+    /** {@code x-amz-security-token} value returned with temporary credentials. */
+    private String sessionToken;
 
     public SessionCredential() {}
 
@@ -66,4 +68,7 @@ public class SessionCredential {
     public void setParentAccessKeyId(String parentAccessKeyId) {
         this.parentAccessKeyId = parentAccessKeyId;
     }
+
+    public String getSessionToken() { return sessionToken; }
+    public void setSessionToken(String sessionToken) { this.sessionToken = sessionToken; }
 }

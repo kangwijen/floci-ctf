@@ -13,9 +13,6 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.jboss.logging.Logger;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -93,7 +90,11 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
-        byte[] body = bufferBody(ctx);
+        if (IamService.isTemporaryAccessKey(akid) && !validateSessionToken(ctx, akid)) {
+            return;
+        }
+
+        byte[] body = RequestBodyBuffer.buffer(ctx);
 
         SigV4RequestValidator.Result result = SigV4RequestValidator.validate(
                 ctx.getMethod(),
@@ -129,6 +130,26 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return config.auth().resolveRootSecretAccessKey();
         }
         return iamService.findSecretKey(akid);
+    }
+
+    private boolean validateSessionToken(ContainerRequestContext ctx, String akid) {
+        String provided = ctx.getHeaderString("x-amz-security-token");
+        if (provided == null || provided.isBlank()) {
+            ctx.abortWith(errorResponse("InvalidClientTokenId",
+                    "The security token included in the request is invalid.",
+                    extractService(ctx.getHeaderString("Authorization")),
+                    ctx.getMediaType()));
+            return false;
+        }
+        Optional<String> expected = iamService.findSessionToken(akid);
+        if (expected.isEmpty() || !expected.get().equals(provided)) {
+            ctx.abortWith(errorResponse("InvalidClientTokenId",
+                    "The security token included in the request is invalid.",
+                    extractService(ctx.getHeaderString("Authorization")),
+                    ctx.getMediaType()));
+            return false;
+        }
+        return true;
     }
 
     static boolean isInternalPath(String path) {
@@ -197,21 +218,4 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    /**
-     * Reads the full entity stream and restores it so downstream handlers (IAM
-     * enforcement, resource methods) can still consume the body.
-     */
-    private static byte[] bufferBody(ContainerRequestContext ctx) {
-        InputStream in = ctx.getEntityStream();
-        if (in == null) {
-            return new byte[0];
-        }
-        try {
-            byte[] body = in.readAllBytes();
-            ctx.setEntityStream(new ByteArrayInputStream(body));
-            return body;
-        } catch (IOException e) {
-            return new byte[0];
-        }
-    }
 }

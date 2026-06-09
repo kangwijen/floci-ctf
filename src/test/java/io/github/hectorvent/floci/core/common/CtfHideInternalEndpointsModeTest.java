@@ -38,6 +38,7 @@ class CtfHideInternalEndpointsModeTest {
         assertTrue(mode.isPathHidden("/_floci/health"));
         assertTrue(mode.isPathHidden("/_localstack/init"));
         assertTrue(mode.isPathHidden("/_floci/ecr/gc"));
+        assertTrue(mode.isPathHidden("/_aws/sqs/messages"));
         assertFalse(mode.isPathHidden("/health"));
         assertFalse(mode.isPathHidden("health"));
         assertFalse(mode.isPathHidden("/"));

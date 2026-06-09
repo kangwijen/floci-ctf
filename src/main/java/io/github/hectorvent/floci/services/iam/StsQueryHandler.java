@@ -58,7 +58,7 @@ public class StsQueryHandler {
             case "GetSessionToken"             -> handleGetSessionToken(params, authorization);
             case "AssumeRoleWithWebIdentity"   -> handleAssumeRoleWithWebIdentity(params, authorization);
             case "AssumeRoleWithSAML"          -> handleAssumeRoleWithSAML(params, authorization);
-            case "GetFederationToken"          -> handleGetFederationToken(params);
+            case "GetFederationToken"          -> handleGetFederationToken(params, authorization);
             case "DecodeAuthorizationMessage"  -> handleDecodeAuthorizationMessage(params);
             default -> AwsQueryResponse.error("UnsupportedOperation",
                     "Operation " + action + " is not supported by STS.", AwsNamespaces.STS, 400);
@@ -93,7 +93,7 @@ public class StsQueryHandler {
         // Register session so IAM enforcement can resolve the role's policies
         String sessionPolicy = getParam(params, "Policy");
         iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
-                assumedRoleId, assumedRoleArn);
+                assumedRoleId, assumedRoleArn, null, sessionToken);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -133,7 +133,7 @@ public class StsQueryHandler {
         String sessionPolicy = getParam(params, "Policy");
         String parentAccessKeyId = accountResolver.extractAccessKeyId(authorization);
         iamService.registerSession(accessKeyId, sessionArn, expiration, sessionPolicy, secretKey,
-                federatedUserId, sessionArn, parentAccessKeyId);
+                federatedUserId, sessionArn, parentAccessKeyId, sessionToken);
 
         String result = credentialsXml(accessKeyId, secretKey, sessionToken, expiration);
         return Response.ok(AwsQueryResponse.envelope("GetSessionToken", AwsNamespaces.STS, result)).build();
@@ -181,7 +181,7 @@ public class StsQueryHandler {
 
         String sessionPolicy = getParam(params, "Policy");
         iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
-                assumedRoleId, assumedRoleArn);
+                assumedRoleId, assumedRoleArn, null, sessionToken);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -221,7 +221,7 @@ public class StsQueryHandler {
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
 
         iamService.registerSession(accessKeyId, roleArn, expiration, null, secretKey,
-                assumedRoleId, assumedRoleArn);
+                assumedRoleId, assumedRoleArn, null, sessionToken);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -239,7 +239,7 @@ public class StsQueryHandler {
         return Response.ok(AwsQueryResponse.envelope("AssumeRoleWithSAML", AwsNamespaces.STS, result)).build();
     }
 
-    private Response handleGetFederationToken(MultivaluedMap<String, String> params) {
+    private Response handleGetFederationToken(MultivaluedMap<String, String> params, String authorization) {
         Response validation = validateRequired(params, "Name");
         if (validation != null) {
             return validation;
@@ -256,9 +256,9 @@ public class StsQueryHandler {
         String federatedUserArn = AwsArnUtils.Arn.of("sts", "", accountId, "federated-user/" + name).toString();
 
         String sessionPolicy = getParam(params, "Policy");
-        // Register federation token so enforcement can scope its policies via session policy
+        String parentAccessKeyId = accountResolver.extractAccessKeyId(authorization);
         iamService.registerSession(accessKeyId, federatedUserArn, expiration, sessionPolicy, secretKey,
-                federatedUserId, federatedUserArn);
+                federatedUserId, federatedUserArn, parentAccessKeyId, sessionToken);
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))

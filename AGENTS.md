@@ -74,14 +74,16 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/player1, not :r
 | IAM enforcement | Off by default | On in `docker-compose.yml` |
 | SigV4 | Off by default | On with Compose profile |
 | Strict mode | N/A | Denies missing auth, unmapped actions, bad presign |
-| Internal routes | Open | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` returns 404 on `/_floci/*`, `/_localstack/*` |
+| Internal routes | Open | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` returns 404 on `/_floci/*`, `/_localstack/*`, `/_aws/*` |
+| ASIA session token | Optional header | `x-amz-security-token` stored and validated for temporary creds when SigV4 is on |
+| `aws:sourceip` | Client `X-Forwarded-For` | Default ignores forwarded headers; set `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` behind a real proxy |
 | `GetCallerIdentity` | Often account `:root` | Calling principal ARN for IAM users |
 | Container env | User can set `AWS_*` | `ContainerEnvHardening` strips credential keys |
 
 ### Health and internal endpoints
 
-| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `/health` | `/_floci/*`, `/_localstack/*` |
-|-------------------------------------|-----------|-------------------------------|
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `/health` | `/_floci/*`, `/_localstack/*`, `/_aws/*` |
+|-------------------------------------|-----------|----------------------------------------|
 | `false` | 200 | reachable |
 | `true` (default) | 200 | 404 |
 | `all` | 404 | 404 |
@@ -148,13 +150,15 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 **Do not assume:** `IamAuthorizationService`, `StsCallerGuard` exist as separate classes (HTTP enforcement is in `IamEnforcementFilter`).
 
 **Known gaps (prioritize next):**
-- Presigned POST, SigV4a, SSE query params in S3 presign
+- Presigned POST SigV4 policy signature verification (multipart bypasses IAM strict missing-auth; controller validates conditions)
+- SigV4a, SSE query params in S3 presign
 - Federated JWT/SAML crypto validation (claims parsed without signature verification; emulator scope)
+- Container credentials HTTP endpoints (UUID token; bind to task network in production CTF)
 - OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
 - Lambda/CodeBuild end-to-end IAM integration test (container fetches creds URI and calls scoped API)
 - ECS/Lambda link-local `169.254.170.2` wire parity (creds on host ports 9170/9171/9172)
 - Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
-- In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
+- In-process IAM grants: KMS grant fallback mirrors HTTP; other grant types not checked
 
 ---
 
@@ -197,13 +201,13 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest
 ```
 
 **E2E against running instance:** `./mvnw test -pl compatibility-tests/sdk-test-java -Dtest=IamEnforcementTest`

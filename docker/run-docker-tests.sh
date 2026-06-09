@@ -10,7 +10,7 @@ echo "Waiting for Floci to be healthy..."
 # Portable wait without 'timeout' command
 MAX_RETRIES=60
 COUNT=0
-until curl -sf http://localhost:4566/_floci/health >/dev/null 2>&1; do
+until curl -sf http://localhost:4566/health >/dev/null 2>&1; do
   if [ $COUNT -ge $MAX_RETRIES ]; then
     echo "Floci failed to become healthy in time"
     exit 1

@@ -8,7 +8,7 @@ public enum CtfHideInternalEndpointsMode {
     /** Internal endpoints are reachable (set {@code FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=false}). */
     OFF,
 
-    /** Hide {@code /_floci/*}, {@code /_localstack/*}, and related operator routes. */
+    /** Hide {@code /_floci/*}, {@code /_localstack/*}, {@code /_aws/*}, and related operator routes. */
     PREFIXED,
 
     /** Also hide {@code /health}. */
@@ -39,7 +39,8 @@ public enum CtfHideInternalEndpointsMode {
         if (!normalized.startsWith("/")) {
             normalized = "/" + normalized;
         }
-        boolean prefixed = SecurityBypassPaths.isPrefixedInternalPath(normalized);
+        boolean prefixed = SecurityBypassPaths.isPrefixedInternalPath(normalized)
+                || SecurityBypassPaths.isAwsInspectionPath(normalized);
         return switch (this) {
             case OFF -> false;
             case PREFIXED -> prefixed;

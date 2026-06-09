@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.iam;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.iam.model.PolicyStatement;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -43,10 +44,17 @@ public class IamPolicyEvaluator {
     private static final Logger LOG = Logger.getLogger(IamPolicyEvaluator.class);
 
     private final ObjectMapper objectMapper;
+    private final EmulatorConfig config;
 
     @Inject
-    public IamPolicyEvaluator(ObjectMapper objectMapper) {
+    public IamPolicyEvaluator(ObjectMapper objectMapper, EmulatorConfig config) {
         this.objectMapper = objectMapper;
+        this.config = config;
+    }
+
+    /** Unit tests without CDI. Strict parse failure handling is disabled. */
+    public IamPolicyEvaluator(ObjectMapper objectMapper) {
+        this(objectMapper, null);
     }
 
     /**
@@ -307,18 +315,54 @@ public class IamPolicyEvaluator {
             case "ArnEquals", "ArnLike"      -> globMatches(condValue, ctxValue);
             case "ArnNotEquals", "ArnNotLike"-> !globMatches(condValue, ctxValue);
             case "Bool"                      -> Boolean.parseBoolean(condValue) == Boolean.parseBoolean(ctxValue);
-            case "NumericEquals"             -> compareNumeric(ctxValue, condValue) == 0;
-            case "NumericNotEquals"          -> compareNumeric(ctxValue, condValue) != 0;
-            case "NumericLessThan"           -> compareNumeric(ctxValue, condValue) < 0;
-            case "NumericLessThanEquals"     -> compareNumeric(ctxValue, condValue) <= 0;
-            case "NumericGreaterThan"        -> compareNumeric(ctxValue, condValue) > 0;
-            case "NumericGreaterThanEquals"  -> compareNumeric(ctxValue, condValue) >= 0;
-            case "DateEquals"                -> compareDates(ctxValue, condValue) == 0;
-            case "DateNotEquals"             -> compareDates(ctxValue, condValue) != 0;
-            case "DateLessThan"              -> compareDates(ctxValue, condValue) < 0;
-            case "DateLessThanEquals"        -> compareDates(ctxValue, condValue) <= 0;
-            case "DateGreaterThan"           -> compareDates(ctxValue, condValue) > 0;
-            case "DateGreaterThanEquals"     -> compareDates(ctxValue, condValue) >= 0;
+            case "NumericEquals"             -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp == 0;
+            }
+            case "NumericNotEquals"          -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp != 0;
+            }
+            case "NumericLessThan"           -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp < 0;
+            }
+            case "NumericLessThanEquals"     -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp <= 0;
+            }
+            case "NumericGreaterThan"        -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp > 0;
+            }
+            case "NumericGreaterThanEquals"  -> {
+                Integer cmp = compareNumeric(ctxValue, condValue);
+                yield cmp != null && cmp >= 0;
+            }
+            case "DateEquals"                -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp == 0;
+            }
+            case "DateNotEquals"             -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp != 0;
+            }
+            case "DateLessThan"              -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp < 0;
+            }
+            case "DateLessThanEquals"        -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp <= 0;
+            }
+            case "DateGreaterThan"           -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp > 0;
+            }
+            case "DateGreaterThanEquals"     -> {
+                Integer cmp = compareDates(ctxValue, condValue);
+                yield cmp != null && cmp >= 0;
+            }
             case "IpAddress"                 -> matchesIpAddress(condValue, ctxValue);
             case "NotIpAddress"              -> !matchesIpAddress(condValue, ctxValue);
             default -> {
@@ -328,19 +372,19 @@ public class IamPolicyEvaluator {
         };
     }
 
-    private int compareNumeric(String ctxValue, String condValue) {
+    private Integer compareNumeric(String ctxValue, String condValue) {
         try {
             return Double.compare(Double.parseDouble(ctxValue), Double.parseDouble(condValue));
         } catch (NumberFormatException e) {
-            return 0;
+            return null;
         }
     }
 
-    private int compareDates(String ctxValue, String condValue) {
+    private Integer compareDates(String ctxValue, String condValue) {
         try {
             return Instant.parse(ctxValue).compareTo(Instant.parse(condValue));
         } catch (Exception e) {
-            return 0;
+            return null;
         }
     }
 
@@ -430,9 +474,16 @@ public class IamPolicyEvaluator {
                 result.addAll(parseStatements(doc));
             } catch (Exception e) {
                 LOG.warnv("Failed to parse policy document: {0}", e.getMessage());
+                if (config != null && config.services().iam().strictEnforcementEnabled()) {
+                    result.add(strictParseFailureDenyStatement());
+                }
             }
         }
         return result;
+    }
+
+    private static PolicyStatement strictParseFailureDenyStatement() {
+        return new PolicyStatement("Deny", List.of("*"), null, List.of("*"), null, null);
     }
 
     private List<PolicyStatement> parseStatements(String document) throws Exception {

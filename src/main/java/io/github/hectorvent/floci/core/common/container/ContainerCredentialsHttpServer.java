@@ -136,7 +136,7 @@ public final class ContainerCredentialsHttpServer {
                     "assumed-role/" + role.getRoleName() + "/" + sessionName).toString();
             String assumedRoleId = role.getRoleId() + ":" + sessionName;
             iamService.registerSession(accessKeyId, role.getArn(), expiration, null, secretKey,
-                    assumedRoleId, assumedRoleArn);
+                    assumedRoleId, assumedRoleArn, null, sessionToken);
 
             String body = "{\"AccessKeyId\":\"" + accessKeyId + "\","
                     + "\"SecretAccessKey\":\"" + secretKey + "\","

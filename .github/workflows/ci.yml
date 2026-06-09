@@ -37,3 +37,21 @@ jobs:
 
       - name: Run tests
         run: mvn test -B
+
+  ctf-regression:
+    name: CTF regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run CTF regression subset
+        run: >
+          mvn test -B
+          -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfHideInternalEndpointsAllIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,InProcessIamAuthorizerTest

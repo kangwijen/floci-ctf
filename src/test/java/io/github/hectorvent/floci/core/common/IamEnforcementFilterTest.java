@@ -126,6 +126,16 @@ class IamEnforcementFilterTest {
     }
 
     @Test
+    void jsonErrorEscapesQuotesInMessage() {
+        Response r = IamEnforcementFilter.accessDeniedResponse(
+                "iam:Action\"WithQuotes", "iam", MediaType.APPLICATION_JSON_TYPE);
+
+        String body = entityString(r);
+        assertTrue(body.contains("iam:Action\\\"WithQuotes"), body);
+        assertTrue(!body.contains("iam:Action\"WithQuotes"), body);
+    }
+
+    @Test
     void cognitoOAuthPathsRecognized() {
         assertTrue(SecurityBypassPaths.isCognitoOAuthPath("/cognito-idp/oauth2/token"));
         assertTrue(SecurityBypassPaths.isCognitoOAuthPath("cognito-idp/oauth2/userInfo"));

@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
+import io.github.hectorvent.floci.services.kms.KmsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -35,6 +36,7 @@ public class InProcessIamAuthorizer {
     private final ResourceArnBuilder arnBuilder;
     private final ResourcePolicyResolver resourcePolicyResolver;
     private final RegionResolver regionResolver;
+    private final KmsService kmsService;
 
     @Inject
     public InProcessIamAuthorizer(EmulatorConfig config,
@@ -42,13 +44,15 @@ public class InProcessIamAuthorizer {
                                   IamPolicyEvaluator evaluator,
                                   ResourceArnBuilder arnBuilder,
                                   ResourcePolicyResolver resourcePolicyResolver,
-                                  RegionResolver regionResolver) {
+                                  RegionResolver regionResolver,
+                                  KmsService kmsService) {
         this.config = config;
         this.iamService = iamService;
         this.evaluator = evaluator;
         this.arnBuilder = arnBuilder;
         this.resourcePolicyResolver = resourcePolicyResolver;
         this.regionResolver = regionResolver;
+        this.kmsService = kmsService;
     }
 
     /**
@@ -90,7 +94,18 @@ public class InProcessIamAuthorizer {
         List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
         Map<String, String> conditionCtx = buildConditionContext(roleArn, accountId);
 
-        if (evaluator.evaluate(caller, resourcePolicies, iamAction, resource, conditionCtx) == Decision.DENY) {
+        Decision decision = evaluator.evaluate(caller, resourcePolicies, iamAction, resource, conditionCtx);
+        if (decision == Decision.DENY
+                && "kms".equals(credentialScope)
+                && kmsService.isGrantAuthorized(
+                        conditionCtx.get("aws:principalarn"),
+                        conditionCtx.get("aws:principalaccount"),
+                        resource,
+                        iamAction,
+                        region)) {
+            return;
+        }
+        if (decision == Decision.DENY) {
             deny(credentialScope, action, roleArn, "policy evaluation denied");
         }
     }

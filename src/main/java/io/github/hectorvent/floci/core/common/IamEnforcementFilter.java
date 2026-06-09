@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 
 /**
  * JAX-RS filter that enforces IAM policies on every incoming request when
- * {@code floci.iam.enforcement-enabled = true}.
+ * {@code floci.services.iam.enforcement-enabled = true}.
  *
  * <p>Evaluates identity-based policies and resource-based policies (S3 bucket policy,
  * Lambda resource policy, SQS/SNS/KMS/Secrets Manager policies) via {@link ResourcePolicyResolver}.
@@ -93,14 +93,15 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if (SecurityBypassPaths.isPresignedUrlRequest(ctx)) {
             if (Boolean.TRUE.equals(ctx.getProperty(PreSignedUrlFilter.PRESIGN_VERIFIED_PROPERTY))) {
                 enforcePresignedS3(ctx, strict);
-            } else if (strict
-                    && !SecurityBypassPaths.isInternalHealthOrInfoPath(
-                            ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())
-                    && config.auth().validateSignatures()) {
-                LOG.infov("IAM strict enforcement DENY: unverified pre-signed URL on {0}",
-                        ctx.getUriInfo().getPath());
+            } else if (!SecurityBypassPaths.isInternalHealthOrInfoPath(
+                    path, config.ctf().hideInternalEndpointsMode())) {
+                LOG.infov("IAM enforcement DENY: unverified pre-signed URL on {0}", path);
                 ctx.abortWith(accessDeniedResponse("s3:GetObject", "s3", ctx.getMediaType()));
             }
+            return;
+        }
+
+        if (SecurityBypassPaths.isPresignedPostRequest(ctx)) {
             return;
         }
 
@@ -139,6 +140,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String credentialScope = extractCredentialScope(auth);
         if (credentialScope == null) {
+            LOG.infov("IAM enforcement DENY: unparsable credential scope on {0}", path);
+            ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
             return;
         }
 
@@ -258,13 +261,15 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         out.put("aws:sourceaccount", principalAccount);
         out.put("aws:sourcearn", principalArn);
         identity.map(CallerIdentity::userId).ifPresent(id -> out.put("aws:userid", id));
-        String sourceIp = ctx.getHeaderString("X-Forwarded-For");
-        if (sourceIp == null || sourceIp.isBlank()) {
-            sourceIp = "127.0.0.1";
-        } else {
-            int comma = sourceIp.indexOf(',');
-            if (comma > 0) {
-                sourceIp = sourceIp.substring(0, comma).trim();
+        String sourceIp = "127.0.0.1";
+        if (config.auth().trustForwardedHeaders()) {
+            String forwarded = ctx.getHeaderString("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                sourceIp = forwarded;
+                int comma = sourceIp.indexOf(',');
+                if (comma > 0) {
+                    sourceIp = sourceIp.substring(0, comma).trim();
+                }
             }
         }
         out.put("aws:sourceip", sourceIp);
@@ -339,7 +344,11 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     }
 
     private static Response jsonAccessDenied(String message) {
-        String body = "{\"__type\":\"AccessDeniedException\",\"message\":\"" + message + "\"}";
+        String body = "{\"__type\":\"AccessDeniedException\",\"message\":\"" + escapeJson(message) + "\"}";
         return Response.status(403).type(MediaType.APPLICATION_JSON).entity(body).build();
+    }
+
+    private static String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

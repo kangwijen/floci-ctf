@@ -267,6 +267,21 @@ class IamEnforcementIntegrationTest {
     }
 
     @Test
+    void numericEqualsFailsClosedOnNonNumericContext() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"*",
+               "Condition":{"NumericEquals":{"aws:EpochTime":["1700000000"]}}}
+            ]}""";
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                CallerContext.of(List.of(policy)),
+                List.of(),
+                "s3:GetObject",
+                "arn:aws:s3:::bucket/key",
+                Map.of("aws:EpochTime", "not-a-number")));
+    }
+
+    @Test
     void listBucketPrefixConditionFailsWhenPrefixMissingFromContext() {
         String policy = """
             {"Version":"2012-10-17","Statement":[

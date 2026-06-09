@@ -34,7 +34,24 @@ public class AccountContextFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext ctx) {
         String auth = ctx.getHeaderString("Authorization");
-        requestContext.setAccountId(accountResolver.resolve(auth));
-        requestContext.setRegion(regionResolver.resolveRegionFromAuth(auth));
+        String accountId = accountResolver.resolve(auth);
+        String region = regionResolver.resolveRegionFromAuth(auth);
+
+        if (auth == null || auth.isBlank()) {
+            String credential = ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
+            if (credential != null && !credential.isBlank()) {
+                String akid = accountResolver.extractAccessKeyIdFromCredential(credential);
+                if (akid != null && akid.matches("\\d{12}")) {
+                    accountId = akid;
+                }
+                String[] parts = credential.split("/");
+                if (parts.length >= 3 && !parts[2].isBlank()) {
+                    region = parts[2];
+                }
+            }
+        }
+
+        requestContext.setAccountId(accountId);
+        requestContext.setRegion(region);
     }
 }

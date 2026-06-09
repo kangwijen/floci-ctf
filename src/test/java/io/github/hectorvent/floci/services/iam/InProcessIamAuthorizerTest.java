@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.kms.KmsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +32,8 @@ class InProcessIamAuthorizerTest {
                 mock(IamPolicyEvaluator.class),
                 mock(ResourceArnBuilder.class),
                 mock(ResourcePolicyResolver.class),
-                mock(RegionResolver.class));
+                mock(RegionResolver.class),
+                mock(KmsService.class));
     }
 
     @Test

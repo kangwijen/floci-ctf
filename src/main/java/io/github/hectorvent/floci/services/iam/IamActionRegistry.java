@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
+import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -289,17 +290,8 @@ public class IamActionRegistry {
     }
 
     private static byte[] bufferBody(ContainerRequestContext ctx) {
-        InputStream in = ctx.getEntityStream();
-        if (in == null) {
-            return null;
-        }
-        try {
-            byte[] body = in.readAllBytes();
-            ctx.setEntityStream(new ByteArrayInputStream(body));
-            return body;
-        } catch (IOException e) {
-            return null;
-        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        return body.length == 0 && ctx.getEntityStream() == null ? null : body;
     }
 
     /**

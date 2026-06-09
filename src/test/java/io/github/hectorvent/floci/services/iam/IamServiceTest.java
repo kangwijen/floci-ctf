@@ -14,6 +14,7 @@ import io.github.hectorvent.floci.services.iam.model.PolicyVersion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -562,6 +563,39 @@ class IamServiceTest {
         AwsException ex = assertThrows(AwsException.class,
                 () -> iamService.listPolicies("Invalid", "/"));
         assertEquals("ValidationError", ex.getErrorCode());
+    }
+
+    @Test
+    void findSessionTokenReturnsStoredTokenForActiveSession() {
+        String sessionAkid = "ASIAACTIVETOKEN0001";
+        iamService.registerSession(
+                sessionAkid,
+                "arn:aws:iam::000000000000:role/test",
+                Instant.now().plusSeconds(3600),
+                null,
+                "active-secret-key-value-0123456789",
+                null,
+                null,
+                null,
+                "session-token-value-abc");
+
+        assertEquals("session-token-value-abc", iamService.findSessionToken(sessionAkid).orElseThrow());
+    }
+
+    @Test
+    void findSecretKeyRejectsExpiredSessionCredentials() {
+        String sessionAkid = "ASIAEXPIREDSESSION01";
+        iamService.registerSession(
+                sessionAkid,
+                "arn:aws:iam::000000000000:role/test",
+                Instant.now().minusSeconds(60),
+                null,
+                "expired-secret-key-value-0123456789",
+                null,
+                null);
+
+        assertTrue(iamService.findSecretKey(sessionAkid).isEmpty());
+        assertTrue(iamService.resolveCallerContext(sessionAkid) == null);
     }
 
     @Test

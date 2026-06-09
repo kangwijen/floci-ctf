@@ -158,7 +158,9 @@ Under strict enforcement:
 
 | Case | Behaviour |
 |---|---|
-| No `Authorization` header on `/health`, `/_floci/*`, or `/_localstack/*` | Allowed unless `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` is `true` or `all` (those paths return 404) |
+| No `Authorization` header on `/health`, `/_floci/*`, `/_localstack/*`, or `/_aws/*` | Allowed unless `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` is `true` or `all` (prefixed paths return 404; `/health` only hidden in `all` mode) |
+| `aws:sourceip` from `X-Forwarded-For` | Ignored unless `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` (default `false`) |
+| Temporary credentials (`ASIA*`) with SigV4 on | `x-amz-security-token` must match the token issued with the session |
 | No `Authorization` header on any other path | Denied (HTTP 403) |
 | Unresolvable IAM action for the request | Denied (HTTP 403) |
 

@@ -18,6 +18,7 @@ class CtfHideInternalEndpointsIntegrationTest {
     void prefixedModeHidesFlociRoutesButKeepsHealth() {
         given().when().get("/_floci/health").then().statusCode(404);
         given().when().get("/_localstack/info").then().statusCode(404);
+        given().when().get("/_aws/sqs/messages").then().statusCode(404);
         given().when().post("/_floci/ecr/gc").then().statusCode(404);
         given().contentType("application/json")
                 .body(Map.of("apiVersion", "authentication.k8s.io/v1", "kind", "TokenReview",

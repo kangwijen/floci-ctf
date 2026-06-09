@@ -40,7 +40,9 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 uses SigV4 query auth then evaluates bucket policy; `NotPrincipal` supported; account `:root` in resource policies does **not** directly allow IAM users (identity policy still required) |
 | Scoped IAM `Resource` ARNs | Most requests use `*` | `ResourceArnBuilder` maps per-service ARNs for S3, IAM, DynamoDB, KMS, SQS, SNS, SSM, STS, and more on HTTP `:4566` |
 | Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
-| Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides prefixed routes; `all` also hides `/health` |
+| Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides `/_floci/*`, `/_localstack/*`, and `/_aws/*`; `all` also hides `/health` |
+| Temporary creds (`ASIA*`) | Secret key alone | `x-amz-security-token` required and validated when SigV4 is on |
+| Docker `HEALTHCHECK` | `/_floci/health` | `GET /health` (works when internal routes are hidden) |
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
 
@@ -72,7 +74,8 @@ All AWS services listen on `http://localhost:4566`. Use the root credentials onl
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true`: verify SigV4 on inbound API requests |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | Operator access key (bypasses enforcement when paired with secret) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | Operator secret for the root access key |
-| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | Default `true`: `404` on `/_floci/*` and `/_localstack/*`; `all` also hides `/health`; set `false` for upstream-style introspection |
+| `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | Default `true`: `404` on `/_floci/*`, `/_localstack/*`, and `/_aws/*`; `all` also hides `/health`; set `false` for upstream-style introspection |
+| `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | Optional; default `false`. When `true`, `X-Forwarded-For` may set `aws:sourceip` in IAM conditions |
 | `FLOCI_DEFAULT_ACCOUNT_ID` | Optional; account id in IAM ARNs and `GetCallerIdentity` (default `000000000000`) |
 
 These are set in [docker-compose.yml](./docker-compose.yml). Pass root credentials from the host as shown above.

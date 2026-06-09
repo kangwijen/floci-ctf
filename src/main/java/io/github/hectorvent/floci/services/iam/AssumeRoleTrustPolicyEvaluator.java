@@ -199,6 +199,10 @@ public class AssumeRoleTrustPolicyEvaluator {
             case "StringNotLike" -> !matchesStringLike(ctxValue, condValue, condKey);
             case "ArnEquals", "ArnLike" -> IamPolicyEvaluator.globMatches(condValue, ctxValue);
             case "ArnNotEquals", "ArnNotLike" -> !IamPolicyEvaluator.globMatches(condValue, ctxValue);
+            case "Bool" -> Boolean.parseBoolean(condValue) == Boolean.parseBoolean(ctxValue);
+            case "Null" -> ("true".equalsIgnoreCase(condValue)) == (ctxValue == null || ctxValue.isBlank());
+            case "IpAddress" -> matchesIpAddress(condValue, ctxValue);
+            case "NotIpAddress" -> !matchesIpAddress(condValue, ctxValue);
             default -> {
                 LOG.warnv("Unsupported trust condition operator: {0}", operator);
                 yield false;
@@ -282,5 +286,37 @@ public class AssumeRoleTrustPolicyEvaluator {
             }
         }
         return list;
+    }
+
+    private static boolean matchesIpAddress(String condValue, String ctxValue) {
+        if (ctxValue == null || ctxValue.isBlank()) {
+            return false;
+        }
+        if (condValue.contains("/")) {
+            return matchesCidr(condValue, ctxValue);
+        }
+        return condValue.equals(ctxValue);
+    }
+
+    private static boolean matchesCidr(String cidr, String ip) {
+        try {
+            String[] parts = cidr.split("/");
+            int prefix = Integer.parseInt(parts[1]);
+            long cidrAddr = ipToLong(parts[0]);
+            long ipAddr = ipToLong(ip);
+            long mask = prefix == 0 ? 0L : (0xFFFFFFFFL << (32 - prefix)) & 0xFFFFFFFFL;
+            return (cidrAddr & mask) == (ipAddr & mask);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static long ipToLong(String ip) {
+        String[] octets = ip.split("\\.");
+        long result = 0;
+        for (String octet : octets) {
+            result = (result << 8) | Integer.parseInt(octet);
+        }
+        return result;
     }
 }

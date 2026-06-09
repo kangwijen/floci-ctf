@@ -326,6 +326,13 @@ public interface EmulatorConfig {
             String env = System.getenv("AWS_SECRET_ACCESS_KEY");
             return env != null && !env.isBlank() ? Optional.of(env) : Optional.empty();
         }
+
+        /**
+         * When {@code true}, {@code X-Forwarded-For} may populate {@code aws:sourceip} in IAM conditions.
+         * Env: {@code FLOCI_AUTH_TRUST_FORWARDED_HEADERS}. Default {@code false} (CTF-safe).
+         */
+        @WithDefault("false")
+        boolean trustForwardedHeaders();
     }
 
     interface CtfConfig {
@@ -562,7 +569,7 @@ public interface EmulatorConfig {
         @WithDefault("true")
         boolean enabled();
 
-        @WithDefault("7000")
+        @WithDefault("7001")
         int proxyBasePort();
 
         @WithDefault("7099")

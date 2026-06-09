@@ -39,8 +39,27 @@ public final class SecurityBypassPaths {
                 || "/_localstack".equals(normalized);
     }
 
+    public static boolean isAwsInspectionPath(String normalizedPath) {
+        if (normalizedPath == null || normalizedPath.isEmpty()) {
+            return false;
+        }
+        String normalized = normalizedPath.startsWith("/") ? normalizedPath : "/" + normalizedPath;
+        return normalized.startsWith("/_aws/") || "/_aws".equals(normalized);
+    }
+
     public static boolean isPresignedUrlRequest(ContainerRequestContext ctx) {
         return ctx.getUriInfo().getQueryParameters().containsKey("X-Amz-Algorithm");
+    }
+
+    /**
+     * S3 presigned POST uploads use multipart form bodies validated in {@code S3Controller}.
+     */
+    public static boolean isPresignedPostRequest(ContainerRequestContext ctx) {
+        if (!"POST".equalsIgnoreCase(ctx.getMethod())) {
+            return false;
+        }
+        String contentType = ctx.getHeaderString("Content-Type");
+        return contentType != null && contentType.toLowerCase().startsWith("multipart/form-data");
     }
 
     /**

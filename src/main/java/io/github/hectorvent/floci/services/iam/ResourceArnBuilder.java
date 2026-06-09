@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.iam;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -1407,17 +1408,8 @@ public class ResourceArnBuilder {
     }
 
     private byte[] bufferBody(ContainerRequestContext ctx) {
-        InputStream in = ctx.getEntityStream();
-        if (in == null) {
-            return null;
-        }
-        try {
-            byte[] body = in.readAllBytes();
-            ctx.setEntityStream(new ByteArrayInputStream(body));
-            return body;
-        } catch (IOException e) {
-            return null;
-        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        return body.length == 0 && ctx.getEntityStream() == null ? null : body;
     }
 
     private static Charset resolveCharset(MediaType mt) {

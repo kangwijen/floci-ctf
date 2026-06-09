@@ -107,6 +107,7 @@ floci:
 
   auth:
     validate-signatures: false
+    # trust-forwarded-headers: false  # FLOCI_AUTH_TRUST_FORWARDED_HEADERS; default false (do not trust X-Forwarded-For for aws:sourceip)
     # root-access-key-id:   # FLOCI_AUTH_ROOT_ACCESS_KEY_ID
     #   Set to a secret value known only to the operator.
     #   This key bypasses IAM enforcement (admin/provisioning use).
