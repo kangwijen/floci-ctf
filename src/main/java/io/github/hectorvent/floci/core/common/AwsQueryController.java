@@ -110,6 +110,7 @@ public class AwsQueryController {
             "CreateLaunchConfiguration", "DescribeLaunchConfigurations", "DeleteLaunchConfiguration",
             "CreateAutoScalingGroup", "UpdateAutoScalingGroup", "DeleteAutoScalingGroup",
             "DescribeAutoScalingGroups", "SetDesiredCapacity",
+            "CreateOrUpdateTags", "DeleteTags",
             "DescribeAutoScalingInstances", "AttachInstances", "DetachInstances",
             "TerminateInstanceInAutoScalingGroup",
             "AttachLoadBalancerTargetGroups", "DetachLoadBalancerTargetGroups",
@@ -141,7 +142,7 @@ public class AwsQueryController {
             "RunInstances", "DescribeInstances", "TerminateInstances", "StartInstances", "StopInstances",
             "RebootInstances", "DescribeInstanceStatus", "DescribeInstanceAttribute", "ModifyInstanceAttribute",
             "CreateVpc", "DescribeVpcs", "DeleteVpc", "ModifyVpcAttribute", "DescribeVpcAttribute",
-            "DescribeVpcEndpointServices",
+            "DescribeVpcEndpointServices", "CreateVpcEndpoint", "DescribeVpcEndpoints", "DeleteVpcEndpoints",
             "CreateDefaultVpc", "AssociateVpcCidrBlock", "DisassociateVpcCidrBlock",
             "CreateSubnet", "DescribeSubnets", "DeleteSubnet", "ModifySubnetAttribute",
             "CreateSecurityGroup", "DescribeSecurityGroups", "DeleteSecurityGroup",
@@ -156,11 +157,14 @@ public class AwsQueryController {
             "AttachInternetGateway", "DetachInternetGateway",
             "CreateRouteTable", "DescribeRouteTables", "DeleteRouteTable",
             "AssociateRouteTable", "DisassociateRouteTable", "CreateRoute", "DeleteRoute",
+            "CreateNatGateway", "DescribeNatGateways", "DeleteNatGateway",
             "AllocateAddress", "AssociateAddress", "DisassociateAddress", "ReleaseAddress", "DescribeAddresses",
             "DescribeAddressesAttribute",
             "DescribeIamInstanceProfileAssociations",
             "DescribeAvailabilityZones", "DescribeRegions", "DescribeAccountAttributes",
-            "DescribeInstanceTypes",
+            "DescribeInstanceTypes", "DescribeInstanceTypeOfferings",
+            "CreateLaunchTemplate", "CreateLaunchTemplateVersion", "DescribeLaunchTemplates", "DescribeLaunchTemplateVersions",
+            "ModifyLaunchTemplate", "DeleteLaunchTemplate",
             "DescribeNetworkInterfaces"
     );
 
