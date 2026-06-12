@@ -124,21 +124,27 @@ The root [docker-compose.yml](./docker-compose.yml) layers forensic defaults on 
 | Variable | Compose value | Purpose |
 |---|---|---|
 | `FLOCI_STORAGE_MODE` | `hybrid` | Async flush of service state to `./data` (mounted at `/app/data`) |
-| `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `true` | Record management API calls to active CloudTrail trails |
+| `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `true` | Record HTTP and in-process API calls to active CloudTrail trails |
 
 Operator setup for a typical evidence chain:
 
 1. Start Compose with operator root credentials (see [Quick start](#quick-start-operators)).
 2. Create an S3 bucket, optional SQS queue, and bucket notifications for trail delivery ([CloudTrail docs](./docs/services/cloudtrail.md)).
 3. `CreateTrail`, `StartLogging`, and exercise the scenario; review gzip JSON under `AWSLogs/{account-id}/CloudTrail/...` in the trail bucket.
-4. Optional: configure [AWS Config](./docs/services/config.md) delivery channels with `configSnapshotDeliveryProperties` for snapshot metadata (objects can be pre-seeded for parsing labs).
+4. Use `LookupEvents` or Athena over trail objects to correlate player HTTP calls with **inter-service** activity (Step Functions tasks, EventBridge targets, Firehose flushes, Config snapshots) recorded with `invokedBy` service principals.
+
+Inter-service audit (when audit is enabled and a trail is logging): Step Functions and API Gateway in-process SDK calls use the execution role plus `invokedBy` (`states.amazonaws.com`, `apigateway.amazonaws.com`). Internal delivery (Firehose to S3, SNS to SQS, CloudWatch Logs subscriptions, S3 access logs) uses `userIdentity.type=AWSService`. See [CloudTrail inter-service events](./docs/services/cloudtrail.md#inter-service-events-in-process-audit).
+
+Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`).
+
+5. Optional: configure [AWS Config](./docs/services/config.md) delivery channels for configuration snapshots in S3.
 
 Enable S3 access logging for data-plane evidence ([S3 access logging](./docs/services/s3.md#access-logging)). Optional [GuardDuty](./docs/services/guardduty.md) and [Security Hub](./docs/services/securityhub.md) aggregate findings from CloudTrail-driven rules and ASFF imports.
 
 Forensic regression (with CTF core tests):
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
 ```
 
 Compatibility probes against a running instance ([compatibility-tests/README.md](./compatibility-tests/README.md)):

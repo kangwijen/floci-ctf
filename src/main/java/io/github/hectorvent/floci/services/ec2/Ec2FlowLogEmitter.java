@@ -5,6 +5,8 @@ import io.github.hectorvent.floci.services.cloudwatch.logs.CloudWatchLogsService
 import io.github.hectorvent.floci.services.ec2.model.FlowLog;
 import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.ec2.model.InstanceNetworkInterface;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import io.quarkus.runtime.ShutdownEvent;
 import jakarta.annotation.PostConstruct;
@@ -40,6 +42,7 @@ public class Ec2FlowLogEmitter {
     private final S3Service s3Service;
     private final CloudWatchLogsService cloudWatchLogsService;
     private final String accountId;
+    private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
     private final Random random = new Random();
 
     private ScheduledExecutorService scheduler;
@@ -48,11 +51,13 @@ public class Ec2FlowLogEmitter {
     public Ec2FlowLogEmitter(Ec2Service ec2Service,
                               S3Service s3Service,
                               CloudWatchLogsService cloudWatchLogsService,
-                              EmulatorConfig config) {
+                              EmulatorConfig config,
+                              InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
         this.ec2Service = ec2Service;
         this.s3Service = s3Service;
         this.cloudWatchLogsService = cloudWatchLogsService;
         this.accountId = config.defaultAccountId();
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
     }
 
     @PostConstruct
@@ -245,7 +250,25 @@ public class Ec2FlowLogEmitter {
             payload = (line + "\n").getBytes(StandardCharsets.UTF_8);
         }
         s3Service.putObject(dest.bucket(), key, payload, "text/plain", Map.of());
+        recordFlowLogS3PutObject(flowLog.getRegion(), dest.bucket(), key);
         flowLog.setDeliverLogsStatus("SUCCESS");
+    }
+
+    private void recordFlowLogS3PutObject(String region, String bucket, String key) {
+        String invokedBy = "ec2.amazonaws.com";
+        inProcessCloudTrailRecorder.record(InProcessAuditContext.builder()
+                .region(region)
+                .eventSource("s3.amazonaws.com")
+                .eventName("PutObject")
+                .credentialScope("s3")
+                .requestParameters(Map.of(
+                        "bucketName", bucket,
+                        "key", key))
+                .invokedBy(invokedBy)
+                .servicePrincipal(invokedBy)
+                .managementEvent(false)
+                .eventCategory("Data")
+                .build());
     }
 
     private void deliverToCloudWatch(FlowLog flowLog, String interfaceId, String line) {

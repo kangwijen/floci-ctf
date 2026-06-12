@@ -30,7 +30,8 @@ class EventBridgeInvokerTest {
                 sqsService,
                 snsService,
                 new ObjectMapper(),
-                mock(io.github.hectorvent.floci.config.EmulatorConfig.class)
+                mock(io.github.hectorvent.floci.config.EmulatorConfig.class),
+                mock(io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder.class)
         );
     }
 

@@ -121,6 +121,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `sts:AssumeRole` | Role ARN + trust on role | `sts:AssumeRole` on role; trust `sts:ExternalId` when set |
 | `eks:CreateNodegroup` | `arn:aws:eks:REGION:ACCOUNT:nodegroup/CLUSTER/*` | `POST /clusters/{name}/node-groups` |
 | `athena:CreateWorkGroup` | `arn:aws:athena:REGION:ACCOUNT:workgroup/name` | `Name` in JSON body on `CreateWorkGroup` |
+| `cloudtrail:StopLogging` | `arn:aws:cloudtrail:REGION:ACCOUNT:trail/name` | `Name` in JSON body |
+| `guardduty:GetFindings` | `arn:aws:guardduty:REGION:ACCOUNT:detector/id` | `DetectorId` in JSON body |
+| `config:PutConfigRule` | `arn:aws:config:REGION:ACCOUNT:config-rule/name` | `ConfigRule.ConfigRuleName` in JSON body |
 
 **Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
@@ -142,6 +145,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
 | KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
 | In-process IAM | `InProcessIamAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
+| In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder.buildInProcessEvent`, wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
 | Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
@@ -160,7 +164,7 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 | Area | Primary files / docs |
 |------|----------------------|
 | CloudTrail trail lifecycle | `CloudTrailService`, `CloudTrailJsonHandler`, [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
-| CloudTrail audit recording | `CloudTrailAuditFilter`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
+| CloudTrail audit recording | `CloudTrailAuditFilter`, `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
 | CloudTrail audit config | `EmulatorConfig.CloudTrailServiceConfig` (`audit-enabled`, `exclude-internal-paths`) |
 | Config delivery / snapshots | `ConfigSnapshotDeliveryService`, `AwsConfigService`, [docs/services/config.md](./docs/services/config.md) |
 | S3 access logging | `S3AccessLogService`, `S3AccessLogFormatter`, [docs/services/s3.md](./docs/services/s3.md#access-logging) |
@@ -169,13 +173,14 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 | GuardDuty detectors / findings | `GuardDutyService`, `GuardDutyCloudTrailHook`, [docs/services/guardduty.md](./docs/services/guardduty.md) |
 | Security Hub ASFF import | `SecurityHubService`, `GuardDutyFindingSubscriber`, [docs/services/securityhub.md](./docs/services/securityhub.md) |
 | Persistent lab state | `StorageFactory`, `HybridStorage`, `./data` volume in `docker-compose.yml` |
-| E2E forensic scenario | `CloudForensicsIntegrationTest`, `ForensicLabProfile` |
+| In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `InProcessAuditContext`; SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2/S3 access logs |
+| E2E forensic scenario | `CloudForensicsIntegrationTest`, `InProcessCloudTrailIntegrationTest`, `InternalServiceCloudTrailIntegrationTest`, `ForensicLabProfile` |
 | SDK compatibility probes | [compatibility-tests/sdk-test-java](./compatibility-tests/sdk-test-java) (`ForensicLabCompatibilityTest`) |
 
 **Forensic regression (unit/integration):**
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
 ```
 
 **Forensic compatibility (running instance):**
@@ -196,7 +201,8 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | S3 presigned query URLs | Yes (`PreSignedUrlFilter` SigV4; IAM or root credential secrets only) |
 | RDS / ElastiCache Redis TCP | Partial (token SigV4, not full IAM per query) |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
-| SFN / APIGW in-process | Yes when enforcement on (`InProcessIamAuthorizer`; SFN aws-sdk KMS/Secrets/S3 tasks) |
+| SFN / APIGW in-process | Yes when enforcement on (`InProcessIamAuthorizer`); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
+| Inter-service delivery (Firehose, SNS, EB, Config, flow logs) | CloudTrail audit when audit enabled (`invokedBy` AWSService events) |
 | Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.

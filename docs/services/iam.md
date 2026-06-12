@@ -125,6 +125,9 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 | `ecs` / `ecr` / `firehose` / `cognito-idp` | Cluster/service/repo/stream/pool fields (JSON) |
 | `apigateway` / `execute-api` | REST API id from path |
 | `glue` / `athena` / `es` | Database/table/workgroup/domain fields (JSON or path) |
+| `cloudtrail` | `Name`, `TrailName`, or `TrailARN` (JSON) |
+| `guardduty` | `DetectorId` (JSON) |
+| `config` | `ConfigRuleName` / `ConfigRule.ConfigRuleName`, or `ResourceArn` (JSON) |
 
 When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not.
 

@@ -40,7 +40,7 @@ class EventBridgeSchedulerIntegrationTest {
         StorageBackend<String, Rule> ruleStore = new InMemoryStorage<>();
         StorageBackend<String, List<Target>> targetStore = new InMemoryStorage<>();
 
-        EventBridgeInvoker invoker = new EventBridgeInvoker(null, null, null, new ObjectMapper(), createConfig());
+        EventBridgeInvoker invoker = new EventBridgeInvoker(null, null, null, new ObjectMapper(), createConfig(), null);
         scheduler = new RuleScheduler(vertx, createConfig(), new ObjectMapper(), invoker);
 
         ReplayDispatcher replayDispatcher = new ReplayDispatcher(vertx);

@@ -40,7 +40,7 @@ Floci is configured exclusively through environment variables. Every option belo
 | Variable | Default (dev YAML) | Compose value | Description |
 |---|---|---|---|
 | `FLOCI_STORAGE_MODE` | `memory` | `hybrid` | Persist service metadata and audit-related state under `/app/data` |
-| `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `false` | `true` | Emit management API audit records to active CloudTrail trails |
+| `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `false` | `true` | Emit HTTP and in-process audit records to active CloudTrail trails |
 | `FLOCI_SERVICES_CLOUDTRAIL_EXCLUDE_INTERNAL_PATHS` | `/_floci,/_localstack,/_aws,/health` | same | Path prefixes excluded from audit recording |
 
 See [CloudTrail](../services/cloudtrail.md) and [README forensic lab](../../README.md#forensic-lab).

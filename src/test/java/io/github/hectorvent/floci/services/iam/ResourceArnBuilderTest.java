@@ -611,6 +611,53 @@ class ResourceArnBuilderTest {
                 eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
     }
 
+    // ── CloudTrail ────────────────────────────────────────────────────────────
+
+    @Test
+    void cloudTrailStopLoggingBuildsTrailArnFromName() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"forensic-trail\"}");
+        String arn = builder.build("cloudtrail", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/forensic-trail", arn);
+    }
+
+    @Test
+    void cloudTrailUsesTrailArnFieldWhenPresent() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"TrailARN":"arn:aws:cloudtrail:us-east-1:222222222222:trail/explicit"}
+                """);
+        String arn = builder.build("cloudtrail", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/explicit", arn);
+    }
+
+    // ── GuardDuty ─────────────────────────────────────────────────────────────
+
+    @Test
+    void guardDutyBuildsDetectorArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"DetectorId\":\"abc123detector\"}");
+        String arn = builder.build("guardduty", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:guardduty:us-east-1:222222222222:detector/abc123detector", arn);
+    }
+
+    // ── AWS Config ────────────────────────────────────────────────────────────
+
+    @Test
+    void configPutConfigRuleBuildsRuleArnFromNestedName() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ConfigRule":{"ConfigRuleName":"rule-crud-test"}}
+                """);
+        String arn = builder.build("config", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:config:us-east-1:222222222222:config-rule/rule-crud-test", arn);
+    }
+
+    @Test
+    void configUsesResourceArnWhenPresent() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ResourceArn":"arn:aws:s3:::my-bucket"}
+                """);
+        String arn = builder.build("config", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:s3:::my-bucket", arn);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ContainerRequestContext jsonBodyCtx(String json) {

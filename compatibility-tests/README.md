@@ -132,7 +132,16 @@ AWS_SECRET_ACCESS_KEY=test
 # FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY=...
 ```
 
-GuardDuty and Security Hub in floci-ctf use **JSON 1.1** (`X-Amz-Target`), not AWS SDK REST clients. Use `ForensicLabCompatibilityTest` or raw HTTP for those services.
+Forensic lab probes against a running instance with **inter-service audit** enabled (`FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator):
+
+| Test class | Purpose |
+| --- | --- |
+| `ForensicLabCompatibilityTest` | CloudTrail LookupEvents, S3 `AWSLogs/`, GuardDuty/Security Hub JSON API |
+| `CloudTrailTest` | Trail lifecycle via AWS SDK |
+
+After EventBridge rules, Firehose streams, or Step Functions run in the lab, use `lookup-events` with `AttributeKey=EventSource` or filter on `invokedBy` in delivered JSON (Floci stores `userIdentity.invokedBy` on in-process events).
+
+GuardDuty and Security Hub use Floci **JSON 1.1** targets (`X-Amz-Target`), not AWS SDK REST clients. Use `ForensicLabCompatibilityTest` or raw HTTP for those services.
 
 ## Running with Docker
 

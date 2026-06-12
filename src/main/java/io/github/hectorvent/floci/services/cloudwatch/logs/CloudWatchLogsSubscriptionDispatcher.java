@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.cloudwatch.logs.model.LogEvent;
 import io.github.hectorvent.floci.services.cloudwatch.logs.model.SubscriptionFilter;
 import io.github.hectorvent.floci.services.firehose.FirehoseService;
@@ -21,6 +22,7 @@ import org.jboss.logging.Logger;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 
 @ApplicationScoped
@@ -33,18 +35,21 @@ public class CloudWatchLogsSubscriptionDispatcher {
     private final FirehoseService firehoseService;
     private final KinesisService kinesisService;
     private final LambdaService lambdaService;
+    private final InProcessCloudTrailRecorder cloudTrailRecorder;
 
     @Inject
     public CloudWatchLogsSubscriptionDispatcher(ObjectMapper objectMapper,
                                                 RegionResolver regionResolver,
                                                 FirehoseService firehoseService,
                                                 KinesisService kinesisService,
-                                                LambdaService lambdaService) {
+                                                LambdaService lambdaService,
+                                                InProcessCloudTrailRecorder cloudTrailRecorder) {
         this.objectMapper = objectMapper;
         this.regionResolver = regionResolver;
         this.firehoseService = firehoseService;
         this.kinesisService = kinesisService;
         this.lambdaService = lambdaService;
+        this.cloudTrailRecorder = cloudTrailRecorder;
     }
 
     public void dispatch(String logGroupName,
@@ -140,16 +145,23 @@ public class CloudWatchLogsSubscriptionDispatcher {
             throw e;
         }
         lambdaService.invoke(region, functionName, jsonPayload, InvocationType.Event);
+        cloudTrailRecorder.recordAwsServiceEvent(region, "lambda.amazonaws.com", "Invoke",
+                "logs.amazonaws.com", Map.of("functionName", functionName));
     }
 
     private void deliverToFirehose(AwsArnUtils.Arn arn, byte[] data) {
         String streamName = extractNamedResource(arn.resource(), "deliverystream/");
         firehoseService.putRecord(streamName, new Record(data));
+        String destRegion = arn.region().isEmpty() ? regionResolver.resolveRegion(null) : arn.region();
+        cloudTrailRecorder.recordAwsServiceEvent(destRegion, "firehose.amazonaws.com", "PutRecord",
+                "logs.amazonaws.com", Map.of("deliveryStreamName", streamName));
     }
 
     private void deliverToKinesis(AwsArnUtils.Arn arn, byte[] data, String partitionKey, String region) {
         String streamName = extractNamedResource(arn.resource(), "stream/");
         kinesisService.putRecord(streamName, data, partitionKey, region);
+        cloudTrailRecorder.recordAwsServiceEvent(region, "kinesis.amazonaws.com", "PutRecord",
+                "logs.amazonaws.com", Map.of("streamName", streamName));
     }
 
     private static String extractNamedResource(String resource, String prefix) {

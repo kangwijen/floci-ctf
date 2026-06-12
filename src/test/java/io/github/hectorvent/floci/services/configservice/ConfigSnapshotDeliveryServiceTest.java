@@ -3,7 +3,9 @@ package io.github.hectorvent.floci.services.configservice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
+import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.cloudtrail.CloudTrailService;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.configservice.model.ConfigSnapshotRecord;
 import io.github.hectorvent.floci.services.configservice.model.ConfigurationItem;
 import io.github.hectorvent.floci.services.configservice.model.ConfigurationItemHistory;
@@ -52,7 +54,8 @@ class ConfigSnapshotDeliveryServiceTest {
                 iamService,
                 cloudTrailService,
                 regionResolver,
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(InProcessCloudTrailRecorder.class));
     }
 
     @Test

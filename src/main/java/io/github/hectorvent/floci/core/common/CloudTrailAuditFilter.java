@@ -29,6 +29,10 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
 
     private static final Set<String> GLOBAL_SERVICES = Set.of("iam", "sts", "cloudfront", "route53", "waf");
 
+    /** Read-only CloudTrail APIs skipped to avoid lookup/describe noise. */
+    private static final Set<String> CLOUDTRAIL_AUDIT_SKIP = Set.of(
+            "LookupEvents", "DescribeTrails", "GetTrailStatus");
+
     private final EmulatorConfig config;
     private final CloudTrailService cloudTrailService;
     private final CloudTrailEventRecorder eventRecorder;
@@ -63,21 +67,19 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
         }
 
         String region = resolveRegion(request);
-
-        List<?> activeTrails = cloudTrailService.listActiveLoggingTrails(region);
-        if (activeTrails.isEmpty()) {
-            String credentialScope = resolveCredentialScope(request);
-            if (credentialScope != null && GLOBAL_SERVICES.contains(credentialScope)) {
-                activeTrails = cloudTrailService.listActiveLoggingTrailsForGlobalService();
-            }
-            if (activeTrails.isEmpty()) {
-                return;
-            }
-        }
-
         String credentialScope = resolveCredentialScope(request);
-        if ("cloudtrail".equals(credentialScope)) {
-            return;
+
+        boolean cloudTrailMutatingAudit = isCloudTrailMutatingAudit(credentialScope, request);
+        if (!cloudTrailMutatingAudit) {
+            List<?> activeTrails = cloudTrailService.listActiveLoggingTrails(region);
+            if (activeTrails.isEmpty()) {
+                if (credentialScope != null && GLOBAL_SERVICES.contains(credentialScope)) {
+                    activeTrails = cloudTrailService.listActiveLoggingTrailsForGlobalService();
+                }
+                if (activeTrails.isEmpty()) {
+                    return;
+                }
+            }
         }
 
         String iamAction = credentialScope != null
@@ -170,6 +172,26 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
         String auth = request.getHeaderString("Authorization");
         String scope = CloudTrailEventRecorder.extractCredentialScope(auth);
         return scope != null ? scope : "iam";
+    }
+
+    /**
+     * Records mutating CloudTrail control-plane calls (for example {@code StopLogging})
+     * even when the response filter runs after logging was disabled.
+     */
+    private static boolean isCloudTrailMutatingAudit(String credentialScope, ContainerRequestContext request) {
+        if (!"cloudtrail".equals(credentialScope)) {
+            return false;
+        }
+        String operation = resolveCloudTrailOperation(request);
+        return operation != null && !CLOUDTRAIL_AUDIT_SKIP.contains(operation);
+    }
+
+    private static String resolveCloudTrailOperation(ContainerRequestContext request) {
+        String target = request.getHeaderString("X-Amz-Target");
+        if (target == null || !target.contains(".")) {
+            return null;
+        }
+        return target.substring(target.lastIndexOf('.') + 1);
     }
 
     private static String normalize(String path) {

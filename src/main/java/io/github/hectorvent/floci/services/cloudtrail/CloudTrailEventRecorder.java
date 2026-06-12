@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.RequestContext;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -18,6 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -100,6 +102,47 @@ public class CloudTrailEventRecorder {
         return event;
     }
 
+    public Map<String, Object> buildInProcessEvent(InProcessAuditContext ctx) {
+        Instant now = Instant.now();
+        String eventId = UUID.randomUUID().toString();
+        String accountId = config.defaultAccountId();
+        String eventSource = ctx.eventSource() != null && !ctx.eventSource().isBlank()
+                ? ctx.eventSource()
+                : toEventSource(ctx.credentialScope());
+        String eventName = ctx.eventName() != null ? ctx.eventName() : "Unknown";
+        boolean dataEvent = isDataEvent(eventSource, eventName, ctx.eventCategory());
+        boolean managementEvent = ctx.managementEvent() != null ? ctx.managementEvent() : !dataEvent;
+        String eventCategory = ctx.eventCategory() != null ? ctx.eventCategory()
+                : (dataEvent ? "Data" : "Management");
+
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("eventVersion", EVENT_VERSION);
+        event.put("userIdentity", buildInProcessUserIdentity(ctx, accountId, now));
+        event.put("eventTime", EVENT_TIME.format(now));
+        event.put("eventSource", eventSource);
+        event.put("eventName", eventName);
+        event.put("awsRegion", ctx.region());
+        if (ctx.invokedBy() != null && !ctx.invokedBy().isBlank()) {
+            event.put("sourceIPAddress", ctx.invokedBy());
+            event.put("userAgent", ctx.invokedBy());
+        } else {
+            event.put("sourceIPAddress", "127.0.0.1");
+        }
+        event.put("requestParameters", buildInProcessRequestParameters(ctx));
+        event.put("responseElements", null);
+        event.put("requestID", UUID.randomUUID().toString());
+        event.put("eventID", eventId);
+        event.put("readOnly", isReadOnly(eventName));
+        event.put("eventType", "AwsApiCall");
+        event.put("managementEvent", managementEvent);
+        event.put("eventCategory", eventCategory);
+        event.put("recipientAccountId", accountId);
+        if (ctx.errorCode() != null && !ctx.errorCode().isBlank()) {
+            event.put("errorCode", ctx.errorCode());
+        }
+        return event;
+    }
+
     public String eventId(Map<String, Object> event) {
         Object id = event.get("eventID");
         return id != null ? id.toString() : UUID.randomUUID().toString();
@@ -166,7 +209,7 @@ public class CloudTrailEventRecorder {
         }
     }
 
-    static String toEventSource(String credentialScope) {
+    public static String toEventSource(String credentialScope) {
         if (credentialScope == null || credentialScope.isBlank()) {
             return "unknown.amazonaws.com";
         }
@@ -203,6 +246,120 @@ public class CloudTrailEventRecorder {
                 || eventName.startsWith("List")
                 || eventName.startsWith("Describe")
                 || eventName.startsWith("Head");
+    }
+
+    private static final Set<String> S3_DATA_EVENT_NAMES = Set.of(
+            "PutObject", "GetObject", "DeleteObject", "HeadObject",
+            "GetObjectVersion", "DeleteObjectVersion", "RestoreObject",
+            "PutObjectAcl", "GetObjectAcl");
+
+    public static boolean isDataEvent(String eventSource, String eventName, String explicitCategory) {
+        if ("Data".equals(explicitCategory)) {
+            return true;
+        }
+        if ("Management".equals(explicitCategory)) {
+            return false;
+        }
+        if (eventSource != null && eventSource.startsWith("s3.")) {
+            return S3_DATA_EVENT_NAMES.contains(eventName);
+        }
+        return false;
+    }
+
+    private Map<String, Object> buildInProcessRequestParameters(InProcessAuditContext ctx) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (ctx.requestParameters() != null) {
+            params.putAll(ctx.requestParameters());
+        }
+        if (ctx.inScopeSourceArn() != null && !ctx.inScopeSourceArn().isBlank()
+                && !params.containsKey("inScopeOf")) {
+            params.put("inScopeOf", ctx.inScopeSourceArn());
+        }
+        return params;
+    }
+
+    private Map<String, Object> buildInProcessUserIdentity(InProcessAuditContext ctx,
+                                                           String defaultAccountId,
+                                                           Instant now) {
+        if (ctx.executionRoleArn() != null && !ctx.executionRoleArn().isBlank()) {
+            return buildAssumedRoleIdentity(ctx, now);
+        }
+        if (ctx.invokedBy() != null && !ctx.invokedBy().isBlank()) {
+            return buildAwsServiceIdentity(ctx);
+        }
+        Map<String, Object> userIdentity = new LinkedHashMap<>();
+        userIdentity.put("type", "Root");
+        userIdentity.put("principalId", defaultAccountId);
+        userIdentity.put("arn", "arn:aws:iam::" + defaultAccountId + ":root");
+        userIdentity.put("accountId", defaultAccountId);
+        return userIdentity;
+    }
+
+    private Map<String, Object> buildAssumedRoleIdentity(InProcessAuditContext ctx, Instant now) {
+        String roleArn = ctx.executionRoleArn();
+        String roleAccount = accountIdFromArn(roleArn, config.defaultAccountId());
+        String roleName = roleArn.substring(roleArn.lastIndexOf('/') + 1);
+        String sessionName = sessionNameFromInvokedBy(ctx.invokedBy());
+        String assumedRoleArn = "arn:aws:sts::" + roleAccount + ":assumed-role/" + roleName + "/" + sessionName;
+
+        Map<String, Object> sessionIssuer = new LinkedHashMap<>();
+        sessionIssuer.put("type", ctx.issuerType() != null ? ctx.issuerType() : "Role");
+        sessionIssuer.put("principalId", "AROAEXAMPLE");
+        sessionIssuer.put("arn", roleArn);
+        sessionIssuer.put("accountId", roleAccount);
+        sessionIssuer.put("userName", roleName);
+
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("creationDate", EVENT_TIME.format(now));
+        attributes.put("mfaAuthenticated", "false");
+
+        Map<String, Object> sessionContext = new LinkedHashMap<>();
+        sessionContext.put("sessionIssuer", sessionIssuer);
+        sessionContext.put("attributes", attributes);
+
+        Map<String, Object> identity = new LinkedHashMap<>();
+        identity.put("type", "AssumedRole");
+        identity.put("principalId", "AROAEXAMPLE:" + sessionName);
+        identity.put("arn", assumedRoleArn);
+        identity.put("accountId", roleAccount);
+        identity.put("sessionContext", sessionContext);
+        if (ctx.invokedBy() != null && !ctx.invokedBy().isBlank()) {
+            identity.put("invokedBy", ctx.invokedBy());
+        }
+        return identity;
+    }
+
+    private static Map<String, Object> buildAwsServiceIdentity(InProcessAuditContext ctx) {
+        Map<String, Object> identity = new LinkedHashMap<>();
+        identity.put("type", "AWSService");
+        identity.put("invokedBy", ctx.invokedBy());
+        String principal = ctx.servicePrincipal() != null ? ctx.servicePrincipal() : ctx.invokedBy();
+        if (principal != null && !principal.isBlank()) {
+            identity.put("servicePrincipal", principal);
+        }
+        return identity;
+    }
+
+    private static String accountIdFromArn(String arn, String fallback) {
+        if (arn == null) {
+            return fallback;
+        }
+        String[] parts = arn.split(":");
+        if (parts.length >= 5 && !parts[4].isBlank()) {
+            return parts[4];
+        }
+        return fallback;
+    }
+
+    private static String sessionNameFromInvokedBy(String invokedBy) {
+        if (invokedBy == null || invokedBy.isBlank()) {
+            return "session";
+        }
+        String name = invokedBy;
+        if (name.endsWith(".amazonaws.com")) {
+            name = name.substring(0, name.length() - ".amazonaws.com".length());
+        }
+        return name.replace('.', '-');
     }
 
     private Map<String, Object> buildUserIdentity(ContainerRequestContext request, String accountId) {

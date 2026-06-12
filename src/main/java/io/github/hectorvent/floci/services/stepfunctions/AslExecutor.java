@@ -18,8 +18,12 @@ import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.stepfunctions.model.Execution;
 import io.github.hectorvent.floci.services.stepfunctions.model.HistoryEvent;
 import io.github.hectorvent.floci.services.stepfunctions.model.StateMachine;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.services.cloudtrail.CloudTrailEventRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -62,6 +66,7 @@ public class AslExecutor {
     private final JsonataEvaluator jsonataEvaluator;
     private final Instance<StepFunctionsService> sfnService;
     private final InProcessIamAuthorizer inProcessIamAuthorizer;
+    private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "sfn-executor");
         t.setDaemon(true);
@@ -77,7 +82,8 @@ public class AslExecutor {
                        S3JsonHandler s3JsonHandler,
                        ObjectMapper objectMapper, JsonataEvaluator jsonataEvaluator,
                        Instance<StepFunctionsService> sfnService,
-                       InProcessIamAuthorizer inProcessIamAuthorizer) {
+                       InProcessIamAuthorizer inProcessIamAuthorizer,
+                       InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
         this.lambdaExecutor = lambdaExecutor;
         this.functionStore = functionStore;
         this.dynamoDbService = dynamoDbService;
@@ -90,6 +96,7 @@ public class AslExecutor {
         this.jsonataEvaluator = jsonataEvaluator;
         this.sfnService = sfnService;
         this.inProcessIamAuthorizer = inProcessIamAuthorizer;
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
     }
 
     /**
@@ -333,17 +340,27 @@ public class AslExecutor {
             }
 
             String payloadStr = objectMapper.writeValueAsString(lambdaPayload);
-            InvokeResult result = lambdaExecutor.invoke(fn, payloadStr.getBytes(), InvocationType.RequestResponse);
+            String errorCode = null;
+            try {
+                InvokeResult result = lambdaExecutor.invoke(fn, payloadStr.getBytes(), InvocationType.RequestResponse);
 
-            if (result.getFunctionError() != null) {
-                throw new FailStateException("Lambda.AWSLambdaException", result.getFunctionError());
-            }
+                if (result.getFunctionError() != null) {
+                    errorCode = result.getFunctionError();
+                    throw new FailStateException("Lambda.AWSLambdaException", result.getFunctionError());
+                }
 
-            byte[] responseBytes = result.getPayload();
-            if (responseBytes != null && responseBytes.length > 0) {
-                return objectMapper.readTree(responseBytes);
+                byte[] responseBytes = result.getPayload();
+                recordSfnApiCall(region, "lambda", "InvokeFunction", lambdaPayload,
+                        sm.getRoleArn(), sm.getStateMachineArn(), null);
+                if (responseBytes != null && responseBytes.length > 0) {
+                    return objectMapper.readTree(responseBytes);
+                }
+                return NullNode.getInstance();
+            } catch (FailStateException e) {
+                recordSfnApiCall(region, "lambda", "InvokeFunction", lambdaPayload,
+                        sm.getRoleArn(), sm.getStateMachineArn(), errorCode != null ? errorCode : e.error);
+                throw e;
             }
-            return NullNode.getInstance();
         }
 
         // DynamoDB optimized integrations (4 actions)
@@ -380,21 +397,22 @@ public class AslExecutor {
         if (resource.startsWith("arn:aws:states:::aws-sdk:secretsmanager:")) {
             String camelCaseAction = resource.substring("arn:aws:states:::aws-sdk:secretsmanager:".length());
             String region = extractRegionFromArn(sm.getStateMachineArn());
-            return invokeAwsSdkSecretsManager(camelCaseAction, input, region, sm.getRoleArn());
+            return invokeAwsSdkSecretsManager(camelCaseAction, input, region, sm.getRoleArn(),
+                    sm.getStateMachineArn());
         }
 
         // AWS SDK service integrations: KMS
         if (resource.startsWith("arn:aws:states:::aws-sdk:kms:")) {
             String camelCaseAction = resource.substring("arn:aws:states:::aws-sdk:kms:".length());
             String region = extractRegionFromArn(sm.getStateMachineArn());
-            return invokeAwsSdkKms(camelCaseAction, input, region, sm.getRoleArn());
+            return invokeAwsSdkKms(camelCaseAction, input, region, sm.getRoleArn(), sm.getStateMachineArn());
         }
 
         // AWS SDK service integrations: S3
         if (resource.startsWith("arn:aws:states:::aws-sdk:s3:")) {
             String camelCaseAction = resource.substring("arn:aws:states:::aws-sdk:s3:".length());
             String region = extractRegionFromArn(sm.getStateMachineArn());
-            return invokeAwsSdkS3(camelCaseAction, input, region, sm.getRoleArn());
+            return invokeAwsSdkS3(camelCaseAction, input, region, sm.getRoleArn(), sm.getStateMachineArn());
         }
 
         // Nested state machine integration
@@ -707,18 +725,21 @@ public class AslExecutor {
         };
     }
 
-    private JsonNode invokeAwsSdkSecretsManager(String camelCaseAction, JsonNode input, String region, String roleArn) {
-        return invokeAwsSdkHandler("secretsmanager", camelCaseAction, input, region, roleArn,
+    private JsonNode invokeAwsSdkSecretsManager(String camelCaseAction, JsonNode input, String region,
+                                                String roleArn, String inScopeSourceArn) {
+        return invokeAwsSdkHandler("secretsmanager", camelCaseAction, input, region, roleArn, inScopeSourceArn,
                 "SecretsManager.", secretsManagerJsonHandler::handle);
     }
 
-    private JsonNode invokeAwsSdkKms(String camelCaseAction, JsonNode input, String region, String roleArn) {
-        return invokeAwsSdkHandler("kms", camelCaseAction, input, region, roleArn,
+    private JsonNode invokeAwsSdkKms(String camelCaseAction, JsonNode input, String region,
+                                       String roleArn, String inScopeSourceArn) {
+        return invokeAwsSdkHandler("kms", camelCaseAction, input, region, roleArn, inScopeSourceArn,
                 "Kms.", kmsJsonHandler::handle);
     }
 
-    private JsonNode invokeAwsSdkS3(String camelCaseAction, JsonNode input, String region, String roleArn) {
-        return invokeAwsSdkHandler("s3", camelCaseAction, input, region, roleArn,
+    private JsonNode invokeAwsSdkS3(String camelCaseAction, JsonNode input, String region,
+                                      String roleArn, String inScopeSourceArn) {
+        return invokeAwsSdkHandler("s3", camelCaseAction, input, region, roleArn, inScopeSourceArn,
                 "S3.", s3JsonHandler::handle);
     }
 
@@ -732,6 +753,7 @@ public class AslExecutor {
                                          JsonNode input,
                                          String region,
                                          String roleArn,
+                                         String inScopeSourceArn,
                                          String errorPrefix,
                                          AwsSdkJsonHandler handler) {
         String pascalAction = Character.toUpperCase(camelCaseAction.charAt(0)) + camelCaseAction.substring(1);
@@ -741,8 +763,12 @@ public class AslExecutor {
         try {
             response = handler.handle(pascalAction, input, region);
         } catch (AwsException e) {
+            recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn,
+                    e.getErrorCode());
             throw new FailStateException(errorPrefix + e.getErrorCode(), e.getMessage());
         } catch (Exception e) {
+            recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn,
+                    "InternalServerError");
             throw new FailStateException(errorPrefix + "InternalServerError",
                     e.getMessage() != null ? e.getMessage() : credentialScope + " error");
         }
@@ -751,22 +777,58 @@ public class AslExecutor {
         int status = response.getStatus();
 
         if (status >= 400) {
+            String errorCode = "ServiceException";
             if (entity instanceof AwsErrorResponse err) {
+                errorCode = err.type();
+                recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn, errorCode);
                 throw new FailStateException(errorPrefix + err.type(), err.message());
             }
             if (entity instanceof JsonNode errorNode) {
-                String errorName = errorNode.path("__type").asText("UnknownError");
+                errorCode = errorNode.path("__type").asText("UnknownError");
                 String errorMessage = errorNode.path("message").asText(
                         errorNode.path("Message").asText(credentialScope + " operation failed"));
-                throw new FailStateException(errorPrefix + errorName, errorMessage);
+                recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn, errorCode);
+                throw new FailStateException(errorPrefix + errorCode, errorMessage);
             }
+            recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn, errorCode);
             throw new FailStateException(errorPrefix + "ServiceException", credentialScope + " operation failed");
         }
 
+        recordSfnApiCall(region, credentialScope, pascalAction, input, roleArn, inScopeSourceArn, null);
         if (entity instanceof JsonNode jsonNode) {
             return jsonNode;
         }
         return objectMapper.createObjectNode();
+    }
+
+    private void recordSfnApiCall(String region,
+                                  String credentialScope,
+                                  String action,
+                                  JsonNode input,
+                                  String roleArn,
+                                  String inScopeSourceArn,
+                                  String errorCode) {
+        InProcessAuditContext.Builder builder = InProcessAuditContext.builder()
+                .region(region)
+                .eventName(action)
+                .credentialScope(credentialScope)
+                .requestParameters(jsonToRequestParameters(input))
+                .errorCode(errorCode)
+                .invokedBy("states.amazonaws.com")
+                .executionRoleArn(roleArn)
+                .inScopeSourceArn(inScopeSourceArn);
+        String eventSource = CloudTrailEventRecorder.toEventSource(credentialScope);
+        if (CloudTrailEventRecorder.isDataEvent(eventSource, action, null)) {
+            builder.managementEvent(false).eventCategory("Data");
+        }
+        inProcessCloudTrailRecorder.record(builder.build());
+    }
+
+    private Map<String, Object> jsonToRequestParameters(JsonNode input) {
+        if (input == null || input.isNull() || input.isMissingNode()) {
+            return Map.of();
+        }
+        return objectMapper.convertValue(input, new TypeReference<Map<String, Object>>() {});
     }
 
     private StateResult executeChoiceState(JsonNode stateDef, JsonNode input, boolean jsonata, JsonNode context) throws Exception {

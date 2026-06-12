@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.eventbridge.model.InputTransformer;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
@@ -13,6 +14,9 @@ import io.github.hectorvent.floci.services.sqs.SqsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @ApplicationScoped
 public class EventBridgeInvoker {
@@ -24,18 +28,21 @@ public class EventBridgeInvoker {
     private final SnsService snsService;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final InProcessCloudTrailRecorder cloudTrailRecorder;
 
     @Inject
     public EventBridgeInvoker(LambdaService lambdaService,
                               SqsService sqsService,
                               SnsService snsService,
                               ObjectMapper objectMapper,
-                              EmulatorConfig config) {
+                              EmulatorConfig config,
+                              InProcessCloudTrailRecorder cloudTrailRecorder) {
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
         this.snsService = snsService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.baseUrl();
+        this.cloudTrailRecorder = cloudTrailRecorder;
     }
 
     public void invokeTarget(Target target, String eventJson, String region) {
@@ -56,16 +63,22 @@ public class EventBridgeInvoker {
                 String fnName = arn.substring(arn.lastIndexOf(':') + 1);
                 String fnRegion = extractRegionFromArn(arn, region);
                 lambdaService.invoke(fnRegion, fnName, payload.getBytes(), InvocationType.Event);
+                recordServiceCall(fnRegion, "lambda.amazonaws.com", "Invoke",
+                        "events.amazonaws.com", Map.of("functionName", fnName));
                 LOG.debugv("EventBridge delivered to Lambda: {0}", arn);
             } else if (arn.contains(":sqs:")) {
                 String queueUrl = AwsArnUtils.arnToQueueUrl(arn, baseUrl);
                 String messageGroupId = target.getSqsParameters() != null
                         ? target.getSqsParameters().getMessageGroupId() : null;
                 sqsService.sendMessage(queueUrl, payload, 0, messageGroupId, null, region);
+                recordServiceCall(region, "sqs.amazonaws.com", "SendMessage",
+                        "events.amazonaws.com", Map.of("queueUrl", queueUrl));
                 LOG.debugv("EventBridge delivered to SQS: {0}", arn);
             } else if (arn.contains(":sns:")) {
                 String topicRegion = extractRegionFromArn(arn, region);
                 snsService.publish(arn, null, payload, "EventBridge", topicRegion);
+                recordServiceCall(topicRegion, "sns.amazonaws.com", "Publish",
+                        "events.amazonaws.com", Map.of("topicArn", arn));
                 LOG.debugv("EventBridge delivered to SNS: {0}", arn);
             } else {
                 LOG.warnv("EventBridge: unsupported target ARN type: {0}", arn);
@@ -117,5 +130,16 @@ public class EventBridgeInvoker {
     private static String extractRegionFromArn(String arn, String defaultRegion) {
         String[] parts = arn.split(":");
         return parts.length >= 4 && !parts[3].isEmpty() ? parts[3] : defaultRegion;
+    }
+
+    private void recordServiceCall(String region,
+                                   String eventSource,
+                                   String eventName,
+                                   String invokedBy,
+                                   Map<String, Object> requestParameters) {
+        if (cloudTrailRecorder != null) {
+            cloudTrailRecorder.recordAwsServiceEvent(region, eventSource, eventName, invokedBy,
+                    new LinkedHashMap<>(requestParameters));
+        }
     }
 }

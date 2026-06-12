@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.services.apigateway;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.acm.AcmJsonHandler;
 import io.github.hectorvent.floci.services.cloudwatch.logs.CloudWatchLogsHandler;
@@ -14,12 +16,17 @@ import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerJsonHand
 import io.github.hectorvent.floci.services.sns.SnsJsonHandler;
 import io.github.hectorvent.floci.services.sqs.SqsJsonHandler;
 import io.github.hectorvent.floci.services.ssm.SsmJsonHandler;
+import io.github.hectorvent.floci.services.cloudtrail.CloudTrailEventRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.stepfunctions.StepFunctionsJsonHandler;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+
+import java.util.Map;
 
 /**
  * Routes API Gateway AWS integration requests to the correct internal service handler.
@@ -47,6 +54,8 @@ public class AwsServiceRouter {
     private final CognitoJsonHandler cognitoHandler;
     private final AcmJsonHandler acmHandler;
     private final InProcessIamAuthorizer inProcessIamAuthorizer;
+    private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
+    private final ObjectMapper objectMapper;
 
     @Inject
     public AwsServiceRouter(StepFunctionsJsonHandler stepFunctionsHandler,
@@ -62,7 +71,9 @@ public class AwsServiceRouter {
                             KmsJsonHandler kmsHandler,
                             CognitoJsonHandler cognitoHandler,
                             AcmJsonHandler acmHandler,
-                            InProcessIamAuthorizer inProcessIamAuthorizer) {
+                            InProcessIamAuthorizer inProcessIamAuthorizer,
+                            InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
+                            ObjectMapper objectMapper) {
         this.stepFunctionsHandler = stepFunctionsHandler;
         this.dynamoDbHandler = dynamoDbHandler;
         this.sqsHandler = sqsHandler;
@@ -77,6 +88,8 @@ public class AwsServiceRouter {
         this.cognitoHandler = cognitoHandler;
         this.acmHandler = acmHandler;
         this.inProcessIamAuthorizer = inProcessIamAuthorizer;
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -134,7 +147,7 @@ public class AwsServiceRouter {
         inProcessIamAuthorizer.authorize(roleArn, service, action, requestBody, region);
 
         try {
-            return switch (service) {
+            Response response = switch (service) {
                 case "states" -> stepFunctionsHandler.handle(action, requestBody, region);
                 case "dynamodb" -> dynamoDbHandler.handle(action, requestBody, region);
                 case "sqs" -> sqsHandler.handle(action, requestBody, region);
@@ -151,11 +164,64 @@ public class AwsServiceRouter {
                 default -> throw new AwsException("UnknownService",
                         "Unsupported AWS service integration: " + service, 400);
             };
+            recordApigwApiCall(service, action, requestBody, region, roleArn, response);
+            return response;
         } catch (AwsException e) {
+            recordApigwApiCall(service, action, requestBody, region, roleArn, e.getErrorCode());
             throw e;
         } catch (Exception e) {
+            recordApigwApiCall(service, action, requestBody, region, roleArn, "InternalError");
             throw new AwsException("InternalError",
                     e.getMessage() != null ? e.getMessage() : "Service invocation failed", 500);
         }
+    }
+
+    private void recordApigwApiCall(String service,
+                                    String action,
+                                    JsonNode requestBody,
+                                    String region,
+                                    String roleArn,
+                                    Response response) {
+        String errorCode = null;
+        if (response.getStatus() >= 400) {
+            errorCode = "ServiceException";
+            Object entity = response.getEntity();
+            if (entity instanceof com.fasterxml.jackson.databind.JsonNode errorNode) {
+                errorCode = errorNode.path("__type").asText(errorCode);
+            }
+        }
+        recordApigwApiCall(service, action, requestBody, region, roleArn, errorCode);
+    }
+
+    private void recordApigwApiCall(String service,
+                                    String action,
+                                    JsonNode requestBody,
+                                    String region,
+                                    String roleArn,
+                                    String errorCode) {
+        String pascalAction = action != null && !action.isEmpty()
+                ? Character.toUpperCase(action.charAt(0)) + action.substring(1)
+                : action;
+        Map<String, Object> params = jsonToRequestParameters(requestBody);
+        InProcessAuditContext.Builder builder = InProcessAuditContext.builder()
+                .region(region)
+                .eventName(pascalAction)
+                .credentialScope(service)
+                .requestParameters(params)
+                .errorCode(errorCode)
+                .invokedBy("apigateway.amazonaws.com")
+                .executionRoleArn(roleArn);
+        String eventSource = CloudTrailEventRecorder.toEventSource(service);
+        if (CloudTrailEventRecorder.isDataEvent(eventSource, pascalAction, null)) {
+            builder.managementEvent(false).eventCategory("Data");
+        }
+        inProcessCloudTrailRecorder.record(builder.build());
+    }
+
+    private Map<String, Object> jsonToRequestParameters(JsonNode requestBody) {
+        if (requestBody == null || requestBody.isNull() || requestBody.isMissingNode()) {
+            return Map.of();
+        }
+        return objectMapper.convertValue(requestBody, new TypeReference<Map<String, Object>>() {});
     }
 }

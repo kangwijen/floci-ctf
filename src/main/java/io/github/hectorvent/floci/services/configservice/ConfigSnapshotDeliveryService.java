@@ -9,6 +9,8 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.cloudtrail.CloudTrailService;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
 import io.github.hectorvent.floci.services.configservice.model.ConfigSnapshotRecord;
 import io.github.hectorvent.floci.services.configservice.model.ConfigurationItem;
@@ -52,6 +54,7 @@ public class ConfigSnapshotDeliveryService {
     private final CloudTrailService cloudTrailService;
     private final RegionResolver regionResolver;
     private final ObjectMapper mapper;
+    private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
 
     @Inject
     public ConfigSnapshotDeliveryService(StorageFactory storageFactory,
@@ -59,7 +62,8 @@ public class ConfigSnapshotDeliveryService {
                                          IamService iamService,
                                          CloudTrailService cloudTrailService,
                                          RegionResolver regionResolver,
-                                         ObjectMapper mapper) {
+                                         ObjectMapper mapper,
+                                         InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
         this.snapshotIndex = storageFactory.create("config", "config-snapshot-index.json",
                 new TypeReference<Map<String, ConfigSnapshotRecord>>() {});
         this.itemHistoryStore = storageFactory.create("config", "config-item-history.json",
@@ -69,6 +73,7 @@ public class ConfigSnapshotDeliveryService {
         this.cloudTrailService = cloudTrailService;
         this.regionResolver = regionResolver;
         this.mapper = mapper;
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
     }
 
     ConfigSnapshotDeliveryService(StorageBackend<String, ConfigSnapshotRecord> snapshotIndex,
@@ -77,7 +82,8 @@ public class ConfigSnapshotDeliveryService {
                                   IamService iamService,
                                   CloudTrailService cloudTrailService,
                                   RegionResolver regionResolver,
-                                  ObjectMapper mapper) {
+                                  ObjectMapper mapper,
+                                  InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
         this.snapshotIndex = snapshotIndex;
         this.itemHistoryStore = itemHistoryStore;
         this.s3Service = s3Service;
@@ -85,6 +91,7 @@ public class ConfigSnapshotDeliveryService {
         this.cloudTrailService = cloudTrailService;
         this.regionResolver = regionResolver;
         this.mapper = mapper;
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
     }
 
     public String deliverConfigurationSnapshot(String region, DeliveryChannel channel) {
@@ -100,6 +107,19 @@ public class ConfigSnapshotDeliveryService {
         String s3Key = buildSnapshotS3Key(channel, timestamp);
         byte[] snapshotJson = writeSnapshotJson(items);
         s3Service.putObject(channel.s3BucketName(), s3Key, snapshotJson, "application/json", Map.of());
+        inProcessCloudTrailRecorder.record(InProcessAuditContext.builder()
+                .region(region)
+                .eventSource("s3.amazonaws.com")
+                .eventName("PutObject")
+                .credentialScope("s3")
+                .requestParameters(Map.of(
+                        "bucketName", channel.s3BucketName(),
+                        "key", s3Key))
+                .invokedBy("config.amazonaws.com")
+                .servicePrincipal("config.amazonaws.com")
+                .managementEvent(false)
+                .eventCategory("Data")
+                .build());
         ConfigSnapshotRecord record = new ConfigSnapshotRecord(
                 timestamp,
                 region,

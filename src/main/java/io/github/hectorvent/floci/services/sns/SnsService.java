@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
 import io.github.hectorvent.floci.services.sns.model.PlatformApplication;
 import io.github.hectorvent.floci.services.sns.model.PlatformEndpoint;
@@ -78,13 +79,15 @@ public class SnsService {
     private final boolean iamEnforcementEnabled;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final InProcessCloudTrailRecorder cloudTrailRecorder;
     private final Map<String, Instant> fifoDeduplicationCache = new ConcurrentHashMap<>();
     private static final HexFormat HEX = HexFormat.of();
     
     @Inject
     public SnsService(StorageFactory storageFactory, EmulatorConfig config,
                       RegionResolver regionResolver, SqsService sqsService,
-                      LambdaService lambdaService, ObjectMapper objectMapper) {
+                      LambdaService lambdaService, ObjectMapper objectMapper,
+                      InProcessCloudTrailRecorder cloudTrailRecorder) {
         this(
                 storageFactory.create("sns", "sns-topics.json",
                         new TypeReference<Map<String, Topic>>() {
@@ -106,7 +109,8 @@ public class SnsService {
                 lambdaService,
                 config.effectiveBaseUrl(),
                 config.services().iam().enforcementEnabled(),
-                objectMapper
+                objectMapper,
+                cloudTrailRecorder
         );
     }
 
@@ -141,6 +145,7 @@ public class SnsService {
         this.iamEnforcementEnabled = false;
         this.objectMapper = new ObjectMapper();
         this.httpClient = null;
+        this.cloudTrailRecorder = null;
     }
 
     SnsService(StorageBackend<String, Topic> topicStore,
@@ -151,7 +156,7 @@ public class SnsService {
                RegionResolver regionResolver, SqsService sqsService,
                LambdaService lambdaService, String baseUrl, ObjectMapper objectMapper) {
         this(topicStore, subscriptionStore, platformAppStore, platformEndpointStore, smsStore,
-                regionResolver, sqsService, lambdaService, baseUrl, false, objectMapper);
+                regionResolver, sqsService, lambdaService, baseUrl, false, objectMapper, null);
     }
 
     SnsService(StorageBackend<String, Topic> topicStore,
@@ -162,6 +167,18 @@ public class SnsService {
                RegionResolver regionResolver, SqsService sqsService,
                LambdaService lambdaService, String baseUrl, boolean iamEnforcementEnabled,
                ObjectMapper objectMapper) {
+        this(topicStore, subscriptionStore, platformAppStore, platformEndpointStore, smsStore,
+                regionResolver, sqsService, lambdaService, baseUrl, iamEnforcementEnabled, objectMapper, null);
+    }
+
+    SnsService(StorageBackend<String, Topic> topicStore,
+               StorageBackend<String, Subscription> subscriptionStore,
+               StorageBackend<String, PlatformApplication> platformAppStore,
+               StorageBackend<String, PlatformEndpoint> platformEndpointStore,
+               StorageBackend<String, SentSms> smsStore,
+               RegionResolver regionResolver, SqsService sqsService,
+               LambdaService lambdaService, String baseUrl, boolean iamEnforcementEnabled,
+               ObjectMapper objectMapper, InProcessCloudTrailRecorder cloudTrailRecorder) {
         this.topicStore = topicStore;
         this.subscriptionStore = subscriptionStore;
         this.platformAppStore = platformAppStore;
@@ -173,6 +190,7 @@ public class SnsService {
         this.baseUrl = baseUrl;
         this.iamEnforcementEnabled = iamEnforcementEnabled;
         this.objectMapper = objectMapper;
+        this.cloudTrailRecorder = cloudTrailRecorder;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
 
@@ -1272,6 +1290,8 @@ public class SnsService {
                             ? toSqsMessageAttributes(messageAttributes)
                             : Collections.emptyMap();
                     sqsService.sendMessage(queueUrl, body, 0, messageGroupId, messageDeduplicationId, sqsAttributes, region);
+                    recordDeliveryAudit(region, "sqs.amazonaws.com", "SendMessage", "sns.amazonaws.com",
+                            Map.of("queueUrl", queueUrl));
                     LOG.debugv("Delivered SNS message to SQS: {0} ({1}) raw={2}", sub.getEndpoint(), queueUrl, rawDelivery);
                 }
                 case "lambda" -> {
@@ -1280,6 +1300,8 @@ public class SnsService {
                     String eventJson = buildSnsLambdaEvent(topicArn, messageId, message,
                             subject, messageAttributes, sub.getSubscriptionArn());
                     lambdaService.invoke(region, fnName, eventJson.getBytes(), InvocationType.Event);
+                    recordDeliveryAudit(region, "lambda.amazonaws.com", "Invoke", "sns.amazonaws.com",
+                            Map.of("functionName", fnName));
                     LOG.debugv("Delivered SNS message to Lambda: {0}", sub.getEndpoint());
                 }
                 case "http", "https" -> {
@@ -1315,6 +1337,16 @@ public class SnsService {
             }
         } catch (Exception e) {
             LOG.warnv("Failed to deliver SNS message to {0}: {1}", sub.getEndpoint(), e.getMessage());
+        }
+    }
+
+    private void recordDeliveryAudit(String region,
+                                     String eventSource,
+                                     String eventName,
+                                     String invokedBy,
+                                     Map<String, Object> requestParameters) {
+        if (cloudTrailRecorder != null) {
+            cloudTrailRecorder.recordAwsServiceEvent(region, eventSource, eventName, invokedBy, requestParameters);
         }
     }
 

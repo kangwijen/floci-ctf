@@ -52,7 +52,17 @@ public class GuardDutyService {
                     "UnauthorizedAccess:IAMUser/ConsoleLogin.Behavior",
                     4.0,
                     "A console login was observed with unusual characteristics.",
-                    "IAM")
+                    "IAM"),
+            "StopLogging", new SuspiciousEventRule(
+                    "DefenseEvasion:CloudTrail/StopLogging",
+                    7.0,
+                    "CloudTrail logging was stopped, which may indicate an attempt to evade detection.",
+                    "CloudTrail"),
+            "DeleteTrail", new SuspiciousEventRule(
+                    "DefenseEvasion:CloudTrail/DeleteTrail",
+                    8.0,
+                    "A CloudTrail trail was deleted, which may indicate an attempt to destroy audit evidence.",
+                    "CloudTrail")
     );
 
     private final StorageBackend<String, GuardDutyDetector> detectorStore;

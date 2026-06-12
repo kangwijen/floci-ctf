@@ -20,7 +20,7 @@ GuardDuty provides detector lifecycle, sample findings, and optional CloudTrail-
 
 ## CloudTrail integration
 
-When CloudTrail audit is enabled and a detector is active, `GuardDutyCloudTrailHook` evaluates selected management events (`CreateAccessKey`, `DeleteBucket`, `ConsoleLogin`, and others) and may raise findings. Findings can forward to [Security Hub](securityhub.md) via `GuardDutyFindingSubscriber` when Security Hub is enabled in the same region.
+When CloudTrail audit is enabled and a detector is active, `GuardDutyCloudTrailHook` evaluates selected management events (`CreateAccessKey`, `DeleteBucket`, `ConsoleLogin`, `StopLogging`, `DeleteTrail`, and others) and may raise findings. CloudTrail tampering rules use `DefenseEvasion:CloudTrail/StopLogging` and `DefenseEvasion:CloudTrail/DeleteTrail`. Findings can forward to [Security Hub](securityhub.md) via `GuardDutyFindingSubscriber` when Security Hub is enabled in the same region.
 
 ## Configuration
 

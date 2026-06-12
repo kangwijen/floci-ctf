@@ -93,7 +93,9 @@ export FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true
 mvn test -Dtest=ForensicLabCompatibilityTest,CloudTrailTest
 ```
 
-Or `just test-forensic-java` from `compatibility-tests/`. GuardDuty and Security Hub use Floci JSON 1.1 targets via `TestFixtures.postJson11`, not AWS SDK REST clients.
+Or `just test-forensic-java` from `compatibility-tests/`. Probes HTTP audit and trail delivery; in-process events (Firehose, EventBridge, SFN) appear in `LookupEvents` when those features are exercised in the main emulator test suite.
+
+GuardDuty and Security Hub use Floci JSON 1.1 targets via `TestFixtures.postJson11`, not AWS SDK REST clients.
 
 ### CI (floci-ctf fork)
 

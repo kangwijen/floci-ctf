@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
 import io.github.hectorvent.floci.services.s3.model.LoggingConfiguration;
 import io.github.hectorvent.floci.services.s3.model.S3Object;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 @ApplicationScoped
 public class S3AccessLogService {
@@ -25,11 +27,15 @@ public class S3AccessLogService {
 
     private final S3Service s3Service;
     private final RegionResolver regionResolver;
+    private final InProcessCloudTrailRecorder cloudTrailRecorder;
 
     @Inject
-    public S3AccessLogService(S3Service s3Service, RegionResolver regionResolver) {
+    public S3AccessLogService(S3Service s3Service,
+                              RegionResolver regionResolver,
+                              InProcessCloudTrailRecorder cloudTrailRecorder) {
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
+        this.cloudTrailRecorder = cloudTrailRecorder;
     }
 
     void recordAccess(S3AccessLogContext ctx) {
@@ -72,6 +78,8 @@ public class S3AccessLogService {
                 System.arraycopy(lineBytes, 0, updated, existing.length, lineBytes.length);
             }
             s3Service.putAccessLogObject(targetBucket, logObjectKey, updated);
+            cloudTrailRecorder.recordAwsServiceEvent(sourceRegion, "s3.amazonaws.com", "PutObject",
+                    "s3.amazonaws.com", Map.of("bucketName", targetBucket, "key", logObjectKey));
         } catch (Exception e) {
             LOG.warnv("Failed to deliver S3 access log for bucket {0}: {1}", ctx.sourceBucket(), e.getMessage());
         } finally {

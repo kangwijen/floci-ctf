@@ -101,6 +101,9 @@ public class ResourceArnBuilder {
             case "servicediscovery"     -> buildServiceDiscoveryArn(ctx, region, accountId);
             case "appsync"              -> buildAppSyncArn(ctx, path, region, accountId);
             case "eks"                  -> buildEksArn(path, region, accountId);
+            case "cloudtrail"           -> buildCloudTrailArn(ctx, region, accountId);
+            case "guardduty"            -> buildGuardDutyArn(ctx, region, accountId);
+            case "config"               -> buildConfigArn(ctx, region, accountId);
             default                    -> "*";
         };
     }
@@ -1303,6 +1306,71 @@ public class ResourceArnBuilder {
             return AwsArnUtils.Arn.of("appsync", region, accountId, "apis/" + m.group(1)).toString();
         }
         return AwsArnUtils.Arn.of("appsync", region, accountId, "apis/*").toString();
+    }
+
+    // ── CloudTrail ───────────────────────────────────────────────────────────────
+
+    private String buildCloudTrailArn(ContainerRequestContext ctx, String region, String accountId) {
+        String trailArn = firstArn(
+                readJsonStringField(ctx, "TrailARN"),
+                readJsonArnField(ctx, "TrailARN"));
+        if (trailArn != null) {
+            return trailArn;
+        }
+        String name = firstNonBlank(
+                readJsonStringField(ctx, "Name"),
+                readJsonStringField(ctx, "TrailName"));
+        if (name != null && !name.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudtrail", region, accountId, "trail/" + name).toString();
+        }
+        return AwsArnUtils.Arn.of("cloudtrail", region, accountId, "trail/*").toString();
+    }
+
+    // ── GuardDuty ────────────────────────────────────────────────────────────────
+
+    private String buildGuardDutyArn(ContainerRequestContext ctx, String region, String accountId) {
+        String detectorId = readJsonStringField(ctx, "DetectorId");
+        if (detectorId != null && !detectorId.isBlank()) {
+            return AwsArnUtils.Arn.of("guardduty", region, accountId, "detector/" + detectorId).toString();
+        }
+        return AwsArnUtils.Arn.of("guardduty", region, accountId, "detector/*").toString();
+    }
+
+    // ── AWS Config ───────────────────────────────────────────────────────────────
+
+    private String buildConfigArn(ContainerRequestContext ctx, String region, String accountId) {
+        String arn = firstArn(
+                readJsonStringField(ctx, "ResourceArn"),
+                readJsonStringField(ctx, "resourceArn"));
+        if (arn != null) {
+            return arn;
+        }
+        String ruleName = firstNonBlank(
+                readJsonStringField(ctx, "ConfigRuleName"),
+                readNestedJsonStringField(ctx, "ConfigRule", "ConfigRuleName"));
+        if (ruleName != null && !ruleName.isBlank()) {
+            return AwsArnUtils.Arn.of("config", region, accountId, "config-rule/" + ruleName).toString();
+        }
+        return AwsArnUtils.Arn.of("config", region, accountId, "config-rule/*").toString();
+    }
+
+    private String readNestedJsonStringField(ContainerRequestContext ctx, String objectField, String fieldName) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            JsonNode parent = node.get(objectField);
+            if (parent != null && parent.isObject()) {
+                JsonNode field = parent.get(fieldName);
+                if (field != null && field.isTextual()) {
+                    return field.asText();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     // ── Cloud Map (servicediscovery) ─────────────────────────────────────────────

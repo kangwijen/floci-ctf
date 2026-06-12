@@ -84,7 +84,8 @@ class AslExecutorCatchTest {
                 objectMapper,
                 new JsonataEvaluator(objectMapper),
                 mock(Instance.class),
-                mock(InProcessIamAuthorizer.class));
+                mock(InProcessIamAuthorizer.class),
+                mock(io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder.class));
     }
 
     @Test

@@ -20,6 +20,8 @@ public class CtfComposeParityProfile implements QuarkusTestProfile {
                 "floci.auth.validate-signatures", "true",
                 "floci.auth.root-access-key-id", ROOT_ACCESS_KEY_ID,
                 "floci.auth.root-secret-access-key", ROOT_SECRET,
-                "floci.ctf.hide-internal-endpoints", "true");
+                "floci.ctf.hide-internal-endpoints", "true",
+                "floci.services.cloudtrail.enabled", "true",
+                "floci.services.cloudtrail.audit-enabled", "true");
     }
 }

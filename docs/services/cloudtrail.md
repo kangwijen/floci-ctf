@@ -40,7 +40,31 @@ Trails persist in Floci storage (`cloudtrail-trails.json`) using the global or p
 
 When `audit-enabled` is `true`, Floci emits CloudTrail-shaped management events for API traffic on port `4566` that is not matched by `exclude-internal-paths`. Events are indexed for `LookupEvents` and buffered to active trails (`IsLogging=true`) for S3 delivery.
 
-`CloudTrailAuditFilter` skips CloudTrail API calls themselves to avoid recursion. Global services (IAM, STS, CloudFront, Route53, WAF) deliver to trails with `IncludeGlobalServiceEvents=true` even when the request region differs from the trail home region.
+`CloudTrailAuditFilter` records mutating CloudTrail control-plane calls (`CreateTrail`, `UpdateTrail`, `DeleteTrail`, `StartLogging`, `StopLogging`, `PutEventSelectors`) so tampering is visible in `LookupEvents` and S3 delivery. Read-only CloudTrail APIs (`LookupEvents`, `DescribeTrails`, `GetTrailStatus`) are skipped to avoid noise. Mutating CloudTrail calls bypass the active-trail gate so `StopLogging` is still indexed after the handler disables logging.
+
+GuardDuty raises findings for `StopLogging` and `DeleteTrail` audit events when a detector is enabled (`DefenseEvasion:CloudTrail/*`).
+
+Global services (IAM, STS, CloudFront, Route53, WAF) deliver to trails with `IncludeGlobalServiceEvents=true` even when the request region differs from the trail home region.
+
+## Inter-service events (in-process audit)
+
+When `audit-enabled` is `true` and at least one trail is logging, `InProcessCloudTrailRecorder` emits CloudTrail-shaped events for selected service-to-service calls that never hit the HTTP `:4566` filter. Events use `userIdentity.type=AWSService` with `invokedBy` set to the calling service.
+
+| Caller | Target action | `eventSource` | `invokedBy` | Identity |
+|---|---|---|---|---|
+| Step Functions | aws-sdk / Lambda task | target service (e.g. `s3.amazonaws.com`) | `states.amazonaws.com` | AssumedRole (state machine role) |
+| API Gateway integration | AWS proxy integration | target service | `apigateway.amazonaws.com` | AssumedRole (integration credentials) |
+| Config snapshot delivery | S3 `PutObject` | `s3.amazonaws.com` | `config.amazonaws.com` | AWSService |
+| EC2 VPC Flow Logs | S3 `PutObject` or CloudWatch Logs | `s3.amazonaws.com` / `logs.amazonaws.com` | `ec2.amazonaws.com` | AWSService |
+| EventBridge | Lambda invoke | `lambda.amazonaws.com` | `events.amazonaws.com` | AWSService |
+| EventBridge | SQS `SendMessage` | `sqs.amazonaws.com` | `events.amazonaws.com` |
+| EventBridge | SNS `Publish` | `sns.amazonaws.com` | `events.amazonaws.com` |
+| CloudWatch Logs subscription | Lambda / Firehose / Kinesis delivery | `lambda.amazonaws.com`, `firehose.amazonaws.com`, or `kinesis.amazonaws.com` | `logs.amazonaws.com` |
+| SNS topic delivery | SQS / Lambda fan-out | `sqs.amazonaws.com` or `lambda.amazonaws.com` | `sns.amazonaws.com` |
+| S3 access logging | Access log `PutObject` | `s3.amazonaws.com` | `s3.amazonaws.com` |
+| Firehose S3 flush | Destination `PutObject` | `s3.amazonaws.com` | `firehose.amazonaws.com` |
+
+These events are indexed for `LookupEvents` and delivered to active trails like HTTP audit records. Firehose destination `PutObject` events are recorded as data events (`eventCategory=Data`). For AWSService identities, `sourceIPAddress` and `userAgent` echo the `invokedBy` service endpoint.
 
 ## Event delivery and S3 layout
 
@@ -96,5 +120,5 @@ aws cloudtrail get-trail-status --name forensic-trail
 
 ## CTF fork notes
 
-- Trail and lookup APIs honor IAM enforcement and SigV4 when Compose hardening is on.
+- Trail and lookup APIs honor IAM enforcement and SigV4 when Compose hardening is on. `cloudtrail:StopLogging` and related actions scope to `arn:aws:cloudtrail:REGION:ACCOUNT:trail/NAME` from the JSON `Name` field (see [IAM scoped ARNs](iam.md#scoped-resource-arns)).
 - Forensic Compose sets `FLOCI_STORAGE_MODE=hybrid` and `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`. See [README forensic lab](../../README.md#forensic-lab) and [AGENTS.md](../../AGENTS.md#forensic-services-map).

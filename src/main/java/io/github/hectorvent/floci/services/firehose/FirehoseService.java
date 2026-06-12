@@ -6,6 +6,8 @@ import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
+import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription;
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription.S3Destination;
 import io.github.hectorvent.floci.services.firehose.model.Record;
@@ -31,13 +33,18 @@ public class FirehoseService {
     private final Map<String, List<byte[]>> buffers = new ConcurrentHashMap<>();
     private final S3Service s3Service;
     private final RegionResolver regionResolver;
+    private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
 
     @Inject
-    public FirehoseService(StorageFactory storageFactory, S3Service s3Service, RegionResolver regionResolver) {
+    public FirehoseService(StorageFactory storageFactory,
+                           S3Service s3Service,
+                           RegionResolver regionResolver,
+                           InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
         this.streamStore = storageFactory.create("firehose", "streams.json",
                 new TypeReference<Map<String, DeliveryStreamDescription>>() {});
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
+        this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
     }
 
     public String createDeliveryStream(String name, S3Destination s3Config) {
@@ -177,11 +184,35 @@ public class FirehoseService {
 
             byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
             s3Service.putObject(bucket, key, body, "application/x-ndjson", Map.of());
+            recordS3PutObject(regionResolver.getDefaultRegion(), bucket, key, null);
             LOG.infov("Flushed {0} records from stream {1} to s3://{2}/{3}",
                     toFlush.size(), streamName, bucket, key);
         } catch (Exception e) {
+            recordS3PutObject(regionResolver.getDefaultRegion(), resolveBucket(stream), null, "InternalFailure");
             LOG.errorv("Failed to flush Firehose stream {0}: {1}", streamName, e.getMessage());
         }
+    }
+
+    private void recordS3PutObject(String region, String bucket, String key, String errorCode) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (bucket != null) {
+            params.put("bucketName", bucket);
+        }
+        if (key != null) {
+            params.put("key", key);
+        }
+        inProcessCloudTrailRecorder.record(InProcessAuditContext.builder()
+                .region(region)
+                .eventSource("s3.amazonaws.com")
+                .eventName("PutObject")
+                .credentialScope("s3")
+                .requestParameters(params)
+                .errorCode(errorCode)
+                .invokedBy("firehose.amazonaws.com")
+                .servicePrincipal("firehose.amazonaws.com")
+                .managementEvent(false)
+                .eventCategory("Data")
+                .build());
     }
 
     private String resolveBucket(DeliveryStreamDescription stream) {
