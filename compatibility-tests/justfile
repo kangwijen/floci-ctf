@@ -19,6 +19,7 @@ FLOCI_AUTH_ROOT_ACCESS_KEY_ID := env('FLOCI_AUTH_ROOT_ACCESS_KEY_ID', '')
 FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY := env('FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY', '')
 FLOCI_CTF_PROFILE := env('FLOCI_CTF_PROFILE', 'permissive')
 FLOCI_IAM_ENFORCEMENT := env('FLOCI_IAM_ENFORCEMENT', 'false')
+FLOCI_CLOUDTRAIL_AUDIT_ENABLED := env('FLOCI_CLOUDTRAIL_AUDIT_ENABLED', 'false')
 
 # Default recipe - list all available commands
 default:
@@ -63,6 +64,24 @@ test-ctf-java:
     export FLOCI_CTF_PROFILE="${FLOCI_CTF_PROFILE:-ctf}"
     export FLOCI_IAM_ENFORCEMENT="${FLOCI_IAM_ENFORCEMENT:-true}"
     mvn test -q -Dtest=IamEnforcementTest,CloudMapIamEnforcementIntegrationTest,AppSyncIamEnforcementIntegrationTest
+
+# Forensic lab: CloudTrail audit delivery, LookupEvents, GuardDuty/Security Hub JSON API
+[working-directory: 'sdk-test-java']
+test-forensic-java:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source ../lib/ctf-env.sh
+    apply_forensic_profile
+    mvn test -q -Dtest=ForensicLabCompatibilityTest,CloudTrailTest
+
+# CTF + forensic probes
+[working-directory: 'sdk-test-java']
+test-ctf-forensic-java:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source ../lib/ctf-env.sh
+    apply_forensic_profile
+    mvn test -q -Dtest=IamEnforcementTest,ForensicLabCompatibilityTest,CloudTrailTest
 
 # Optional: Cloud Map servicediscovery smoke (permissive credentials)
 [working-directory: 'sdk-test-java']

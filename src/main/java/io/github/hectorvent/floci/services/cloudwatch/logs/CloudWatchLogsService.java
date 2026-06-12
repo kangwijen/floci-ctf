@@ -31,12 +31,14 @@ public class CloudWatchLogsService {
     private final StorageBackend<String, LogEvent> eventStore;
     private final StorageBackend<String, SubscriptionFilter> subscriptionFilterStore;
     private final RegionResolver regionResolver;
+    private final CloudWatchLogsSubscriptionDispatcher subscriptionDispatcher;
     private final int maxEventsPerQuery;
 
     @Inject
     public CloudWatchLogsService(StorageFactory storageFactory,
                                   EmulatorConfig config,
-                                  RegionResolver regionResolver) {
+                                  RegionResolver regionResolver,
+                                  CloudWatchLogsSubscriptionDispatcher subscriptionDispatcher) {
         this(
                 storageFactory.create("cloudwatchlogs", "cwlogs-groups.json",
                         new TypeReference<>() {}),
@@ -47,7 +49,8 @@ public class CloudWatchLogsService {
                 storageFactory.create("cloudwatchlogs", "cwlogs-subscription-filters.json",
                         new TypeReference<>() {}),
                 config.services().cloudwatchlogs().maxEventsPerQuery(),
-                regionResolver
+                regionResolver,
+                subscriptionDispatcher
         );
     }
 
@@ -56,13 +59,15 @@ public class CloudWatchLogsService {
                            StorageBackend<String, LogEvent> eventStore,
                            StorageBackend<String, SubscriptionFilter> subscriptionFilterStore,
                            int maxEventsPerQuery,
-                           RegionResolver regionResolver) {
+                           RegionResolver regionResolver,
+                           CloudWatchLogsSubscriptionDispatcher subscriptionDispatcher) {
         this.groupStore = groupStore;
         this.streamStore = streamStore;
         this.eventStore = eventStore;
         this.subscriptionFilterStore = subscriptionFilterStore;
         this.maxEventsPerQuery = maxEventsPerQuery;
         this.regionResolver = regionResolver;
+        this.subscriptionDispatcher = subscriptionDispatcher;
     }
 
     // ──────────────────────────── Log Groups ────────────────────────────
@@ -237,6 +242,7 @@ public class CloudWatchLogsService {
         long totalBytes = 0;
         Long minTs = null;
         Long maxTs = null;
+        List<LogEvent> storedEvents = new ArrayList<>();
 
         for (Map<String, Object> evt : events) {
             long ts = toLong(evt.get("timestamp"), now);
@@ -250,6 +256,7 @@ public class CloudWatchLogsService {
 
             String eventKey = eventKey(region, groupName, streamName, ts, logEvent.getEventId());
             eventStore.put(eventKey, logEvent);
+            storedEvents.add(logEvent);
 
             totalBytes += msg.getBytes().length + 26; // approx overhead
             if (minTs == null || ts < minTs) { minTs = ts; }
@@ -271,7 +278,24 @@ public class CloudWatchLogsService {
         stream.setUploadSequenceToken(nextToken);
         streamStore.put(streamKey, stream);
 
+        dispatchSubscriptionFilters(groupName, streamName, storedEvents, region);
+
         return nextToken;
+    }
+
+    private void dispatchSubscriptionFilters(String groupName,
+                                             String streamName,
+                                             List<LogEvent> storedEvents,
+                                             String region) {
+        if (subscriptionDispatcher == null || storedEvents.isEmpty()) {
+            return;
+        }
+        String prefix = subscriptionFilterKeyPrefix(region, groupName);
+        List<SubscriptionFilter> filters = subscriptionFilterStore.scan(k -> k.startsWith(prefix));
+        if (filters.isEmpty()) {
+            return;
+        }
+        subscriptionDispatcher.dispatch(groupName, streamName, storedEvents, filters, region);
     }
 
     public record LogEventsResult(List<LogEvent> events, String nextForwardToken, String nextBackwardToken) {}

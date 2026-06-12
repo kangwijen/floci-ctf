@@ -203,6 +203,11 @@ floci:
       emit-mode: off
     cloudtrail:
       enabled: true
+    guardduty:
+      enabled: true
+      audit-enabled: false
+    securityhub:
+      enabled: true
     cloudfront:
       enabled: true
     appsync:

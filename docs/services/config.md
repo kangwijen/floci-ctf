@@ -33,6 +33,41 @@
 | `PutDeliveryChannel` | Create or update a delivery channel |
 | `DescribeDeliveryChannels` | List delivery channels |
 
+### Snapshot delivery
+
+Delivery channels accept `configSnapshotDeliveryProperties` on `PutDeliveryChannel`. Floci stores the snapshot schedule and returns it from `DescribeDeliveryChannels`; it does **not** run a background scheduler that writes objects to S3.
+
+| Field | Description |
+|---|---|
+| `deliveryFrequency` | AWS enum stored as-is (for example `Twelve_Hours`, `TwentyFour_Hours`, `One_Hour`) |
+| `s3BucketName` | Target bucket on the delivery channel |
+| `s3KeyPrefix` | Optional prefix before the AWS Config key layout |
+| `s3KmsKeyArn` | Optional KMS key ARN (metadata only) |
+| `snsTopicARN` | Optional SNS topic for delivery notifications (metadata only) |
+
+When snapshot delivery is implemented against real AWS, periodic snapshots land under:
+
+```
+s3://{bucket}/{prefix}/AWSLogs/{account-id}/Config/{region}/{yyyy}/{MM}/{dd}/{timestamp}_ConfigSnapshot.json
+```
+
+Forensic labs can pre-seed objects at that path, or use `PutDeliveryChannel` plus manual uploads to the bucket so players practice bucket policy and object analysis without a live Config aggregator.
+
+Example:
+
+```bash
+aws configservice put-delivery-channel --delivery-channel '{
+  "name": "default",
+  "s3BucketName": "my-config-bucket",
+  "s3KeyPrefix": "config-snapshots",
+  "configSnapshotDeliveryProperties": {
+    "deliveryFrequency": "Twelve_Hours"
+  }
+}'
+
+aws configservice describe-delivery-channels
+```
+
 ### Conformance Packs
 
 | Action | Description |

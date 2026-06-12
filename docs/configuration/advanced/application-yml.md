@@ -138,6 +138,16 @@ floci:
 
   ctf:
     hide-internal-endpoints: true          # FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS — false | true | all
+
+  # Forensic lab (see docker-compose.yml)
+  # services:
+  #   cloudtrail:
+  #     audit-enabled: true                # FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED
+  #     exclude-internal-paths:            # FLOCI_SERVICES_CLOUDTRAIL_EXCLUDE_INTERNAL_PATHS
+  #       - /_floci
+  #       - /_localstack
+  #       - /_aws
+  #       - /health
     container-credentials-bind-localhost: true   # FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST
     container-credentials-use-link-local-uri: true   # FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI
     container-credentials-link-local-host: 169.254.170.2   # FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST

@@ -465,11 +465,37 @@ public interface EmulatorConfig {
         BcmDataExportsServiceConfig bcmDataExports();
         ConfigServiceConfig configservice();
         CloudTrailServiceConfig cloudtrail();
+        GuardDutyServiceConfig guardduty();
+        SecurityHubServiceConfig securityhub();
         CloudFrontServiceConfig cloudfront();
         AppSyncServiceConfig appsync();
     }
 
     interface CloudTrailServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        /** When true, record management API activity to active trails (forensic lab profile). */
+        @WithDefault("false")
+        boolean auditEnabled();
+
+        /**
+         * Request path prefixes omitted from audit records (comma-separated via
+         * {@code FLOCI_SERVICES_CLOUDTRAIL_EXCLUDE_INTERNAL_PATHS}).
+         */
+        @WithDefault("/_floci,/_localstack,/_aws,/health")
+        List<String> excludeInternalPaths();
+    }
+
+    interface GuardDutyServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("false")
+        boolean auditEnabled();
+    }
+
+    interface SecurityHubServiceConfig {
         @WithDefault("true")
         boolean enabled();
     }

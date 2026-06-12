@@ -137,6 +137,10 @@ public class Ec2QueryHandler {
                 case "CreateVolume" -> handleCreateVolume(params, region);
                 case "DescribeVolumes" -> handleDescribeVolumes(params, region);
                 case "DeleteVolume" -> handleDeleteVolume(params, region);
+                // VPC Flow Logs
+                case "CreateFlowLogs" -> handleCreateFlowLogs(params, region);
+                case "DescribeFlowLogs" -> handleDescribeFlowLogs(params, region);
+                case "DeleteFlowLogs" -> handleDeleteFlowLogs(params, region);
                 default -> ec2Error("UnsupportedOperation",
                         "Operation " + action + " is not supported.", 400);
             };
@@ -2039,6 +2043,110 @@ public class Ec2QueryHandler {
     private Response handleDeleteVolume(MultivaluedMap<String, String> p, String region) {
         service.deleteVolume(region, p.getFirst("VolumeId"));
         return booleanResponse("DeleteVolume");
+    }
+
+    // ─── VPC Flow Log handlers ──────────────────────────────────────────────────
+
+    private Response handleCreateFlowLogs(MultivaluedMap<String, String> p, String region) {
+        List<String> resourceIds = getList(p, "ResourceId");
+        String maxAgg = p.getFirst("MaxAggregationInterval");
+        Integer maxAggregationInterval = maxAgg != null && !maxAgg.isBlank() ? Integer.parseInt(maxAgg) : null;
+        FlowLogCreationResult result = service.createFlowLogs(
+                region,
+                resourceIds,
+                p.getFirst("ResourceType"),
+                p.getFirst("TrafficType"),
+                p.getFirst("LogDestinationType"),
+                p.getFirst("LogDestination"),
+                p.getFirst("LogGroupName"),
+                p.getFirst("DeliverLogsPermissionArn"),
+                p.getFirst("LogFormat"),
+                maxAggregationInterval,
+                parseTagsForResource(p, "flow-log"));
+        XmlBuilder xml = new XmlBuilder()
+                .start("CreateFlowLogsResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString());
+        if (p.getFirst("ClientToken") != null) {
+            xml.elem("clientToken", p.getFirst("ClientToken"));
+        }
+        xml.start("flowLogIdSet");
+        for (String flowLogId : result.getFlowLogIds()) {
+            xml.elem("item", flowLogId);
+        }
+        xml.end("flowLogIdSet").start("unsuccessful");
+        for (FlowLogUnsuccessfulItem item : result.getUnsuccessful()) {
+            xml.start("item")
+                    .elem("resourceId", item.getResourceId())
+                    .start("error")
+                    .elem("code", item.getErrorCode())
+                    .elem("message", item.getErrorMessage())
+                    .end("error")
+                    .end("item");
+        }
+        xml.end("unsuccessful").end("CreateFlowLogsResponse");
+        return xmlResponse(xml.build());
+    }
+
+    private Response handleDescribeFlowLogs(MultivaluedMap<String, String> p, String region) {
+        List<String> flowLogIds = getList(p, "FlowLogId");
+        Map<String, List<String>> filters = getFilters(p);
+        List<FlowLog> flowLogList = service.describeFlowLogs(region, flowLogIds, filters);
+        XmlBuilder xml = new XmlBuilder()
+                .start("DescribeFlowLogsResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString())
+                .start("flowLogSet");
+        for (FlowLog flowLog : flowLogList) {
+            xml.start("item").raw(flowLogXml(flowLog)).end("item");
+        }
+        xml.end("flowLogSet")
+                .elem("nextToken", "")
+                .end("DescribeFlowLogsResponse");
+        return xmlResponse(xml.build());
+    }
+
+    private Response handleDeleteFlowLogs(MultivaluedMap<String, String> p, String region) {
+        FlowLogCreationResult result = service.deleteFlowLogs(region, getList(p, "FlowLogId"));
+        XmlBuilder xml = new XmlBuilder()
+                .start("DeleteFlowLogsResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString())
+                .start("unsuccessful");
+        for (FlowLogUnsuccessfulItem item : result.getUnsuccessful()) {
+            xml.start("item")
+                    .elem("resourceId", item.getResourceId())
+                    .start("error")
+                    .elem("code", item.getErrorCode())
+                    .elem("message", item.getErrorMessage())
+                    .end("error")
+                    .end("item");
+        }
+        xml.end("unsuccessful").end("DeleteFlowLogsResponse");
+        return xmlResponse(xml.build());
+    }
+
+    private String flowLogXml(FlowLog flowLog) {
+        XmlBuilder xml = new XmlBuilder()
+                .elem("flowLogId", flowLog.getFlowLogId())
+                .elem("flowLogStatus", flowLog.getFlowLogStatus())
+                .elem("resourceId", flowLog.getResourceId())
+                .elem("trafficType", flowLog.getTrafficType())
+                .elem("logDestinationType", flowLog.getLogDestinationType())
+                .elem("deliverLogsStatus", flowLog.getDeliverLogsStatus())
+                .elem("maxAggregationInterval", String.valueOf(flowLog.getMaxAggregationInterval()))
+                .elem("logFormat", flowLog.getLogFormat());
+        if (flowLog.getLogDestination() != null) {
+            xml.elem("logDestination", flowLog.getLogDestination());
+        }
+        if (flowLog.getLogGroupName() != null) {
+            xml.elem("logGroupName", flowLog.getLogGroupName());
+        }
+        if (flowLog.getDeliverLogsPermissionArn() != null) {
+            xml.elem("deliverLogsPermissionArn", flowLog.getDeliverLogsPermissionArn());
+        }
+        if (flowLog.getCreationTime() != null) {
+            xml.elem("creationTime", ISO_FMT.format(flowLog.getCreationTime()));
+        }
+        xml.raw(tagSetXml(flowLog.getTags()));
+        return xml.build();
     }
 
     private String volumeXml(Volume vol) {

@@ -117,6 +117,40 @@ Under strict mode, `test`/`test` and other unregistered keys are rejected. Only 
 
 **STS notes:** Participants do **not** need `sts:GetCallerIdentity` or `sts:GetSessionToken` in IAM policies (same as AWS). Operator `FLOCI_AUTH_ROOT_*` resolves to `arn:aws:iam::ACCOUNT:root`. Set `FLOCI_DEFAULT_ACCOUNT_ID` when using a non-default account id in ARNs.
 
+## Forensic lab
+
+The root [docker-compose.yml](./docker-compose.yml) layers forensic defaults on top of CTF hardening so audit artifacts and service metadata survive restarts:
+
+| Variable | Compose value | Purpose |
+|---|---|---|
+| `FLOCI_STORAGE_MODE` | `hybrid` | Async flush of service state to `./data` (mounted at `/app/data`) |
+| `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `true` | Record management API calls to active CloudTrail trails |
+
+Operator setup for a typical evidence chain:
+
+1. Start Compose with operator root credentials (see [Quick start](#quick-start-operators)).
+2. Create an S3 bucket, optional SQS queue, and bucket notifications for trail delivery ([CloudTrail docs](./docs/services/cloudtrail.md)).
+3. `CreateTrail`, `StartLogging`, and exercise the scenario; review gzip JSON under `AWSLogs/{account-id}/CloudTrail/...` in the trail bucket.
+4. Optional: configure [AWS Config](./docs/services/config.md) delivery channels with `configSnapshotDeliveryProperties` for snapshot metadata (objects can be pre-seeded for parsing labs).
+
+Enable S3 access logging for data-plane evidence ([S3 access logging](./docs/services/s3.md#access-logging)). Optional [GuardDuty](./docs/services/guardduty.md) and [Security Hub](./docs/services/securityhub.md) aggregate findings from CloudTrail-driven rules and ASFF imports.
+
+Forensic regression (with CTF core tests):
+
+```bash
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
+```
+
+Compatibility probes against a running instance ([compatibility-tests/README.md](./compatibility-tests/README.md)):
+
+```bash
+cd compatibility-tests && cp env.example .env
+# set FLOCI_CTF_PROFILE=ctf, FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true, operator AWS_*
+just test-forensic-java
+```
+
+Full map: [AGENTS.md forensic services](./AGENTS.md#forensic-services-map).
+
 ## Client tooling notes
 
 The local image includes AWS CLI v1 on Alpine. With `FLOCI_AUTH_VALIDATE_SIGNATURES=true`, CLI v1 often returns `SignatureDoesNotMatch` even with valid credentials.
@@ -154,6 +188,8 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 | Fork delta summary (this file) | [README.md](./README.md) |
 | CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
+| Forensic lab (CloudTrail, Config, storage) | [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
+| Compatibility / SDK forensic probes | [compatibility-tests/README.md](./compatibility-tests/README.md) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |
 
 Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localstack/init` and `/_localstack/health` endpoints are still served. Once the emulator is up, the log also ends with a LocalStack-style `Ready.` line, so tooling that watches the log for it, such as the default wait strategy of Testcontainers' `LocalStackContainer`, works unchanged. Set `LOCALSTACK_PARITY=false` to opt out of automatic translation.
@@ -165,7 +201,8 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and f
 | Area | Change |
 |---|---|
 | Cloud Map | New `servicediscovery` management API and docs |
-| CloudTrail | Trail lifecycle support |
+| CloudTrail | Trail lifecycle + audit delivery + LookupEvents |
+| Forensic lab | CloudTrail audit, Config snapshots, S3 access logs, VPC Flow Logs, GuardDuty, Security Hub |
 | Cognito | Verification code subsystem (SNS/SES inspection) |
 | EC2 | Provisioning primitives (launch templates, NAT gateways, VPC endpoints) |
 | KMS | Key state and description operations |

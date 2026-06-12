@@ -29,6 +29,7 @@ public class Bucket {
     private String requestPaymentPayer; // "BucketOwner" (default) or "Requester"; null until first PUT
     private String region;
     private WebsiteConfiguration websiteConfiguration;
+    private LoggingConfiguration loggingConfiguration;
 
     public Bucket() {
         this.tags = new HashMap<>();
@@ -104,4 +105,9 @@ public class Bucket {
 
     public WebsiteConfiguration getWebsiteConfiguration() { return websiteConfiguration; }
     public void setWebsiteConfiguration(WebsiteConfiguration websiteConfiguration) { this.websiteConfiguration = websiteConfiguration; }
+
+    public LoggingConfiguration getLoggingConfiguration() { return loggingConfiguration; }
+    public void setLoggingConfiguration(LoggingConfiguration loggingConfiguration) {
+        this.loggingConfiguration = loggingConfiguration;
+    }
 }

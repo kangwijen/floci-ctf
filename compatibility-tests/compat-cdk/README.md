@@ -27,6 +27,8 @@ Bats helpers source [`../lib/ctf-env.sh`](../lib/ctf-env.sh) for `FLOCI_ENDPOINT
 
 The CTF image enables IAM enforcement. Export registered credentials before running; `test`/`test` calls fail with `403`.
 
+Forensic lab stacks can provision S3 log buckets and CloudTrail trails via CDK; verify delivery with operator credentials after `cdk deploy`.
+
 ```bash
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"

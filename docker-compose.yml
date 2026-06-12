@@ -36,6 +36,9 @@ services:
       FLOCI_HOSTNAME: floci
       FLOCI_BASE_URL: http://floci:4566
       FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED: "true"
+      # Forensic lab: persist service state across restarts; emit management API audit records.
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED: "true"
     networks:
       floci_default:
         aliases:

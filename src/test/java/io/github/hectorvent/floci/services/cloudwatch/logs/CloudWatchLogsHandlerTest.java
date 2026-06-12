@@ -47,7 +47,8 @@ class CloudWatchLogsHandlerTest {
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 10_000,
-                new RegionResolver(REGION, ACCOUNT)
+                new RegionResolver(REGION, ACCOUNT),
+                null
         );
         handler = new CloudWatchLogsHandler(service, MAPPER);
 

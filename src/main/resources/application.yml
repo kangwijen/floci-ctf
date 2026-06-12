@@ -333,6 +333,16 @@ floci:
       emit-mode: synchronous
     cloudtrail:
       enabled: true
+      audit-enabled: false
+      exclude-internal-paths:
+        - /_floci
+        - /_localstack
+        - /_aws
+        - /health
+    guardduty:
+      enabled: true
+    securityhub:
+      enabled: true
     cloudfront:
       enabled: true
     appsync:

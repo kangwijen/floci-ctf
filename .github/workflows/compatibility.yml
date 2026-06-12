@@ -202,6 +202,8 @@ jobs:
             -e FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true \
             -e FLOCI_AUTH_ROOT_ACCESS_KEY_ID="$CTF_CI_ROOT_ACCESS_KEY_ID" \
             -e FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="$CTF_CI_ROOT_SECRET_ACCESS_KEY" \
+            -e FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true \
+            -e FLOCI_STORAGE_MODE=hybrid \
             -e FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED=true \
             -e FLOCI_TLS_ENABLED=true \
             -e FLOCI_SERVICES_EC2_MOCK=true \
@@ -226,7 +228,7 @@ jobs:
           cache-from: type=gha,scope=sdk-test-java-ctf
           cache-to: type=gha,scope=sdk-test-java-ctf,mode=max
 
-      - name: Run IamEnforcementTest
+      - name: Run CTF and forensic compatibility tests
         id: ctf-tests
         run: |
           mkdir -p test-results
@@ -235,12 +237,13 @@ jobs:
             --dns "${FLOCI_IP}" \
             -e FLOCI_ENDPOINT=http://floci-ctf:4566 \
             -e FLOCI_S3_VHOST_ENDPOINT=http://floci-ctf:4566 \
+            -e FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true \
             -e AWS_ACCESS_KEY_ID="$CTF_CI_ROOT_ACCESS_KEY_ID" \
             -e AWS_SECRET_ACCESS_KEY="$CTF_CI_ROOT_SECRET_ACCESS_KEY" \
             -v "$(pwd)/test-results:/results" \
             --entrypoint bash \
             compat-sdk-test-java-ctf \
-            -c 'status=0; mvn test -q -Dtest=IamEnforcementTest -Dorg.slf4j.simpleLogger.defaultLogLevel=warn || status=$?; if [ -d target/surefire-reports ]; then cp target/surefire-reports/TEST-*.xml /results/ 2>/dev/null || true; fi; exit $status'
+            -c 'status=0; mvn test -q -Dtest=IamEnforcementTest,ForensicLabCompatibilityTest -Dorg.slf4j.simpleLogger.defaultLogLevel=warn || status=$?; if [ -d target/surefire-reports ]; then cp target/surefire-reports/TEST-*.xml /results/ 2>/dev/null || true; fi; exit $status'
 
       - name: Generate test summary
         if: always() && steps.ctf-tests.outcome != 'skipped'

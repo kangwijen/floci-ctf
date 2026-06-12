@@ -5,11 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEvent;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventResource;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +39,7 @@ public class CloudTrailJsonHandler {
             case "DeleteTrail" -> deleteTrail(request, region);
             case "GetTrailStatus" -> getTrailStatus(request, region);
             case "PutEventSelectors" -> putEventSelectors(request, region);
+            case "LookupEvents" -> lookupEvents(request, region);
             default -> throw new AwsException("UnsupportedOperation",
                     "Operation " + action + " is not supported.", 400);
         };
@@ -102,6 +107,58 @@ public class CloudTrailJsonHandler {
         return Response.ok(mapper.createObjectNode()).build();
     }
 
+    private Response lookupEvents(JsonNode request, String region) {
+        CloudTrailEventStore.LookupEventsResult result = service.lookupEvents(
+                region,
+                parseTimestamp(request.get("StartTime")),
+                parseTimestamp(request.get("EndTime")),
+                parseLookupAttributes(request.path("LookupAttributes")),
+                readMaxResults(request),
+                textOrNull(request, "NextToken"));
+
+        ObjectNode response = mapper.createObjectNode();
+        ArrayNode events = response.putArray("Events");
+        for (CloudTrailEvent event : result.events()) {
+            events.add(eventNode(event));
+        }
+        if (result.nextToken() != null) {
+            response.put("NextToken", result.nextToken());
+        }
+        return Response.ok(response).build();
+    }
+
+    private ObjectNode eventNode(CloudTrailEvent event) {
+        ObjectNode node = mapper.createObjectNode();
+        node.put("EventId", event.getEventId());
+        node.put("EventName", event.getEventName());
+        if (event.getEventTime() != null) {
+            node.put("EventTime", event.getEventTime().toEpochMilli() / 1000.0);
+        }
+        if (event.getUsername() != null) {
+            node.put("Username", event.getUsername());
+        }
+        if (event.getEventSource() != null) {
+            node.put("EventSource", event.getEventSource());
+        }
+        node.put("ReadOnly", event.isReadOnly() ? "true" : "false");
+        if (event.getFullEventJson() != null) {
+            node.put("CloudTrailEvent", event.getFullEventJson());
+        }
+        ArrayNode resources = node.putArray("Resources");
+        if (event.getResources() != null && !event.getResources().isEmpty()) {
+            for (CloudTrailEventResource resource : event.getResources()) {
+                ObjectNode resourceNode = resources.addObject();
+                if (resource.getResourceName() != null) {
+                    resourceNode.put("ResourceName", resource.getResourceName());
+                }
+                if (resource.getResourceType() != null) {
+                    resourceNode.put("ResourceType", resource.getResourceType());
+                }
+            }
+        }
+        return node;
+    }
+
     private ObjectNode trailNode(CloudTrailTrail trail) {
         ObjectNode node = mapper.createObjectNode();
         node.put("Name", trail.getName());
@@ -141,5 +198,50 @@ public class CloudTrailJsonHandler {
 
     private static Boolean optionalBoolean(JsonNode node, String fieldName) {
         return node != null && node.has(fieldName) ? node.path(fieldName).asBoolean() : null;
+    }
+
+    private static Instant parseTimestamp(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            double seconds = node.asDouble();
+            long wholeSeconds = (long) seconds;
+            long nanos = (long) ((seconds - wholeSeconds) * 1_000_000_000L);
+            return Instant.ofEpochSecond(wholeSeconds, nanos);
+        }
+        String text = node.asText(null);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return Instant.parse(text);
+    }
+
+    private static List<CloudTrailEventStore.LookupAttribute> parseLookupAttributes(JsonNode attributesNode) {
+        if (attributesNode == null || !attributesNode.isArray()) {
+            return List.of();
+        }
+        List<CloudTrailEventStore.LookupAttribute> attributes = new ArrayList<>();
+        attributesNode.forEach(attribute -> attributes.add(new CloudTrailEventStore.LookupAttribute(
+                attribute.path("AttributeKey").asText(null),
+                attribute.path("AttributeValue").asText(null))));
+        return attributes;
+    }
+
+    private static Integer readMaxResults(JsonNode request) {
+        JsonNode node = request.get("MaxResults");
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        return node.asInt();
+    }
+
+    private static String textOrNull(JsonNode node, String fieldName) {
+        JsonNode value = node.get(fieldName);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        String text = value.asText(null);
+        return text == null || text.isBlank() ? null : text;
     }
 }

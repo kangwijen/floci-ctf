@@ -153,6 +153,41 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 ---
 
+## Forensic services map
+
+Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE=hybrid`, `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`.
+
+| Area | Primary files / docs |
+|------|----------------------|
+| CloudTrail trail lifecycle | `CloudTrailService`, `CloudTrailJsonHandler`, [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
+| CloudTrail audit recording | `CloudTrailAuditFilter`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
+| CloudTrail audit config | `EmulatorConfig.CloudTrailServiceConfig` (`audit-enabled`, `exclude-internal-paths`) |
+| Config delivery / snapshots | `ConfigSnapshotDeliveryService`, `AwsConfigService`, [docs/services/config.md](./docs/services/config.md) |
+| S3 access logging | `S3AccessLogService`, `S3AccessLogFormatter`, [docs/services/s3.md](./docs/services/s3.md#access-logging) |
+| VPC Flow Logs | `Ec2FlowLogEmitter`, `Ec2Service`, `VpcFlowLogRecordFormatter` |
+| CloudWatch Logs subscriptions | `CloudWatchLogsSubscriptionDispatcher` |
+| GuardDuty detectors / findings | `GuardDutyService`, `GuardDutyCloudTrailHook`, [docs/services/guardduty.md](./docs/services/guardduty.md) |
+| Security Hub ASFF import | `SecurityHubService`, `GuardDutyFindingSubscriber`, [docs/services/securityhub.md](./docs/services/securityhub.md) |
+| Persistent lab state | `StorageFactory`, `HybridStorage`, `./data` volume in `docker-compose.yml` |
+| E2E forensic scenario | `CloudForensicsIntegrationTest`, `ForensicLabProfile` |
+| SDK compatibility probes | [compatibility-tests/sdk-test-java](./compatibility-tests/sdk-test-java) (`ForensicLabCompatibilityTest`) |
+
+**Forensic regression (unit/integration):**
+
+```bash
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
+```
+
+**Forensic compatibility (running instance):**
+
+```bash
+cd compatibility-tests && just test-forensic-java
+```
+
+Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default) and operator or IAM credentials in `.env`.
+
+---
+
 ## Enforcement surfaces
 
 | Surface | Hardened with Compose CTF env? |
@@ -201,7 +236,12 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 ./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
-**E2E against running instance:** `./mvnw test -pl compatibility-tests/sdk-test-java -Dtest=IamEnforcementTest`
+**E2E against running instance:**
+
+```bash
+./mvnw test -pl compatibility-tests/sdk-test-java -Dtest=IamEnforcementTest
+cd compatibility-tests && just test-forensic-java
+```
 
 On Windows with Docker Desktop, set `DOCKER_HOST` so Maven can reach Docker before container tests (for example `npipe:////./pipe/docker_engine` in PowerShell). Default `floci.docker.docker-host` is `unix:///var/run/docker.sock`.
 

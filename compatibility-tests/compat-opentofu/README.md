@@ -27,6 +27,8 @@ Bats helpers source [`../lib/ctf-env.sh`](../lib/ctf-env.sh). The generated S3 b
 
 Against the hardened image, set IAM or operator root credentials before running.
 
+Forensic lab: same as `compat-terraform`; OpenTofu applies can provision trail buckets when audit is enabled on the emulator.
+
 ```bash
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"

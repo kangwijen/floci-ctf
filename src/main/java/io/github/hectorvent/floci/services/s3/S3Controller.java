@@ -52,6 +52,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
@@ -88,6 +89,7 @@ public class S3Controller {
 
     private final S3Service s3Service;
     private final S3SelectService s3SelectService;
+    private final S3AccessLogService accessLogService;
     private final RegionResolver regionResolver;
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
     private final IamService iamService;
@@ -95,12 +97,14 @@ public class S3Controller {
 
     @Inject
     public S3Controller(S3Service s3Service, S3SelectService s3SelectService,
+                        S3AccessLogService accessLogService,
                         RegionResolver regionResolver,
                         io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
                         IamService iamService,
                         EmulatorConfig emulatorConfig) {
         this.s3Service = s3Service;
         this.s3SelectService = s3SelectService;
+        this.accessLogService = accessLogService;
         this.regionResolver = regionResolver;
         this.currentVertxRequest = currentVertxRequest;
         this.iamService = iamService;
@@ -177,6 +181,9 @@ public class S3Controller {
             }
             if (hasQueryParam(uriInfo, "website")) {
                 return handlePutBucketWebsite(bucket, body);
+            }
+            if (hasQueryParam(uriInfo, "logging")) {
+                return handlePutBucketLogging(bucket, body);
             }
             if (hasQueryParam(uriInfo, "policy")) {
                 s3Service.putBucketPolicy(bucket, new String(body, StandardCharsets.UTF_8));
@@ -258,6 +265,10 @@ public class S3Controller {
                 s3Service.deleteBucketWebsite(bucket);
                 return Response.noContent().build();
             }
+            if (hasQueryParam(uriInfo, "logging")) {
+                s3Service.deleteBucketLogging(bucket);
+                return Response.noContent().build();
+            }
             if (hasQueryParam(uriInfo, "policy")) {
                 s3Service.deleteBucketPolicy(bucket);
                 return Response.noContent().build();
@@ -302,8 +313,10 @@ public class S3Controller {
                                 @QueryParam("encoding-type") String encodingType,
                                 @QueryParam("key-marker") String keyMarker,
                                 @QueryParam("marker") String marker,
-                                @Context UriInfo uriInfo) {
+                                @Context UriInfo uriInfo,
+                                @Context HttpHeaders httpHeaders) {
         validateRawUri();
+        long startedAt = System.nanoTime();
         try {
             if (hasQueryParam(uriInfo, "uploads")) {
                 return handleListMultipartUploads(bucket);
@@ -328,6 +341,9 @@ public class S3Controller {
             }
             if (hasQueryParam(uriInfo, "website")) {
                 return handleGetBucketWebsite(bucket);
+            }
+            if (hasQueryParam(uriInfo, "logging")) {
+                return handleGetBucketLogging(bucket);
             }
             if (hasQueryParam(uriInfo, "policy")) {
                 return Response.ok(s3Service.getBucketPolicy(bucket)).build();
@@ -434,8 +450,13 @@ public class S3Controller {
                 }
             }
             xml.end("ListBucketResult");
-            return Response.ok(xml.build()).build();
+            String listXml = xml.build();
+            recordAccessLog(bucket, null, "REST.GET.BUCKET", "GET", uriInfo, httpHeaders, startedAt,
+                    200, null, listXml.getBytes(StandardCharsets.UTF_8).length, null, null);
+            return Response.ok(listXml).build();
         } catch (AwsException e) {
+            recordAccessLog(bucket, null, "REST.GET.BUCKET", "GET", uriInfo, httpHeaders, startedAt,
+                    e.getHttpStatus(), e.getErrorCode(), -1, null, null);
             return xmlErrorResponse(e);
         }
     }
@@ -458,6 +479,7 @@ public class S3Controller {
                               @Context UriInfo uriInfo,
                               @Context HttpHeaders httpHeaders,
                               byte[] body) {
+        long startedAt = System.nanoTime();
         try {
             key = extractObjectKey(uriInfo, bucket);
 
@@ -544,8 +566,12 @@ public class S3Controller {
                 resp.header("x-amz-version-id", obj.getVersionId());
             }
             appendPutObjectResponseHeaders(resp, obj);
+            recordAccessLog(bucket, key, "REST.PUT.OBJECT", "PUT", uriInfo, httpHeaders, startedAt,
+                    200, null, data.length, (long) data.length, obj.getVersionId());
             return resp.build();
         } catch (AwsException e) {
+            recordAccessLog(bucket, key, "REST.PUT.OBJECT", "PUT", uriInfo, httpHeaders, startedAt,
+                    e.getHttpStatus(), e.getErrorCode(), -1, null, null);
             return xmlErrorResponse(e);
         }
     }
@@ -574,6 +600,7 @@ public class S3Controller {
                               @HeaderParam("Range") String rangeHeader,
                               @Context UriInfo uriInfo,
                               @Context HttpHeaders httpHeaders) {
+        long startedAt = System.nanoTime();
         try {
             key = extractObjectKey(uriInfo, bucket);
 
@@ -622,11 +649,19 @@ public class S3Controller {
             }
 
             if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                return handleRangeRequest(bucket, key, versionId, obj, rangeHeader, overrides);
+                Response rangeResponse = handleRangeRequest(bucket, key, versionId, obj, rangeHeader, overrides);
+                recordAccessLog(bucket, key, "REST.GET.OBJECT", "GET", uriInfo, httpHeaders, startedAt,
+                        rangeResponse.getStatus(), null, obj.getSize(), obj.getSize(), versionId);
+                return rangeResponse;
             }
 
-            return fullObjectResponse(bucket, key, versionId, obj, overrides);
+            Response objectResponse = fullObjectResponse(bucket, key, versionId, obj, overrides);
+            recordAccessLog(bucket, key, "REST.GET.OBJECT", "GET", uriInfo, httpHeaders, startedAt,
+                    200, null, obj.getSize(), obj.getSize(), versionId);
+            return objectResponse;
         } catch (AwsException e) {
+            recordAccessLog(bucket, key, "REST.GET.OBJECT", "GET", uriInfo, httpHeaders, startedAt,
+                    e.getHttpStatus(), e.getErrorCode(), -1, null, versionId);
             return xmlErrorResponse(e);
         }
     }
@@ -875,6 +910,7 @@ public class S3Controller {
                                  @QueryParam("versionId") String versionId,
                                  @Context UriInfo uriInfo,
                                  @Context HttpHeaders httpHeaders) {
+        long startedAt = System.nanoTime();
         try {
             key = extractObjectKey(uriInfo, bucket);
 
@@ -896,8 +932,12 @@ public class S3Controller {
                 }
                 resp.header("x-amz-version-id", result.getVersionId());
             }
+            recordAccessLog(bucket, key, "REST.DELETE.OBJECT", "DELETE", uriInfo, httpHeaders, startedAt,
+                    204, null, -1, null, versionId);
             return resp.build();
         } catch (AwsException e) {
+            recordAccessLog(bucket, key, "REST.DELETE.OBJECT", "DELETE", uriInfo, httpHeaders, startedAt,
+                    e.getHttpStatus(), e.getErrorCode(), -1, null, versionId);
             return xmlErrorResponse(e);
         }
     }
@@ -2632,6 +2672,89 @@ public class S3Controller {
         }
         s3Service.putBucketWebsite(bucket, new WebsiteConfiguration(indexDoc, errorDoc));
         return Response.ok().build();
+    }
+
+    private Response handleGetBucketLogging(String bucket) {
+        String xml = s3Service.getBucketLogging(bucket);
+        return Response.ok()
+                .type(MediaType.APPLICATION_XML)
+                .entity("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + xml)
+                .build();
+    }
+
+    private Response handlePutBucketLogging(String bucket, byte[] body) {
+        s3Service.putBucketLogging(bucket, new String(body, StandardCharsets.UTF_8));
+        return Response.ok().build();
+    }
+
+    private void recordAccessLog(String bucket, String key, String operation, String httpMethod,
+                                 UriInfo uriInfo, HttpHeaders httpHeaders, long startedAtNanos,
+                                 int httpStatus, String errorCode, long bytesSent, Long objectSize,
+                                 String versionId) {
+        String[] auth = resolveAuthType(httpHeaders, uriInfo);
+        String requestId = newAccessLogRequestId();
+        accessLogService.recordAccess(new S3AccessLogContext(
+                bucket,
+                key,
+                operation,
+                buildRequestLine(httpMethod, uriInfo),
+                httpStatus,
+                errorCode,
+                bytesSent,
+                objectSize,
+                elapsedMillis(startedAtNanos),
+                resolveRemoteIp(),
+                "-",
+                requestId,
+                newAccessLogHostId(),
+                httpHeaders.getHeaderString("User-Agent"),
+                httpHeaders.getHeaderString("Referer"),
+                versionId,
+                auth[0],
+                auth[1],
+                httpHeaders.getHeaderString("Host"),
+                Instant.now()));
+    }
+
+    private static String newAccessLogRequestId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase(Locale.ROOT);
+    }
+
+    private static String newAccessLogHostId() {
+        return UUID.randomUUID().toString().replace("-", "") + "==";
+    }
+
+    private static long elapsedMillis(long startedAtNanos) {
+        return Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L);
+    }
+
+    private static String buildRequestLine(String httpMethod, UriInfo uriInfo) {
+        String path = uriInfo.getRequestUri().getRawPath();
+        String query = uriInfo.getRequestUri().getRawQuery();
+        String target = path + (query != null && !query.isEmpty() ? "?" + query : "");
+        return httpMethod + " " + target + " HTTP/1.1";
+    }
+
+    private String resolveRemoteIp() {
+        if (currentVertxRequest != null && currentVertxRequest.getCurrent() != null) {
+            var request = currentVertxRequest.getCurrent().request();
+            if (request.remoteAddress() != null) {
+                return request.remoteAddress().host();
+            }
+        }
+        return "127.0.0.1";
+    }
+
+    private static String[] resolveAuthType(HttpHeaders httpHeaders, UriInfo uriInfo) {
+        String authorization = httpHeaders.getHeaderString("Authorization");
+        if (authorization != null && authorization.startsWith("AWS4-HMAC-SHA256")) {
+            return new String[] {"SigV4", "AuthHeader"};
+        }
+        if (uriInfo.getQueryParameters().containsKey("X-Amz-Algorithm")
+                || uriInfo.getQueryParameters().containsKey("x-amz-algorithm")) {
+            return new String[] {"SigV4", "QueryString"};
+        }
+        return new String[] {"-", "-"};
     }
 
     /**

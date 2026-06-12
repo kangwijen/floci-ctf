@@ -29,7 +29,8 @@ class CloudWatchLogsServiceTest {
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 10000,
-                new RegionResolver("us-east-1", "000000000000")
+                new RegionResolver("us-east-1", "000000000000"),
+                null
         );
     }
 
@@ -249,7 +250,8 @@ class CloudWatchLogsServiceTest {
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 2,
-                new RegionResolver("us-east-1", "000000000000")
+                new RegionResolver("us-east-1", "000000000000"),
+                null
         );
 
         limitedService.createLogGroup("/app/logs", null, null, REGION);

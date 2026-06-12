@@ -2,7 +2,7 @@
 
 Compatibility tests for [floci-ctf](https://github.com/kangwijen/floci-ctf) using the **AWS SDK for Java v2 (2.31.8)**.
 
-Aligned with upstream Floci **1.5.23** and the [floci-ctf](https://github.com/kangwijen/floci-ctf) security-hardened fork.
+Aligned with upstream Floci **1.5.24** and the [floci-ctf](https://github.com/kangwijen/floci-ctf) security-hardened fork.
 
 Runs against a live Floci instance — no mocks.
 
@@ -31,6 +31,9 @@ Runs against a live Floci instance — no mocks.
 | `AppSyncTest`                    | GraphQL API CRUDL, data sources, resolvers, functions, types, API keys, tags, schema validation |
 | `AppSyncIamEnforcementIntegrationTest` | AppSync deny/allow under IAM enforcement |
 | `EcsTests`                       | ECS clusters, task definitions, services                 |
+| `CloudTrailTest`                 | Trail lifecycle (CreateTrail, StartLogging, DeleteTrail)   |
+| `ForensicLabCompatibilityTest`   | Audit delivery, LookupEvents, S3 log objects, GuardDuty/Security Hub JSON API (skips when audit off) |
+| `IamEnforcementTest`             | IAM allow/deny scenarios when enforcement is on          |
 
 ## Adding a New Test
 
@@ -81,14 +84,27 @@ mvn test -Dtest=CloudMapIamEnforcementIntegrationTest
 
 Other test classes still default to `test`/`test` and expect permissive mode unless you override credentials globally.
 
+### Forensic lab (floci-ctf)
+
+When the emulator runs with `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` (Compose default):
+
+```bash
+export FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true
+mvn test -Dtest=ForensicLabCompatibilityTest,CloudTrailTest
+```
+
+Or `just test-forensic-java` from `compatibility-tests/`. GuardDuty and Security Hub use Floci JSON 1.1 targets via `TestFixtures.postJson11`, not AWS SDK REST clients.
+
 ### CI (floci-ctf fork)
 
-`.github/workflows/compatibility.yml` runs `ctf-compat-java` on pull requests: Floci starts with CTF Compose-equivalent env (`FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED`, strict mode, SigV4) and executes `IamEnforcementTest` only. The default `compat-test` matrix still uses permissive Floci for upstream parity.
+`.github/workflows/compatibility.yml` runs `ctf-compat-java` on pull requests: Floci starts with CTF Compose-equivalent env (IAM enforcement, strict mode, SigV4, CloudTrail audit) and executes `IamEnforcementTest` and `ForensicLabCompatibilityTest`.
 
-Run the broader local probe set (adds Cloud Map and AppSync enforcement tests):
+Run the broader local probe set (adds Cloud Map, AppSync enforcement, and forensic lab):
 
 ```bash
 cd compatibility-tests && just test-ctf-java
+cd compatibility-tests && just test-forensic-java
+cd compatibility-tests && just test-ctf-forensic-java
 ```
 
 ## Docker

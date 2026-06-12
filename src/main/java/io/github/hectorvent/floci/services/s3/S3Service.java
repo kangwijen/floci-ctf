@@ -985,6 +985,69 @@ public class S3Service {
         LOG.infov("Deleted website configuration for bucket: {0}", bucketName);
     }
 
+    public void putBucketLogging(String bucketName, String loggingXml) {
+        Bucket bucket = bucketStore.get(bucketName)
+                .orElseThrow(() -> new AwsException("NoSuchBucket",
+                        "The specified bucket does not exist.", 404));
+        String targetBucket = XmlParser.extractFirst(loggingXml, "TargetBucket", null);
+        if (targetBucket == null || targetBucket.isBlank()) {
+            throw new AwsException("MalformedXML",
+                    "The XML you provided was not well-formed or did not validate against our published schema.",
+                    400);
+        }
+        targetBucket = targetBucket.trim();
+        ensureBucketExists(targetBucket);
+        String targetPrefix = XmlParser.extractFirst(loggingXml, "TargetPrefix", "");
+        if (targetPrefix == null) {
+            targetPrefix = "";
+        }
+        bucket.setLoggingConfiguration(new LoggingConfiguration(targetBucket, targetPrefix));
+        bucketStore.put(bucketName, bucket);
+        LOG.infov("Set logging configuration for bucket: {0} -> {1}/{2}", bucketName, targetBucket, targetPrefix);
+    }
+
+    public String getBucketLogging(String bucketName) {
+        Bucket bucket = bucketStore.get(bucketName)
+                .orElseThrow(() -> new AwsException("NoSuchBucket",
+                        "The specified bucket does not exist.", 404));
+        LoggingConfiguration config = bucket.getLoggingConfiguration();
+        if (config == null) {
+            return new XmlBuilder()
+                    .start("BucketLoggingStatus", AwsNamespaces.S3)
+                    .end("BucketLoggingStatus")
+                    .build();
+        }
+        return new XmlBuilder()
+                .start("BucketLoggingStatus", AwsNamespaces.S3)
+                .start("LoggingEnabled")
+                .elem("TargetBucket", config.getTargetBucket())
+                .elem("TargetPrefix", config.getTargetPrefix() != null ? config.getTargetPrefix() : "")
+                .end("LoggingEnabled")
+                .end("BucketLoggingStatus")
+                .build();
+    }
+
+    public void deleteBucketLogging(String bucketName) {
+        Bucket bucket = bucketStore.get(bucketName)
+                .orElseThrow(() -> new AwsException("NoSuchBucket",
+                        "The specified bucket does not exist.", 404));
+        bucket.setLoggingConfiguration(null);
+        bucketStore.put(bucketName, bucket);
+        LOG.infov("Deleted logging configuration for bucket: {0}", bucketName);
+    }
+
+    public Optional<Bucket> getBucketIfExists(String bucketName) {
+        return bucketStore.get(bucketName);
+    }
+
+    public boolean bucketExists(String bucketName) {
+        return bucketStore.get(bucketName).isPresent();
+    }
+
+    public void putAccessLogObject(String bucketName, String key, byte[] data) {
+        storeObject(bucketName, key, data, "text/plain", null, null, null, new PutObjectOptions());
+    }
+
     public void deleteBucketTagging(String bucketName) {
         Bucket bucket = bucketStore.get(bucketName)
                 .orElseThrow(() -> new AwsException("NoSuchBucket",

@@ -10,6 +10,7 @@ import io.github.hectorvent.floci.services.configservice.model.ConfigurationReco
 import io.github.hectorvent.floci.services.configservice.model.ConfigurationRecorderStatus;
 import io.github.hectorvent.floci.services.configservice.model.ConformancePack;
 import io.github.hectorvent.floci.services.configservice.model.ConformancePackStatusDetail;
+import io.github.hectorvent.floci.services.configservice.model.ConfigurationItem;
 import io.github.hectorvent.floci.services.configservice.model.DeliveryChannel;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 public class AwsConfigService {
 
     private final RegionResolver regionResolver;
+    private final ConfigSnapshotDeliveryService snapshotDeliveryService;
 
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, ConfigRule>> configRules = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, ConformancePack>> conformancePacks = new ConcurrentHashMap<>();
@@ -40,8 +42,10 @@ public class AwsConfigService {
     private final ConcurrentHashMap<String, Map<String, String>> tags = new ConcurrentHashMap<>();
 
     @Inject
-    public AwsConfigService(RegionResolver regionResolver) {
+    public AwsConfigService(RegionResolver regionResolver,
+                            ConfigSnapshotDeliveryService snapshotDeliveryService) {
         this.regionResolver = regionResolver;
+        this.snapshotDeliveryService = snapshotDeliveryService;
     }
 
     // --- Config Rules ---
@@ -147,6 +151,10 @@ public class AwsConfigService {
         }
         recorderRunning.put(region, true);
         recorderLastStartTime.put(region, System.currentTimeMillis() / 1000);
+        DeliveryChannel channel = deliveryChannels.get(region);
+        if (channel != null && channel.s3BucketName() != null && !channel.s3BucketName().isBlank()) {
+            snapshotDeliveryService.deliverConfigurationSnapshot(region, channel);
+        }
     }
 
     public void stopConfigurationRecorder(String region, String name) {
@@ -275,6 +283,39 @@ public class AwsConfigService {
                     System.currentTimeMillis() / 1000));
         }
         return result;
+    }
+
+    public boolean isRecorderRunning(String region) {
+        return recorderRunning.getOrDefault(region, false);
+    }
+
+    public String deliverConfigurationSnapshot(String region) {
+        DeliveryChannel channel = deliveryChannels.get(region);
+        if (channel == null) {
+            throw new AwsException("NoAvailableDeliveryChannelException",
+                    "Delivery channel is not available to deliver configuration snapshot.", 400);
+        }
+        String snapshotId = snapshotDeliveryService.deliverConfigurationSnapshot(region, channel);
+        if (snapshotId == null) {
+            throw new AwsException("InvalidDeliveryChannelException",
+                    "Delivery channel does not have an S3 bucket configured.", 400);
+        }
+        return snapshotId;
+    }
+
+    public List<ConfigurationItem> getResourceConfigHistory(String region,
+                                                            String resourceType,
+                                                            String resourceId,
+                                                            Double laterTime,
+                                                            Double earlierTime,
+                                                            int limit) {
+        return snapshotDeliveryService.getResourceConfigHistory(
+                region, resourceType, resourceId, laterTime, earlierTime, limit);
+    }
+
+    public List<ConfigurationItem> batchGetResourceConfig(String region,
+                                                          List<ConfigSnapshotDeliveryService.ResourceKey> keys) {
+        return snapshotDeliveryService.batchGetResourceConfig(region, keys);
     }
 
     // --- Tagging ---

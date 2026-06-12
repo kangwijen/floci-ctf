@@ -27,6 +27,8 @@ Bats helpers source [`../lib/ctf-env.sh`](../lib/ctf-env.sh). The generated S3 b
 
 Against the hardened image, set IAM or operator root credentials so Terraform state operations and applies are authorized.
 
+Forensic lab: Terraform can provision S3 buckets and CloudTrail trails; with `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`, verify `AWSLogs/` objects after applies.
+
 ```bash
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"

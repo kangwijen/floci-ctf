@@ -7,5 +7,6 @@ test-results/
 .terraform/
 .terraform.lock.hcl
 
-# Keep shared test env helper when building from compatibility-tests/ root
+# Keep shared test env helpers when building from compatibility-tests/ root
 !lib/ctf-env.sh
+# Forensic probes documented in README.md (markdown excluded from image context)

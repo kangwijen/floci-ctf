@@ -74,13 +74,20 @@ import software.amazon.awssdk.services.iam.model.DeleteUserRequest;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import software.amazon.awssdk.core.exception.SdkClientException;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Shared test utilities and AWS client factories.
@@ -213,6 +220,76 @@ public final class TestFixtures {
             }
             return iamEnforcementEnabled;
         }
+    }
+
+    // ============================================
+    // CloudTrail audit delivery probe
+    // ============================================
+
+    private static volatile Boolean cloudTrailAuditEnabled;
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Returns true when CloudTrail audit event delivery is active on the emulator.
+     * Honors {@code FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true} or probes via trail + LookupEvents.
+     */
+    public static boolean isCloudTrailAuditEnabled() {
+        if (cloudTrailAuditEnabled != null) {
+            return cloudTrailAuditEnabled;
+        }
+        synchronized (TestFixtures.class) {
+            if (cloudTrailAuditEnabled != null) {
+                return cloudTrailAuditEnabled;
+            }
+            if ("true".equalsIgnoreCase(System.getenv("FLOCI_CLOUDTRAIL_AUDIT_ENABLED"))) {
+                cloudTrailAuditEnabled = true;
+                return true;
+            }
+            String probeTrail = "audit-probe-" + UUID.randomUUID().toString().substring(0, 8);
+            String probeBucket = "audit-probe-" + UUID.randomUUID().toString().substring(0, 8);
+            try (CloudTrailClient ct = cloudTrailClient(); S3Client probeS3 = s3Client()) {
+                probeS3.createBucket(r -> r.bucket(probeBucket));
+                ct.createTrail(r -> r.name(probeTrail).s3BucketName(probeBucket));
+                ct.startLogging(r -> r.name(probeTrail));
+                probeS3.listBuckets();
+                var events = ct.lookupEvents(r -> r
+                        .maxResults(5)
+                        .startTime(Instant.now().minusSeconds(120))
+                        .endTime(Instant.now().plusSeconds(30)));
+                cloudTrailAuditEnabled = events.events() != null && !events.events().isEmpty();
+            } catch (Exception e) {
+                cloudTrailAuditEnabled = false;
+            } finally {
+                try (CloudTrailClient ct = cloudTrailClient()) {
+                    ct.stopLogging(r -> r.name(probeTrail));
+                    ct.deleteTrail(r -> r.name(probeTrail));
+                } catch (Exception ignored) {
+                }
+            }
+            return cloudTrailAuditEnabled;
+        }
+    }
+
+    /**
+     * POST JSON 1.1 request to Floci (GuardDuty, Security Hub, Config, CloudTrail).
+     */
+    public static JsonNode postJson11(String targetPrefix, String action, String jsonBody) throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(ENDPOINT)
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/x-amz-json-1.1")
+                .header("X-Amz-Target", targetPrefix + action)
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) {
+            throw new IllegalStateException("JSON 1.1 " + action + " failed: HTTP "
+                    + response.statusCode() + " " + response.body());
+        }
+        return JSON.readTree(response.body());
     }
 
     // ============================================

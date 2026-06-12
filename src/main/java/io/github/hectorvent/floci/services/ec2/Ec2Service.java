@@ -26,6 +26,9 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.ec2.model.Address;
+import io.github.hectorvent.floci.services.ec2.model.FlowLog;
+import io.github.hectorvent.floci.services.ec2.model.FlowLogCreationResult;
+import io.github.hectorvent.floci.services.ec2.model.FlowLogUnsuccessfulItem;
 import io.github.hectorvent.floci.services.ec2.model.GroupIdentifier;
 import io.github.hectorvent.floci.services.ec2.model.Image;
 import io.github.hectorvent.floci.services.ec2.model.Instance;
@@ -59,6 +62,7 @@ import io.github.hectorvent.floci.services.ec2.model.Vpc;
 import io.github.hectorvent.floci.services.ec2.model.VpcCidrBlockAssociation;
 import io.github.hectorvent.floci.services.ec2.model.VpcEndpoint;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
@@ -73,6 +77,7 @@ public class Ec2Service {
     private final Ec2ContainerManager containerManager;
     private final AmiImageResolver amiImageResolver;
     private final Ec2ImageCatalog imageCatalog;
+    private final Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents;
 
     // region::id → resource
     private final Map<String, Vpc> vpcs = new ConcurrentHashMap<>();
@@ -88,6 +93,7 @@ public class Ec2Service {
     private final Map<String, LaunchTemplate> launchTemplates = new ConcurrentHashMap<>();
     private final Map<String, VpcEndpoint> vpcEndpoints = new ConcurrentHashMap<>();
     private final Map<String, NatGateway> natGateways = new ConcurrentHashMap<>();
+    private final Map<String, FlowLog> flowLogs = new ConcurrentHashMap<>();
     // resourceId → List<Tag>
     private final Map<String, List<Tag>> tags = new ConcurrentHashMap<>();
     private final Set<String> seededRegions = ConcurrentHashMap.newKeySet();
@@ -96,12 +102,14 @@ public class Ec2Service {
 
     @Inject
     public Ec2Service(EmulatorConfig config, Ec2ContainerManager containerManager,
-                      AmiImageResolver amiImageResolver, Ec2ImageCatalog imageCatalog) {
+                      AmiImageResolver amiImageResolver, Ec2ImageCatalog imageCatalog,
+                      Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents) {
         this.accountId = config.defaultAccountId();
         this.config = config;
         this.containerManager = containerManager;
         this.amiImageResolver = amiImageResolver;
         this.imageCatalog = imageCatalog;
+        this.flowLogNetworkActivityEvents = flowLogNetworkActivityEvents;
     }
 
     // ─── Default resource seeding ──────────────────────────────────────────────
@@ -339,6 +347,9 @@ public class Ec2Service {
                 }
                 containerManager.launch(inst, dockerImage, publicKey, region);
             }
+
+            notifyFlowLogNetworkActivity(region, inst.getVpcId(), inst.getSubnetId(),
+                    eni.getNetworkInterfaceId());
         }
 
         return reservation;
@@ -2164,5 +2175,234 @@ public class Ec2Service {
         return addresses.values().stream()
                 .filter(a -> instanceId.equals(a.getInstanceId()) && a.getAssociationId() != null)
                 .findFirst();
+    }
+
+    // ─── VPC Flow Logs ─────────────────────────────────────────────────────────
+
+    public FlowLogCreationResult createFlowLogs(String region, List<String> resourceIds, String resourceType,
+                                                String trafficType, String logDestinationType,
+                                                String logDestination, String logGroupName,
+                                                String deliverLogsPermissionArn, String logFormat,
+                                                Integer maxAggregationInterval, List<Tag> flowLogTags) {
+        ensureDefaultResources(region);
+        if (resourceIds == null || resourceIds.isEmpty()) {
+            throw new AwsException("MissingParameter", "ResourceId is required.", 400);
+        }
+        if (resourceType == null || resourceType.isBlank()) {
+            throw new AwsException("MissingParameter", "ResourceType is required.", 400);
+        }
+
+        String destinationType = normalizeLogDestinationType(logDestinationType);
+        FlowLogCreationResult result = new FlowLogCreationResult();
+
+        for (String resourceId : resourceIds) {
+            try {
+                validateFlowLogResource(region, resourceType, resourceId);
+                validateFlowLogDestination(destinationType, logDestination, logGroupName);
+
+                FlowLog flowLog = new FlowLog();
+                flowLog.setFlowLogId("fl-" + randomHex(17));
+                flowLog.setResourceId(resourceId);
+                flowLog.setResourceType(resourceType);
+                flowLog.setLogDestinationType(destinationType);
+                flowLog.setLogDestination(logDestination);
+                flowLog.setLogGroupName(logGroupName);
+                flowLog.setTrafficType(trafficType != null && !trafficType.isBlank() ? trafficType : "ALL");
+                flowLog.setDeliverLogsPermissionArn(deliverLogsPermissionArn);
+                flowLog.setCreationTime(Instant.now());
+                flowLog.setRegion(region);
+                if (logFormat != null && !logFormat.isBlank()) {
+                    flowLog.setLogFormat(logFormat);
+                }
+                if (maxAggregationInterval != null) {
+                    flowLog.setMaxAggregationInterval(maxAggregationInterval);
+                }
+                if (flowLogTags != null && !flowLogTags.isEmpty()) {
+                    flowLog.setTags(new ArrayList<>(flowLogTags));
+                    tags.put(flowLog.getFlowLogId(), new ArrayList<>(flowLogTags));
+                }
+
+                flowLogs.put(key(region, flowLog.getFlowLogId()), flowLog);
+                result.getFlowLogIds().add(flowLog.getFlowLogId());
+                notifyFlowLogNetworkActivity(region, resolveVpcIdForResource(region, resourceType, resourceId),
+                        resolveSubnetIdForResource(region, resourceType, resourceId),
+                        "NetworkInterface".equals(resourceType) ? resourceId : null);
+            } catch (AwsException e) {
+                result.getUnsuccessful().add(new FlowLogUnsuccessfulItem(
+                        resourceId, e.getErrorCode(), e.getMessage()));
+            }
+        }
+        return result;
+    }
+
+    public List<FlowLog> describeFlowLogs(String region, List<String> flowLogIds,
+                                          Map<String, List<String>> filters) {
+        ensureDefaultResources(region);
+        if (!flowLogIds.isEmpty()) {
+            boolean anyMatch = flowLogIds.stream()
+                    .anyMatch(id -> flowLogs.containsKey(key(region, id)));
+            if (!anyMatch) {
+                return List.of();
+            }
+        }
+        return flowLogs.values().stream()
+                .filter(flowLog -> flowLog.getRegion().equals(region))
+                .filter(flowLog -> flowLogIds.isEmpty() || flowLogIds.contains(flowLog.getFlowLogId()))
+                .filter(flowLog -> matchesFlowLogFilters(flowLog, filters))
+                .collect(Collectors.toList());
+    }
+
+    public FlowLogCreationResult deleteFlowLogs(String region, List<String> flowLogIds) {
+        ensureDefaultResources(region);
+        if (flowLogIds == null || flowLogIds.isEmpty()) {
+            throw new AwsException("MissingParameter", "FlowLogId is required.", 400);
+        }
+        FlowLogCreationResult result = new FlowLogCreationResult();
+        for (String flowLogId : flowLogIds) {
+            try {
+                FlowLog flowLog = getRequiredFlowLog(region, flowLogId);
+                flowLog.setFlowLogStatus("DELETED");
+                flowLogs.remove(key(region, flowLogId));
+                tags.remove(flowLogId);
+                result.getFlowLogIds().add(flowLogId);
+            } catch (AwsException e) {
+                result.getUnsuccessful().add(new FlowLogUnsuccessfulItem(
+                        flowLogId, e.getErrorCode(), e.getMessage()));
+            }
+        }
+        return result;
+    }
+
+    public List<FlowLog> getActiveFlowLogs(String region) {
+        return flowLogs.values().stream()
+                .filter(flowLog -> region.equals(flowLog.getRegion()))
+                .filter(flowLog -> "ACTIVE".equals(flowLog.getFlowLogStatus()))
+                .toList();
+    }
+
+    public Set<String> getSeededRegions() {
+        return Collections.unmodifiableSet(seededRegions);
+    }
+
+    public List<Instance> listInstances(String region) {
+        ensureDefaultResources(region);
+        return instances.values().stream()
+                .filter(inst -> region.equals(inst.getRegion()))
+                .filter(inst -> inst.getState() == null
+                        || inst.getState().getName() == null
+                        || !"terminated".equals(inst.getState().getName()))
+                .toList();
+    }
+
+    private FlowLog getRequiredFlowLog(String region, String flowLogId) {
+        FlowLog flowLog = flowLogs.get(key(region, flowLogId));
+        if (flowLog == null) {
+            throw new AwsException("InvalidFlowLogId.NotFound",
+                    "The flow log ID '" + flowLogId + "' does not exist", 400);
+        }
+        return flowLog;
+    }
+
+    private String normalizeLogDestinationType(String logDestinationType) {
+        if (logDestinationType == null || logDestinationType.isBlank()) {
+            return "cloud-watch-logs";
+        }
+        return logDestinationType;
+    }
+
+    private void validateFlowLogResource(String region, String resourceType, String resourceId) {
+        switch (resourceType) {
+            case "VPC" -> getRequiredVpc(region, resourceId);
+            case "Subnet" -> requireSubnet(region, resourceId);
+            case "NetworkInterface" -> {
+                boolean found = listInstances(region).stream()
+                        .flatMap(inst -> inst.getNetworkInterfaces().stream())
+                        .anyMatch(eni -> resourceId.equals(eni.getNetworkInterfaceId()));
+                if (!found) {
+                    throw new AwsException("InvalidNetworkInterfaceID.NotFound",
+                            "The network interface ID '" + resourceId + "' does not exist", 400);
+                }
+            }
+            default -> throw new AwsException("InvalidParameterValue",
+                    "The resource type '" + resourceType + "' is not supported.", 400);
+        }
+    }
+
+    private void validateFlowLogDestination(String destinationType, String logDestination, String logGroupName) {
+        if ("s3".equals(destinationType)) {
+            if (logDestination == null || logDestination.isBlank()) {
+                throw new AwsException("MissingParameter", "LogDestination is required for s3.", 400);
+            }
+            return;
+        }
+        if ("cloud-watch-logs".equals(destinationType)) {
+            if ((logDestination == null || logDestination.isBlank())
+                    && (logGroupName == null || logGroupName.isBlank())) {
+                throw new AwsException("MissingParameter",
+                        "LogGroupName or LogDestination is required for cloud-watch-logs.", 400);
+            }
+            return;
+        }
+        throw new AwsException("InvalidParameterValue",
+                "The log destination type '" + destinationType + "' is not supported.", 400);
+    }
+
+    private String resolveVpcIdForResource(String region, String resourceType, String resourceId) {
+        return switch (resourceType) {
+            case "VPC" -> resourceId;
+            case "Subnet" -> requireSubnet(region, resourceId).getVpcId();
+            case "NetworkInterface" -> listInstances(region).stream()
+                    .filter(inst -> inst.getNetworkInterfaces().stream()
+                            .anyMatch(eni -> resourceId.equals(eni.getNetworkInterfaceId())))
+                    .map(Instance::getVpcId)
+                    .findFirst()
+                    .orElse(null);
+            default -> null;
+        };
+    }
+
+    private String resolveSubnetIdForResource(String region, String resourceType, String resourceId) {
+        if ("Subnet".equals(resourceType)) {
+            return resourceId;
+        }
+        if ("NetworkInterface".equals(resourceType)) {
+            return listInstances(region).stream()
+                    .filter(inst -> inst.getNetworkInterfaces().stream()
+                            .anyMatch(eni -> resourceId.equals(eni.getNetworkInterfaceId())))
+                    .map(Instance::getSubnetId)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    private boolean matchesFlowLogFilters(FlowLog flowLog, Map<String, List<String>> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return true;
+        }
+        for (Map.Entry<String, List<String>> entry : filters.entrySet()) {
+            String name = entry.getKey();
+            List<String> values = entry.getValue();
+            if (values == null || values.isEmpty()) {
+                continue;
+            }
+            String actual = switch (name) {
+                case "flow-log-id" -> flowLog.getFlowLogId();
+                case "resource-id" -> flowLog.getResourceId();
+                case "traffic-type" -> flowLog.getTrafficType();
+                case "log-destination-type" -> flowLog.getLogDestinationType();
+                case "log-group-name" -> flowLog.getLogGroupName();
+                case "deliver-log-status" -> flowLog.getDeliverLogsStatus();
+                default -> null;
+            };
+            if (actual == null || values.stream().noneMatch(v -> v.equals(actual))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void notifyFlowLogNetworkActivity(String region, String vpcId, String subnetId, String eniId) {
+        flowLogNetworkActivityEvents.fire(new FlowLogNetworkActivityEvent(region, vpcId, subnetId, eniId));
     }
 }

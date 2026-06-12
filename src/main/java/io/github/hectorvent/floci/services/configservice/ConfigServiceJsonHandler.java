@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.services.configservice.model.ConfigurationItem;
 import io.github.hectorvent.floci.services.configservice.model.ConfigRule;
 import io.github.hectorvent.floci.services.configservice.model.ConfigRuleEvaluationStatus;
 import io.github.hectorvent.floci.services.configservice.model.ConfigRuleSource;
@@ -51,6 +52,9 @@ public class ConfigServiceJsonHandler {
             case "DescribeConfigurationRecorderStatus" -> describeConfigurationRecorderStatus(request, region);
             case "PutDeliveryChannel" -> putDeliveryChannel(request, region);
             case "DescribeDeliveryChannels" -> describeDeliveryChannels(request, region);
+            case "DeliverConfigurationSnapshot" -> deliverConfigurationSnapshot(region);
+            case "GetResourceConfigHistory" -> getResourceConfigHistory(request, region);
+            case "BatchGetResourceConfig" -> batchGetResourceConfig(request, region);
             case "TagResource" -> tagResource(request);
             case "UntagResource" -> untagResource(request);
             case "ListTagsForResource" -> listTagsForResource(request);
@@ -165,6 +169,38 @@ public class ConfigServiceJsonHandler {
         List<DeliveryChannel> channels = service.describeDeliveryChannels(region, names);
         ObjectNode resp = mapper.createObjectNode();
         resp.set("DeliveryChannels", mapper.valueToTree(channels));
+        return Response.ok(resp).build();
+    }
+
+    private Response deliverConfigurationSnapshot(String region) {
+        String snapshotId = service.deliverConfigurationSnapshot(region);
+        ObjectNode resp = mapper.createObjectNode();
+        resp.put("snapshotId", snapshotId);
+        return Response.ok(resp).build();
+    }
+
+    private Response getResourceConfigHistory(JsonNode req, String region) {
+        String resourceType = req.path("resourceType").asText(null);
+        String resourceId = req.path("resourceId").asText(null);
+        Double laterTime = req.has("laterTime") ? req.path("laterTime").asDouble() : null;
+        Double earlierTime = req.has("earlierTime") ? req.path("earlierTime").asDouble() : null;
+        int limit = req.has("limit") ? req.path("limit").asInt() : 100;
+        List<ConfigurationItem> items = service.getResourceConfigHistory(
+                region, resourceType, resourceId, laterTime, earlierTime, limit);
+        ObjectNode resp = mapper.createObjectNode();
+        resp.set("configurationItems", mapper.valueToTree(items));
+        return Response.ok(resp).build();
+    }
+
+    private Response batchGetResourceConfig(JsonNode req, String region) {
+        List<ConfigSnapshotDeliveryService.ResourceKey> keys = new ArrayList<>();
+        req.path("resourceKeys").forEach(node -> keys.add(new ConfigSnapshotDeliveryService.ResourceKey(
+                node.path("resourceType").asText(null),
+                node.path("resourceId").asText(null))));
+        List<ConfigurationItem> items = service.batchGetResourceConfig(region, keys);
+        ObjectNode resp = mapper.createObjectNode();
+        resp.set("baseConfigurationItems", mapper.valueToTree(items));
+        resp.putArray("unprocessedResourceKeys");
         return Response.ok(resp).build();
     }
 

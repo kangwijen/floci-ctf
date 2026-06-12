@@ -6,10 +6,12 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
+import io.github.hectorvent.floci.services.guardduty.GuardDutyCloudTrailHook;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -17,12 +19,39 @@ import java.util.function.Predicate;
 @ApplicationScoped
 public class CloudTrailService {
     private final StorageBackend<String, CloudTrailTrail> trailStore;
+    private final CloudTrailEventStore eventStore;
+    private final CloudTrailDeliveryService deliveryService;
+    private final CloudTrailEventRecorder eventRecorder;
+    private final GuardDutyCloudTrailHook guardDutyCloudTrailHook;
     private final RegionResolver regionResolver;
 
     @Inject
-    public CloudTrailService(StorageFactory storageFactory, RegionResolver regionResolver) {
+    public CloudTrailService(StorageFactory storageFactory,
+                             CloudTrailEventStore eventStore,
+                             CloudTrailDeliveryService deliveryService,
+                             CloudTrailEventRecorder eventRecorder,
+                             GuardDutyCloudTrailHook guardDutyCloudTrailHook,
+                             RegionResolver regionResolver) {
         this.trailStore = storageFactory.create("cloudtrail", "cloudtrail-trails.json",
                 new TypeReference<Map<String, CloudTrailTrail>>() {});
+        this.eventStore = eventStore;
+        this.deliveryService = deliveryService;
+        this.eventRecorder = eventRecorder;
+        this.guardDutyCloudTrailHook = guardDutyCloudTrailHook;
+        this.regionResolver = regionResolver;
+    }
+
+    CloudTrailService(StorageBackend<String, CloudTrailTrail> trailStore,
+                      CloudTrailEventStore eventStore,
+                      CloudTrailDeliveryService deliveryService,
+                      CloudTrailEventRecorder eventRecorder,
+                      GuardDutyCloudTrailHook guardDutyCloudTrailHook,
+                      RegionResolver regionResolver) {
+        this.trailStore = trailStore;
+        this.eventStore = eventStore;
+        this.deliveryService = deliveryService;
+        this.eventRecorder = eventRecorder;
+        this.guardDutyCloudTrailHook = guardDutyCloudTrailHook;
         this.regionResolver = regionResolver;
     }
 
@@ -106,6 +135,59 @@ public class CloudTrailService {
 
     public void putEventSelectors(String region, String nameOrArn) {
         requireTrail(region, nameOrArn);
+    }
+
+    public CloudTrailEventStore.LookupEventsResult lookupEvents(String region,
+                                                                Instant startTime,
+                                                                Instant endTime,
+                                                                List<CloudTrailEventStore.LookupAttribute> lookupAttributes,
+                                                                Integer maxResults,
+                                                                String nextToken) {
+        return eventStore.lookup(region, startTime, endTime, lookupAttributes, maxResults, nextToken);
+    }
+
+    public List<CloudTrailTrail> listActiveLoggingTrails(String region) {
+        return trailStore.scan(ignored -> true).stream()
+                .filter(CloudTrailTrail::isLogging)
+                .filter(trail -> region.equals(trail.getHomeRegion()) || trail.isMultiRegionTrail())
+                .toList();
+    }
+
+    public List<CloudTrailTrail> listActiveLoggingTrailsForGlobalService() {
+        return trailStore.scan(ignored -> true).stream()
+                .filter(trail -> trail.isLogging() && trail.isIncludeGlobalServiceEvents())
+                .toList();
+    }
+
+    public void recordEvent(String region, Map<String, Object> event) {
+        eventStore.indexRecordedEvent(region, event, eventRecorder);
+        Instant now = Instant.now();
+        List<CloudTrailTrail> trails = new ArrayList<>(listActiveLoggingTrails(region));
+        if (isGlobalServiceEvent(event)) {
+            for (CloudTrailTrail trail : listActiveLoggingTrailsForGlobalService()) {
+                if (trails.stream().noneMatch(existing -> existing.getTrailArn().equals(trail.getTrailArn()))) {
+                    trails.add(trail);
+                }
+            }
+        }
+        for (CloudTrailTrail trail : trails) {
+            deliveryService.bufferEvent(trail, region, event);
+            trail.setUpdated(now);
+            trailStore.put(key(trail.getHomeRegion(), trail.getName()), trail);
+        }
+        guardDutyCloudTrailHook.onCloudTrailEvent(region, event);
+    }
+
+    private static boolean isGlobalServiceEvent(Map<String, Object> event) {
+        Object source = event.get("eventSource");
+        if (source == null) {
+            return false;
+        }
+        String eventSource = source.toString();
+        return eventSource.startsWith("iam.")
+                || eventSource.startsWith("sts.")
+                || eventSource.startsWith("cloudfront.")
+                || eventSource.startsWith("route53.");
     }
 
     private java.util.Optional<CloudTrailTrail> findTrail(String region, String nameOrArn) {
