@@ -421,8 +421,11 @@ public interface EmulatorConfig {
         MskServiceConfig msk();
         ElastiCacheServiceConfig elasticache();
         RdsServiceConfig rds();
+        RdsDataServiceConfig rdsData();
         EventBridgeServiceConfig eventbridge();
         CloudMapServiceConfig cloudmap();
+        EmrServiceConfig emr();
+        WafV2ServiceConfig wafv2();
         SchedulerServiceConfig scheduler();
         CloudWatchLogsServiceConfig cloudwatchlogs();
         CloudWatchMetricsServiceConfig cloudwatchmetrics();
@@ -672,6 +675,14 @@ public interface EmulatorConfig {
         Optional<String> dockerNetwork();
     }
 
+    interface RdsDataServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("180")
+        long transactionTtlSeconds();
+    }
+
     interface NeptuneServiceConfig {
         @WithDefault("true")
         boolean enabled();
@@ -703,6 +714,23 @@ public interface EmulatorConfig {
          *  transitions from PENDING to SUCCESS. 0 = complete immediately. */
         @WithDefault("0")
         int operationCompletionDelaySeconds();
+    }
+
+    interface EmrServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("emr-7.5.0")
+        String defaultReleaseLabel();
+
+        /** Delay before a cluster reaches WAITING; 0 = advance synchronously. */
+        @WithDefault("0")
+        int clusterStartupDelaySeconds();
+    }
+
+    interface WafV2ServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
     }
 
     interface SchedulerServiceConfig {

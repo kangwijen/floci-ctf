@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.24+ (post-merge) |
+| Upstream release | 1.5.24 + 20 commits (merged 2026-06-13) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -125,6 +125,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `guardduty:GetFindings` | `arn:aws:guardduty:REGION:ACCOUNT:detector/id` | `DetectorId` in JSON body |
 | `config:PutConfigRule` | `arn:aws:config:REGION:ACCOUNT:config-rule/name` | `ConfigRule.ConfigRuleName` in JSON body |
 
+**Not yet scoped in `ResourceArnBuilder` (policy `Resource` evaluates as `*`):** `rds-data:*` (REST paths only; `resourceArn` in body not mapped), `elasticmapreduce:*` and `wafv2:*` (JSON 1.1 via `X-Amz-Target`). Actions still resolve under strict mode; extend `ResourceArnBuilder` before requiring cluster/Web ACL ARNs in participant policies.
+
 **Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
 **Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
@@ -150,6 +152,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
 | Compose / image | `docker-compose.yml`, `docker/Dockerfile` (no `test`/`test`) |
+| RDS Data API | `RdsDataController`, `RdsDataService`, `RdsDataConnectionFactory`, `RdsDataResourceResolver`, `RdsDataFieldMapper` |
+| EMR | `EmrHandler`, `EmrService`, `services/emr/model/*` |
+| WAFv2 | `WafV2Handler`, `WafV2Service`, `services/wafv2/model/*` |
 
 **Do not assume:** `IamAuthorizationService`, `StsCallerGuard` exist as separate classes (HTTP enforcement is in `IamEnforcementFilter`).
 
@@ -210,6 +215,8 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 ---
 
 ## Upstream sync
+
+**Latest merge:** 20 commits post-**1.5.24** from `upstream/main` on **2026-06-13** (WAFv2, EMR, RDS Data API, Glue partitions, SQS, ELBv2, SES, EC2, MSK, Athena, Cognito SRP). CTF hardening preserved; new services wired in `ResolvedServiceCatalog` and `IamActionRegistry` (`rds-data` REST rules; EMR/WAFv2 via JSON 1.1 `X-Amz-Target`).
 
 ```bash
 git fetch upstream main

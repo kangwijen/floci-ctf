@@ -354,16 +354,16 @@ public class Ec2Service {
 
         return reservation;
     }
-    
+
     public Subnet requireSubnet(String region, String subnetId) {
         ensureDefaultResources(region);
         Subnet subnet = subnets.get(key(region, subnetId));
-        if (subnet == null) 
+        if (subnet == null)
             throw new AwsException("InvalidSubnetID.NotFound", "The subnet ID '" + subnetId + "' does not exist", 400);
 
         return subnet;
     }
-    
+
     private String assignPrivateIp(String region, String subnetId) {
         if (subnetId == null) {
             return "172.31.0." + (10 + new Random().nextInt(200));
@@ -417,7 +417,7 @@ public class Ec2Service {
         List<Map<String, String>> result = new ArrayList<>();
         for (String id : instanceIds) {
             Instance inst = getRequiredInstance(region, id);
-            
+
             if (config.services().ec2().mock() && "pending".equals(inst.getState().getName())) {
                 inst.setState(InstanceState.running());
             }
@@ -448,7 +448,7 @@ public class Ec2Service {
         List<Map<String, String>> result = new ArrayList<>();
         for (String id : instanceIds) {
             Instance inst = getRequiredInstance(region, id);
-            
+
             if (config.services().ec2().mock() && "pending".equals(inst.getState().getName())) {
                 inst.setState(InstanceState.running());
             }
@@ -554,9 +554,9 @@ public class Ec2Service {
 
     private Instance getRequiredInstance(String region, String instanceId) {
         Instance inst = instances.get(key(region, instanceId));
-        if (inst == null) 
+        if (inst == null)
             throw new AwsException("InvalidInstanceID.NotFound", "The instance ID '" + instanceId + "' does not exist", 400);
-        
+
         return inst;
     }
 
@@ -897,7 +897,7 @@ public class Ec2Service {
         SecurityGroup sg = securityGroups.get(key(region, groupId));
         if (sg == null)
             throw new AwsException("InvalidGroup.NotFound", "The security group '" + groupId + "' does not exist", 400);
-        
+
         return sg;
     }
 
@@ -1443,17 +1443,17 @@ public class Ec2Service {
 
     private InternetGateway getRequiredInternetGateway(String region, String igwId) {
         InternetGateway igw = internetGateways.get(key(region, igwId));
-        if (igw == null) 
+        if (igw == null)
             throw new AwsException("InvalidInternetGatewayID.NotFound", "The internet gateway '" + igwId + "' does not exist", 400);
-        
-        return igw; 
+
+        return igw;
     }
 
     // ─── Route Tables ──────────────────────────────────────────────────────────
 
     public RouteTable createRouteTable(String region, String vpcId) {
         ensureDefaultResources(region);
-        Vpc vpc = getRequiredVpc(region, vpcId); 
+        Vpc vpc = getRequiredVpc(region, vpcId);
 
         String rtId = "rtb-" + randomHex(8);
         RouteTable rt = new RouteTable();
@@ -1472,7 +1472,7 @@ public class Ec2Service {
             throw new AwsException("InvalidVpcID.NotFound", "The vpc ID '" + vpcId + "' does not exist", 400);
 
         return vpc;
-    }       
+    }
 
     public List<RouteTable> describeRouteTables(String region, List<String> routeTableIds, Map<String, List<String>> filters) {
         ensureDefaultResources(region);
@@ -1530,9 +1530,9 @@ public class Ec2Service {
 
     private RouteTable getRequiredRouteTable(String region, String routeTableId) {
         RouteTable rt = routeTables.get(key(region, routeTableId));
-        if (rt == null) 
+        if (rt == null)
             throw new AwsException("InvalidRouteTableID.NotFound", "The route table '" + routeTableId + "' does not exist", 400);
-        
+
         return rt;
     }
 
@@ -1621,9 +1621,9 @@ public class Ec2Service {
 
     private Address getRequiredAddress(String region, String allocationId) {
         Address addr = addresses.get(key(region, allocationId));
-        if (addr == null) 
+        if (addr == null)
             throw new AwsException("InvalidAllocationID.NotFound", "The allocation ID '" + allocationId + "' does not exist", 400);
-        
+
         return addr;
     }
 
@@ -1958,7 +1958,6 @@ public class Ec2Service {
         return true;
     }
 
-    @SuppressWarnings("unchecked")
     private List<Tag> getResourceTags(Object resource) {
         if (resource instanceof Instance inst) return inst.getTags();
         if (resource instanceof Vpc vpc) return vpc.getTags();

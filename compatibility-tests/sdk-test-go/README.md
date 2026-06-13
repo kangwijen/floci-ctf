@@ -21,6 +21,7 @@ Compatibility tests for [Floci](https://github.com/hectorvent/floci) using the *
 | `kinesis`          | Streams, shards, PutRecord/GetRecords                   |
 | `cloudwatch`       | PutMetricData, ListMetrics, GetMetricStatistics, alarms |
 | `cloudmap`         | HTTP namespace, service, instance registration          |
+| `rds-data`         | RDS Data API execute statements, transactions, result fields with SDK v1 and v2 |
 
 ## Requirements
 

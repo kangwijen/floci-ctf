@@ -1,6 +1,6 @@
 # floci-compatibility-tests
 
-Compatibility test suite for [floci-ctf](https://github.com/kangwijen/floci-ctf) — a security-hardened local AWS emulator fork (upstream **1.5.24**).
+Compatibility test suite for [floci-ctf](https://github.com/kangwijen/floci-ctf) — a security-hardened local AWS emulator fork (upstream **1.5.24** + 20 post-release commits merged **2026-06-13**).
 
 Verifies that standard AWS tooling (SDKs, CDK, OpenTofu/Terraform) works correctly against the emulator without modification. Tests run against a live Floci instance and use real AWS SDK clients — no mocks.
 
@@ -19,6 +19,26 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) tag **1.5.24**:
 | Glue | Database tags, batch delete table |
 
 `sdk-test-java` covers **CloudTrail** (`CloudTrailTest`), **Cloud Map** (`CloudMapTest`), and **AppSync** (`AppSyncTest`). Forensic lab probes: `ForensicLabCompatibilityTest`.
+
+## Upstream post-1.5.24 highlights (20 commits, 2026-06-13)
+
+Merged from [floci-io/floci](https://github.com/floci-io/floci) `main` after tag **1.5.24**:
+
+| Area | Change |
+| --- | --- |
+| WAFv2 | Phase 1 management API |
+| EMR | Phase 1 management API |
+| RDS Data API | Execute and transaction routes against local RDS |
+| Glue | Partition APIs, column statistics |
+| SQS | Delayed message attribute; long-poll cleanup on delete |
+| ELBv2 | ALB subnet AZ rules; target resolution |
+| SES | v2 configuration sets; MAIL FROM attributes |
+| EC2 | Native image image-catalog embedding |
+| MSK | Broker software info in describe |
+| Athena | `GetWorkGroup` parity |
+| Cognito | SRP `PASSWORD_VERIFIER` includes `USERNAME` |
+
+`sdk-test-java` adds **EMR** (`EmrTest`) and **WAFv2** (`WafV2Test`). `sdk-test-go` adds **RDS Data API** (`rds-data` group: execute, transactions, SDK v1 and v2).
 
 ## CTF fork (floci-ctf)
 
@@ -95,7 +115,7 @@ just test-compat
 | [`sdk-test-awscli`](sdk-test-awscli/) | Bash / bats-core | `just test-awscli` | sources `lib/ctf-env.sh` | — |
 | [`sdk-test-java`](sdk-test-java/) | Java 17 / JUnit 5 | `just test-java` | permissive default | `just test-forensic-java` |
 | [`sdk-test-java`](sdk-test-java/) | Java 17 / JUnit 5 | `just test-ctf-java` | **required** | optional in `test-ctf-forensic-java` |
-| [`sdk-test-go`](sdk-test-go/) | Go 1.24 / go test | `just test-go` | permissive | — |
+| [`sdk-test-go`](sdk-test-go/) | Go 1.24 / go test | `just test-go` | permissive | `rds-data` group (RDS Data API) |
 | [`sdk-test-rust`](sdk-test-rust/) | Rust / cargo-nextest | `just test-rust` | permissive | — |
 | [`compat-cdk`](compat-cdk/) | AWS CDK v2 | `just test-cdk` | registered keys | deploy stacks with trail/S3 buckets |
 | [`compat-terraform`](compat-terraform/) | Terraform | `just test-terraform` | registered keys | same |

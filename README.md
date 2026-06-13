@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.24**, Quarkus **3.36.0**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.24** + 20 post-release commits merged **2026-06-13**, Quarkus **3.36.0**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -227,6 +227,25 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and f
 | Athena | `CreateWorkGroup` aligned with AWS; scoped `Name` ARN in fork |
 | Glue | Catalog name normalization, `BatchDeleteTable`, column parameters |
 | Core | `StorageBackedMap` for service state persistence |
+
+**Post-1.5.24 merge (20 commits, 2026-06-13):**
+
+| Area | Change |
+|---|---|
+| WAFv2 | Phase 1 management API (Web ACLs, IP sets, rule groups, associations, logging) |
+| EMR | Phase 1 management API (clusters, steps, instance groups/fleets, security configurations) |
+| RDS Data API | REST JSON execute and transaction routes against local RDS MySQL/MariaDB containers |
+| Glue | Partition APIs; column statistics |
+| SQS | `ApproximateNumberOfMessagesDelayed`; release in-flight long polls when queue deleted |
+| ELBv2 | ALB two-AZ subnet rules; target resolution and persistence improvements |
+| SES | v2 configuration set inline options; `MailFromAttributes` when MAIL FROM unset |
+| EC2 | Image catalog embedded in native image, lazy load |
+| MSK | `currentBrokerSoftwareInfo` in describe cluster response |
+| Athena | `GetWorkGroup` aligned with AWS |
+| Cognito | SRP `PASSWORD_VERIFIER` challenge includes `USERNAME` |
+| S3 | SDK ranged-get coverage (upstream test) |
+
+**CTF fork:** IAM enforcement applies to new HTTP surfaces (SigV4 + action mapping). `rds-data`, `elasticmapreduce`, and `wafv2` actions resolve from routes or `X-Amz-Target`; policy `Resource` scoping stays `*` until `ResourceArnBuilder` is extended (same pattern as most JSON 1.1 services).
 
 ## Upstream sync
 
