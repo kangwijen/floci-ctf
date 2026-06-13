@@ -6,6 +6,7 @@ import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.scheduler.model.Target;
 import io.github.hectorvent.floci.services.sns.SnsService;
 import io.github.hectorvent.floci.services.sqs.SqsService;
@@ -34,6 +35,7 @@ public class ScheduleInvoker {
     private final EventBridgeService eventBridgeService;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public ScheduleInvoker(SqsService sqsService,
@@ -41,19 +43,22 @@ public class ScheduleInvoker {
                            SnsService snsService,
                            EventBridgeService eventBridgeService,
                            ObjectMapper objectMapper,
-                           EmulatorConfig config) {
+                           EmulatorConfig config,
+                           InProcessTargetAuthorizer targetAuthorizer) {
         this.sqsService = sqsService;
         this.lambdaService = lambdaService;
         this.snsService = snsService;
         this.eventBridgeService = eventBridgeService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.baseUrl();
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void invoke(Target target, String region) {
         if (target == null || target.getArn() == null) {
             return;
         }
+        targetAuthorizer.authorizeSchedulerTarget(target.getRoleArn(), target.getArn(), region);
         String arn = target.getArn();
         String payload = target.getInput() != null ? target.getInput() : "{}";
         String targetRegion = extractRegion(arn, region);

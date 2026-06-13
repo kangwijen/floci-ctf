@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.model.EventSourceMapping;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
@@ -43,6 +44,7 @@ public class SqsEventSourcePoller {
     private final long pollIntervalMs;
     private final String baseUrl;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, Long> timerIds = new ConcurrentHashMap<>();
     // Tracks ESMs with an in-flight poll to prevent concurrent deliveries of the same message
     private final ConcurrentHashMap<String, Boolean> activePolls = new ConcurrentHashMap<>();
@@ -57,7 +59,8 @@ public class SqsEventSourcePoller {
                                 LambdaExecutorService executorService,
                                 LambdaFunctionStore functionStore,
                                 EsmStore esmStore, EmulatorConfig config,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                InProcessTargetAuthorizer targetAuthorizer) {
         this.vertx = vertx;
         this.sqsService = sqsService;
         this.executorService = executorService;
@@ -66,6 +69,7 @@ public class SqsEventSourcePoller {
         this.pollIntervalMs = config.services().lambda().pollIntervalMs();
         this.baseUrl = config.effectiveBaseUrl();
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void startPersistedPollers() {
@@ -135,6 +139,8 @@ public class SqsEventSourcePoller {
                 }
 
                 int visibilityTimeout = fn.getTimeout() + 30;
+                targetAuthorizer.authorizeLambdaEventSourcePoll(
+                        fn.getRole(), esm.getEventSourceArn(), esm.getRegion());
                 List<Message> messages = sqsService.receiveMessage(
                         esm.getQueueUrl(), esm.getBatchSize(), visibilityTimeout, 0, esm.getRegion());
 
@@ -169,6 +175,8 @@ public class SqsEventSourcePoller {
                             esm.getUuid(), toDelete.size(), messages.size(), failedIds.size());
                     for (Message msg : toDelete) {
                         try {
+                            targetAuthorizer.authorizeLambdaEventSourceDelete(
+                                    fn.getRole(), esm.getEventSourceArn(), esm.getRegion());
                             sqsService.deleteMessage(esm.getQueueUrl(),
                                     msg.getReceiptHandle(), esm.getRegion());
                         } catch (Exception e) {

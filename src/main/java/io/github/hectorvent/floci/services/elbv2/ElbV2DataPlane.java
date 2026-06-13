@@ -10,6 +10,7 @@ import io.github.hectorvent.floci.services.elbv2.model.Rule;
 import io.github.hectorvent.floci.services.elbv2.model.RuleCondition;
 import io.github.hectorvent.floci.services.elbv2.model.TargetDescription;
 import io.github.hectorvent.floci.services.elbv2.model.TargetGroup;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
@@ -67,6 +68,9 @@ public class ElbV2DataPlane {
 
     @Inject
     ObjectMapper objectMapper;
+
+    @Inject
+    InProcessTargetAuthorizer targetAuthorizer;
 
     private final Map<String, HttpServer> servers = new ConcurrentHashMap<>();
     private final Map<String, AtomicReference<List<CompiledRule>>> ruleChains = new ConcurrentHashMap<>();
@@ -217,6 +221,7 @@ public class ElbV2DataPlane {
     }
 
     private void invokeLambdaTarget(io.vertx.core.http.HttpServerRequest req, String functionArn, String region) {
+        targetAuthorizer.authorizeElbLambdaTarget(functionArn, region);
         req.bodyHandler(body -> {
             Map<String, Object> event = buildAlbEvent(req, body);
             // Lambda invocation is synchronous and may take seconds while a cold container

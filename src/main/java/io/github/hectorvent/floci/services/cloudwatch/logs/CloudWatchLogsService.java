@@ -386,7 +386,7 @@ public class CloudWatchLogsService {
     // ──────────────────────────── Subscription Filters ────────────────────────────
 
     public void putSubscriptionFilter(String logGroupName, String filterName, String filterPattern,
-                                       String destinationArn, String distribution, String region) {
+                                       String destinationArn, String roleArn, String distribution, String region) {
         String groupKey = groupKey(region, logGroupName);
         groupStore.get(groupKey)
                 .orElseThrow(() -> new AwsException("ResourceNotFoundException",
@@ -397,6 +397,7 @@ public class CloudWatchLogsService {
         filter.setLogGroupName(logGroupName);
         filter.setFilterPattern(filterPattern != null ? filterPattern : "");
         filter.setDestinationArn(destinationArn);
+        filter.setRoleArn(roleArn);
         filter.setDistribution(distribution != null ? distribution : "ByLogStream");
         filter.setCreationTime(System.currentTimeMillis());
 

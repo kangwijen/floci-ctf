@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.s3.model.*;
@@ -74,6 +75,7 @@ public class S3Service {
     private final RegionResolver regionResolver;
     private final String baseUrl;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public S3Service(StorageFactory storageFactory, EmulatorConfig config,
@@ -82,7 +84,8 @@ public class S3Service {
                      EventBridgeService eventBridgeService,
                      Event<S3ObjectUpdatedEvent> s3UpdatedEvent,
                      RegionResolver regionResolver,
-                     ObjectMapper objectMapper) {
+                     ObjectMapper objectMapper,
+                     InProcessTargetAuthorizer targetAuthorizer) {
         this(
                 storageFactory.create("s3", "s3-buckets.json",
                         new TypeReference<Map<String, Bucket>>() {
@@ -95,7 +98,7 @@ public class S3Service {
                 sqsService, snsService, null, lambdaServiceProvider, null,
                 eventBridgeService, s3UpdatedEvent,
                 regionResolver,
-                config.effectiveBaseUrl(), objectMapper
+                config.effectiveBaseUrl(), objectMapper, targetAuthorizer
         );
     }
 
@@ -106,7 +109,7 @@ public class S3Service {
               StorageBackend<String, S3Object> objectStore,
               Path dataRoot, boolean inMemory) {
         this(bucketStore, objectStore, dataRoot, inMemory, null, null, null, null, null, null, null,
-                null, "http://localhost:4566", new ObjectMapper());
+                null, "http://localhost:4566", new ObjectMapper(), null);
     }
 
     S3Service(StorageBackend<String, Bucket> bucketStore,
@@ -115,7 +118,7 @@ public class S3Service {
               LambdaService lambdaService,
               RegionResolver regionResolver) {
         this(bucketStore, objectStore, dataRoot, inMemory, null, null, lambdaService, null, null, null, null,
-                regionResolver, "http://localhost:4566", new ObjectMapper());
+                regionResolver, "http://localhost:4566", new ObjectMapper(), null);
     }
 
     S3Service(StorageBackend<String, Bucket> bucketStore,
@@ -124,7 +127,7 @@ public class S3Service {
               LambdaInvoker lambdaInvoker,
               RegionResolver regionResolver) {
         this(bucketStore, objectStore, dataRoot, inMemory, null, null, null, null, lambdaInvoker, null, null,
-                regionResolver, "http://localhost:4566", new ObjectMapper());
+                regionResolver, "http://localhost:4566", new ObjectMapper(), null);
     }
 
     private S3Service(StorageBackend<String, Bucket> bucketStore,
@@ -135,7 +138,8 @@ public class S3Service {
                       LambdaInvoker lambdaInvoker,
                       EventBridgeService eventBridgeService,
                       Event<S3ObjectUpdatedEvent> s3UpdatedEvent,
-                      RegionResolver regionResolver, String baseUrl, ObjectMapper objectMapper) {
+                      RegionResolver regionResolver, String baseUrl, ObjectMapper objectMapper,
+                      InProcessTargetAuthorizer targetAuthorizer) {
         this.bucketStore = bucketStore;
         this.objectStore = objectStore;
         this.dataRoot = dataRoot;
@@ -150,6 +154,7 @@ public class S3Service {
         this.regionResolver = regionResolver;
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
         if (!inMemory) {
             try {
                 Files.createDirectories(dataRoot);
@@ -1953,7 +1958,11 @@ public class S3Service {
         for (QueueNotification qn : config.getQueueConfigurations()) {
             if (qn.events().stream().anyMatch(p -> matchesEvent(p, eventName)) && qn.matchesKey(key)) {
                 try {
-                    sqsService.sendMessage(sqsUrlFromArn(qn.queueArn()), eventJson, 0, extractRegionFromArn(qn.queueArn()));
+                    String queueRegion = extractRegionFromArn(qn.queueArn());
+                    if (targetAuthorizer != null) {
+                        targetAuthorizer.authorizeS3ToSqs(qn.queueArn(), queueRegion);
+                    }
+                    sqsService.sendMessage(sqsUrlFromArn(qn.queueArn()), eventJson, 0, queueRegion);
                     LOG.debugv("Fired S3 event {0} to SQS {1}", eventName, qn.queueArn());
                 } catch (Exception e) {
                     LOG.warnv("Failed to deliver S3 event to SQS {0}: {1}", qn.queueArn(), e.getMessage());
@@ -1964,6 +1973,9 @@ public class S3Service {
         for (TopicNotification tn : config.getTopicConfigurations()) {
             if (tn.events().stream().anyMatch(p -> matchesEvent(p, eventName)) && tn.matchesKey(key)) {
                 try {
+                    if (targetAuthorizer != null) {
+                        targetAuthorizer.authorizeS3ToSns(tn.topicArn(), region);
+                    }
                     snsService.publish(tn.topicArn(), null, eventJson, "Amazon S3 Notification", region);
                     LOG.debugv("Fired S3 event {0} to SNS {1}", eventName, tn.topicArn());
                 } catch (Exception e) {
@@ -1982,6 +1994,9 @@ public class S3Service {
                             throw new AwsException("InvalidParameterValueException",
                                     "Invalid Lambda function ARN: " + ln.functionArn(), 400);
                         }
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeS3ToLambda(ln.functionArn(), lambdaRegion);
+                        }
                         invokeLambda(lambdaRegion, functionName, eventJson.getBytes(StandardCharsets.UTF_8));
                         LOG.debugv("Fired S3 event {0} to Lambda {1}", eventName, ln.functionArn());
                     } catch (Exception e) {
@@ -1993,6 +2008,9 @@ public class S3Service {
 
         if (config.isEventBridgeEnabled() && eventBridgeService != null) {
             try {
+                if (targetAuthorizer != null) {
+                    targetAuthorizer.authorizeS3ToEventBridge(null, region);
+                }
                 String detailType = eventName.startsWith("ObjectCreated") ? "Object Created" : "Object Deleted";
                 Map<String, Object> entry = new java.util.HashMap<>();
                 entry.put("Source", "aws.s3");

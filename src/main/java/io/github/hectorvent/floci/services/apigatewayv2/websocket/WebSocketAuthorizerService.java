@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.services.apigatewayv2.ApiGatewayV2Service;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Authorizer;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -33,16 +34,19 @@ public class WebSocketAuthorizerService {
     private final LambdaService lambdaService;
     private final WebSocketProxyEventBuilder proxyEventBuilder;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public WebSocketAuthorizerService(ApiGatewayV2Service apiGatewayV2Service,
                                       LambdaService lambdaService,
                                       WebSocketProxyEventBuilder proxyEventBuilder,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      InProcessTargetAuthorizer targetAuthorizer) {
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.lambdaService = lambdaService;
         this.proxyEventBuilder = proxyEventBuilder;
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     /**
@@ -130,6 +134,7 @@ public class WebSocketAuthorizerService {
         // Invoke the authorizer Lambda
         InvokeResult invokeResult;
         try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
             invokeResult = lambdaService.invoke(region, functionName,
                     authorizerEventJson.getBytes(), InvocationType.RequestResponse);
         } catch (Exception e) {

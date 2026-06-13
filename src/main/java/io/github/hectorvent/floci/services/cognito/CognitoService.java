@@ -10,6 +10,7 @@ import io.github.hectorvent.floci.core.common.ReservedTags;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.cognito.model.*;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -59,7 +60,8 @@ public class CognitoService {
     private final CognitoAuthFlowHandler authFlowHandler;
 
     @Inject
-    public CognitoService(StorageFactory storageFactory, EmulatorConfig emulatorConfig, RegionResolver regionResolver, LambdaService lambdaService) {
+    public CognitoService(StorageFactory storageFactory, EmulatorConfig emulatorConfig, RegionResolver regionResolver,
+                          LambdaService lambdaService, InProcessTargetAuthorizer targetAuthorizer) {
         this.poolStore = storageFactory.create("cognito", "cognito-pools.json",
                 new TypeReference<Map<String, UserPool>>() {});
         this.clientStore = storageFactory.create("cognito", "cognito-clients.json",
@@ -73,7 +75,7 @@ public class CognitoService {
         this.baseUrl = trimTrailingSlash(emulatorConfig.baseUrl());
         this.regionResolver = regionResolver;
         this.lambdaService = lambdaService;
-        this.authFlowHandler = new CognitoAuthFlowHandler(this, lambdaService, regionResolver);
+        this.authFlowHandler = new CognitoAuthFlowHandler(this, lambdaService, regionResolver, targetAuthorizer);
     }
 
     CognitoService(StorageBackend<String, UserPool> poolStore,
@@ -84,6 +86,19 @@ public class CognitoService {
                    String baseUrl,
                    RegionResolver regionResolver,
                    LambdaService lambdaService) {
+        this(poolStore, clientStore, resourceServerStore, userStore, groupStore, baseUrl, regionResolver,
+                lambdaService, null);
+    }
+
+    CognitoService(StorageBackend<String, UserPool> poolStore,
+                   StorageBackend<String, UserPoolClient> clientStore,
+                   StorageBackend<String, ResourceServer> resourceServerStore,
+                   StorageBackend<String, CognitoUser> userStore,
+                   StorageBackend<String, CognitoGroup> groupStore,
+                   String baseUrl,
+                   RegionResolver regionResolver,
+                   LambdaService lambdaService,
+                   InProcessTargetAuthorizer targetAuthorizer) {
         this.poolStore = poolStore;
         this.clientStore = clientStore;
         this.resourceServerStore = resourceServerStore;
@@ -92,7 +107,7 @@ public class CognitoService {
         this.baseUrl = baseUrl;
         this.regionResolver = regionResolver;
         this.lambdaService = lambdaService;
-        this.authFlowHandler = new CognitoAuthFlowHandler(this, lambdaService, regionResolver);
+        this.authFlowHandler = new CognitoAuthFlowHandler(this, lambdaService, regionResolver, targetAuthorizer);
     }
 
     // ──────────────────────────── User Pools ────────────────────────────

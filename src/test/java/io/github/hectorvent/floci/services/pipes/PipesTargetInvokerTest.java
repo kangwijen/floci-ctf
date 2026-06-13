@@ -6,6 +6,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.pipes.model.DesiredState;
 import io.github.hectorvent.floci.services.pipes.model.Pipe;
 import io.github.hectorvent.floci.services.sns.SnsService;
@@ -36,6 +37,7 @@ class PipesTargetInvokerTest {
     @Mock private EventBridgeService eventBridgeService;
     @Mock private StepFunctionsService stepFunctionsService;
     @Mock private EmulatorConfig config;
+    @Mock private InProcessTargetAuthorizer targetAuthorizer;
 
     private PipesTargetInvoker invoker;
 
@@ -43,7 +45,7 @@ class PipesTargetInvokerTest {
     void setUp() {
         when(config.effectiveBaseUrl()).thenReturn("http://localhost:4566");
         invoker = new PipesTargetInvoker(lambdaService, sqsService, snsService,
-                eventBridgeService, stepFunctionsService, MAPPER, config);
+                eventBridgeService, stepFunctionsService, MAPPER, config, targetAuthorizer);
     }
 
     private Pipe createPipe(String targetArn, ObjectNode targetParameters) {

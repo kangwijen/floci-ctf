@@ -245,7 +245,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and f
 | Cognito | SRP `PASSWORD_VERIFIER` challenge includes `USERNAME` |
 | S3 | SDK ranged-get coverage (upstream test) |
 
-**CTF fork:** IAM enforcement applies to new HTTP surfaces (SigV4 + action mapping). `ResourceArnBuilder` scopes virtually all player-facing data-plane services; `pricing`, `ce` query APIs, and `ec2messages` intentionally stay `*` per AWS SAR. EMR `JobFlowIds[]` and tagging `ResourceARNList[]` evaluate every listed ARN. See [IAM scoped resources](./docs/services/iam.md#evaluation-rules) and [AGENTS.md](./AGENTS.md#iam-and-scoped-resources).
+**CTF fork:** IAM enforcement applies to HTTP (`IamEnforcementFilter`) and full in-process delivery (`InProcessIamAuthorizer` for SFN/APIGW SDK integrations; `InProcessTargetAuthorizer` for Pipes, Scheduler, EventBridge replay, SNS/S3/SES notifications, Lambda ESM, Logs subscriptions, ELB/API Gateway/Cognito/CodeDeploy Lambda invoke, and CloudTrail/Config/Firehose/EC2 S3 delivery). `ResourceArnBuilder` scopes virtually all player-facing data-plane services; `pricing`, `ce` query APIs, and `ec2messages` intentionally stay `*` per AWS SAR. EMR `JobFlowIds[]` and tagging `ResourceARNList[]` evaluate every listed ARN. See [in-process IAM](./docs/services/iam.md#in-process-iam-non-http) and [AGENTS.md](./AGENTS.md#enforcement-surfaces).
 
 ## Upstream sync
 

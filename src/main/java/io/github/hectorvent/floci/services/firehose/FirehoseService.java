@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContex
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription;
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription.S3Destination;
 import io.github.hectorvent.floci.services.firehose.model.Record;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -34,17 +35,20 @@ public class FirehoseService {
     private final S3Service s3Service;
     private final RegionResolver regionResolver;
     private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public FirehoseService(StorageFactory storageFactory,
                            S3Service s3Service,
                            RegionResolver regionResolver,
-                           InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
+                           InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
+                           InProcessTargetAuthorizer targetAuthorizer) {
         this.streamStore = storageFactory.create("firehose", "streams.json",
                 new TypeReference<Map<String, DeliveryStreamDescription>>() {});
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
         this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public String createDeliveryStream(String name, S3Destination s3Config) {
@@ -183,8 +187,11 @@ public class FirehoseService {
             }
 
             byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
+            String region = regionResolver.getDefaultRegion();
+            targetAuthorizer.authorizeServiceS3Put(
+                    InProcessTargetAuthorizer.FIREHOSE_SERVICE, bucket, key, region);
             s3Service.putObject(bucket, key, body, "application/x-ndjson", Map.of());
-            recordS3PutObject(regionResolver.getDefaultRegion(), bucket, key, null);
+            recordS3PutObject(region, bucket, key, null);
             LOG.infov("Flushed {0} records from stream {1} to s3://{2}/{3}",
                     toFlush.size(), streamName, bucket, key);
         } catch (Exception e) {

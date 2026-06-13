@@ -17,6 +17,7 @@ import io.github.hectorvent.floci.services.configservice.model.ConfigurationItem
 import io.github.hectorvent.floci.services.configservice.model.ConfigurationItemHistory;
 import io.github.hectorvent.floci.services.configservice.model.DeliveryChannel;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.iam.model.IamUser;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
@@ -55,6 +56,7 @@ public class ConfigSnapshotDeliveryService {
     private final RegionResolver regionResolver;
     private final ObjectMapper mapper;
     private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public ConfigSnapshotDeliveryService(StorageFactory storageFactory,
@@ -63,7 +65,8 @@ public class ConfigSnapshotDeliveryService {
                                          CloudTrailService cloudTrailService,
                                          RegionResolver regionResolver,
                                          ObjectMapper mapper,
-                                         InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
+                                         InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
+                                         InProcessTargetAuthorizer targetAuthorizer) {
         this.snapshotIndex = storageFactory.create("config", "config-snapshot-index.json",
                 new TypeReference<Map<String, ConfigSnapshotRecord>>() {});
         this.itemHistoryStore = storageFactory.create("config", "config-item-history.json",
@@ -74,6 +77,7 @@ public class ConfigSnapshotDeliveryService {
         this.regionResolver = regionResolver;
         this.mapper = mapper;
         this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     ConfigSnapshotDeliveryService(StorageBackend<String, ConfigSnapshotRecord> snapshotIndex,
@@ -92,6 +96,7 @@ public class ConfigSnapshotDeliveryService {
         this.regionResolver = regionResolver;
         this.mapper = mapper;
         this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
+        this.targetAuthorizer = null;
     }
 
     public String deliverConfigurationSnapshot(String region, DeliveryChannel channel) {
@@ -106,6 +111,10 @@ public class ConfigSnapshotDeliveryService {
         String timestamp = TIMESTAMP_FORMAT.format(now);
         String s3Key = buildSnapshotS3Key(channel, timestamp);
         byte[] snapshotJson = writeSnapshotJson(items);
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeServiceS3Put(
+                    InProcessTargetAuthorizer.CONFIG_SERVICE, channel.s3BucketName(), s3Key, region);
+        }
         s3Service.putObject(channel.s3BucketName(), s3Key, snapshotJson, "application/json", Map.of());
         inProcessCloudTrailRecorder.record(InProcessAuditContext.builder()
                 .region(region)

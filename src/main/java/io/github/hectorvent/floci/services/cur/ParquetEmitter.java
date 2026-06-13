@@ -5,6 +5,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.UsageLine;
 import io.github.hectorvent.floci.services.floci.FlociDuckClient;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -51,6 +52,7 @@ public class ParquetEmitter {
     private final FlociDuckClient duckClient;
     private final S3Service s3Service;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final String stagingBucket;
     private final String defaultRegion;
 
@@ -59,19 +61,22 @@ public class ParquetEmitter {
                           FlociDuckClient duckClient,
                           S3Service s3Service,
                           ObjectMapper objectMapper,
+                          InProcessTargetAuthorizer targetAuthorizer,
                           EmulatorConfig config) {
-        this(projector, duckClient, s3Service, objectMapper,
+        this(projector, duckClient, s3Service, objectMapper, targetAuthorizer,
                 config.services().cur().stagingBucket(),
                 config.defaultRegion());
     }
 
     ParquetEmitter(FocusRowProjector projector, FlociDuckClient duckClient,
                    S3Service s3Service, ObjectMapper objectMapper,
+                   InProcessTargetAuthorizer targetAuthorizer,
                    String stagingBucket, String defaultRegion) {
         this.projector = projector;
         this.duckClient = duckClient;
         this.s3Service = s3Service;
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
         this.stagingBucket = stagingBucket;
         this.defaultRegion = defaultRegion;
     }
@@ -129,6 +134,12 @@ public class ParquetEmitter {
         try {
             List<FocusRow> rows = projector.project(lines);
             byte[] payload = serializeNdjson(rows);
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeServiceS3Put(
+                        InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, stagingBucket, stagingKey, defaultRegion);
+                targetAuthorizer.authorizeServiceS3Put(
+                        InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, destBucket, destKey, defaultRegion);
+            }
             s3Service.putObject(stagingBucket, stagingKey, payload,
                     "application/x-ndjson", new HashMap<>());
             stagingWritten = true;

@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +30,9 @@ class InProcessIamAuthorizerTest {
 
     private static final String ROLE_ARN = "arn:aws:iam::222222222222:role/sfn-exec";
     private static final String KEY_ARN = "arn:aws:kms:us-east-1:222222222222:key/abc-123";
+    private static final String QUEUE_ARN = "arn:aws:sqs:us-east-1:222222222222:ctf-target";
+    private static final String LAMBDA_ARN = "arn:aws:lambda:us-east-1:222222222222:function:ctf-target";
+    private static final String EVENTS_SERVICE = "events.amazonaws.com";
 
     private EmulatorConfig config;
     private IamService iamService;
@@ -126,5 +130,184 @@ class InProcessIamAuthorizerTest {
                 eq(KEY_ARN),
                 eq("kms:Decrypt"),
                 eq("us-east-1"));
+    }
+
+    @Test
+    void authorizeWithResourceSkipsWhenEnforcementDisabled() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(false);
+
+        assertDoesNotThrow(() -> authorizer.authorizeWithResource(
+                null, "sqs", "SendMessage", QUEUE_ARN, "us-east-1"));
+        verify(iamService, never()).resolveCallerContextFromRoleArn(any());
+    }
+
+    @Test
+    void authorizeWithResourceDeniesMissingExecutionRole() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeWithResource(
+                        null, "sqs", "SendMessage", QUEUE_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeWithResourceDeniesUnknownExecutionRole() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(iamService.resolveCallerContextFromRoleArn(ROLE_ARN)).thenReturn(null);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeWithResource(
+                        ROLE_ARN, "sqs", "SendMessage", QUEUE_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeWithResourceAllowsWhenPolicyPermits() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(iamService.resolveCallerContextFromRoleArn(ROLE_ARN)).thenReturn(CallerContext.of(List.of()));
+        when(resourcePolicyResolver.resolve("sqs", QUEUE_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("sqs:SendMessage"), eq(QUEUE_ARN), any()))
+                .thenReturn(Decision.ALLOW);
+
+        assertDoesNotThrow(() -> authorizer.authorizeWithResource(
+                ROLE_ARN, "sqs", "SendMessage", QUEUE_ARN, "us-east-1"));
+    }
+
+    @Test
+    void authorizeWithResourceDeniesWhenPolicyDenies() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(iamService.resolveCallerContextFromRoleArn(ROLE_ARN)).thenReturn(CallerContext.of(List.of()));
+        when(resourcePolicyResolver.resolve("sqs", QUEUE_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("sqs:SendMessage"), eq(QUEUE_ARN), any()))
+                .thenReturn(Decision.DENY);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeWithResource(
+                        ROLE_ARN, "sqs", "SendMessage", QUEUE_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeWithResourceUsesWildcardWhenResourceBlank() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(iamService.resolveCallerContextFromRoleArn(ROLE_ARN)).thenReturn(CallerContext.of(List.of()));
+        when(resourcePolicyResolver.resolve("sqs", "*", "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("sqs:SendMessage"), eq("*"), any()))
+                .thenReturn(Decision.ALLOW);
+
+        assertDoesNotThrow(() -> authorizer.authorizeWithResource(
+                ROLE_ARN, "sqs", "SendMessage", "   ", "us-east-1"));
+        verify(resourcePolicyResolver).resolve("sqs", "*", "us-east-1");
+    }
+
+    @Test
+    void authorizeWithResourceAllowsKmsDecryptViaGrantWhenIdentityPolicyDenies() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(iamService.resolveCallerContextFromRoleArn(ROLE_ARN)).thenReturn(CallerContext.of(List.of()));
+        when(resourcePolicyResolver.resolve("kms", KEY_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("kms:Decrypt"), eq(KEY_ARN), any()))
+                .thenReturn(Decision.DENY);
+        when(kmsService.isGrantAuthorized(
+                eq(ROLE_ARN),
+                eq("222222222222"),
+                eq(KEY_ARN),
+                eq("kms:Decrypt"),
+                eq("us-east-1"))).thenReturn(true);
+
+        assertDoesNotThrow(() -> authorizer.authorizeWithResource(
+                ROLE_ARN, "kms", "Decrypt", KEY_ARN, "us-east-1"));
+        verify(kmsService).isGrantAuthorized(
+                eq(ROLE_ARN),
+                eq("222222222222"),
+                eq(KEY_ARN),
+                eq("kms:Decrypt"),
+                eq("us-east-1"));
+    }
+
+    @Test
+    void authorizeServicePrincipalSkipsWhenEnforcementDisabled() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(false);
+
+        assertDoesNotThrow(() -> authorizer.authorizeServicePrincipal(
+                EVENTS_SERVICE, "lambda", "InvokeFunction", LAMBDA_ARN, "us-east-1"));
+        verify(resourcePolicyResolver, never()).resolve(any(), any(), any());
+    }
+
+    @Test
+    void authorizeServicePrincipalDeniesMissingServicePrincipal() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeServicePrincipal(
+                        null, "lambda", "InvokeFunction", LAMBDA_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeServicePrincipalDeniesBlankServicePrincipal() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeServicePrincipal(
+                        "  ", "lambda", "InvokeFunction", LAMBDA_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeServicePrincipalAllowsWhenResourcePolicyPermits() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(resourcePolicyResolver.resolve("lambda", LAMBDA_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(
+                eq(CallerContext.of(List.of())),
+                any(),
+                eq("lambda:InvokeFunction"),
+                eq(LAMBDA_ARN),
+                any())).thenReturn(Decision.ALLOW);
+
+        assertDoesNotThrow(() -> authorizer.authorizeServicePrincipal(
+                EVENTS_SERVICE, "lambda", "InvokeFunction", LAMBDA_ARN, "us-east-1"));
+    }
+
+    @Test
+    void authorizeServicePrincipalDeniesWhenResourcePolicyDenies() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(resourcePolicyResolver.resolve("lambda", LAMBDA_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(
+                eq(CallerContext.of(List.of())),
+                any(),
+                eq("lambda:InvokeFunction"),
+                eq(LAMBDA_ARN),
+                any())).thenReturn(Decision.DENY);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> authorizer.authorizeServicePrincipal(
+                        EVENTS_SERVICE, "lambda", "InvokeFunction", LAMBDA_ARN, "us-east-1"));
+        assertEquals("AccessDeniedException", ex.getErrorCode());
+    }
+
+    @Test
+    void authorizeServicePrincipalUsesWildcardWhenResourceBlank() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(resourcePolicyResolver.resolve("lambda", "*", "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(
+                eq(CallerContext.of(List.of())),
+                any(),
+                eq("lambda:InvokeFunction"),
+                eq("*"),
+                any())).thenReturn(Decision.ALLOW);
+
+        assertDoesNotThrow(() -> authorizer.authorizeServicePrincipal(
+                EVENTS_SERVICE, "lambda", "InvokeFunction", "  ", "us-east-1"));
+        verify(resourcePolicyResolver).resolve("lambda", "*", "us-east-1");
+    }
+
+    @Test
+    void authorizeServicePrincipalSkipsExemptActions() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        assertDoesNotThrow(() -> authorizer.authorizeServicePrincipal(
+                EVENTS_SERVICE, "sts", "GetCallerIdentity", LAMBDA_ARN, "us-east-1"));
+        verify(evaluator, never()).evaluate(any(), any(), any(), any(), any());
     }
 }

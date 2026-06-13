@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.pipes.model.Pipe;
 import io.github.hectorvent.floci.services.sns.SnsService;
 import io.github.hectorvent.floci.services.sqs.SqsService;
@@ -36,6 +37,7 @@ public class PipesTargetInvoker {
     private final StepFunctionsService stepFunctionsService;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public PipesTargetInvoker(LambdaService lambdaService,
@@ -44,7 +46,8 @@ public class PipesTargetInvoker {
                               EventBridgeService eventBridgeService,
                               StepFunctionsService stepFunctionsService,
                               ObjectMapper objectMapper,
-                              EmulatorConfig config) {
+                              EmulatorConfig config,
+                              InProcessTargetAuthorizer targetAuthorizer) {
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
         this.snsService = snsService;
@@ -52,9 +55,11 @@ public class PipesTargetInvoker {
         this.stepFunctionsService = stepFunctionsService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.effectiveBaseUrl();
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void invoke(Pipe pipe, String payload, String region) {
+        targetAuthorizer.authorizePipeTarget(pipe.getRoleArn(), pipe.getTarget(), region);
         String targetArn = pipe.getTarget();
 
         JsonNode tp = pipe.getTargetParameters();

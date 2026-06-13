@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.eventbridge.model.InputTransformer;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
@@ -29,6 +30,7 @@ public class EventBridgeInvoker {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public EventBridgeInvoker(LambdaService lambdaService,
@@ -36,17 +38,24 @@ public class EventBridgeInvoker {
                               SnsService snsService,
                               ObjectMapper objectMapper,
                               EmulatorConfig config,
-                              InProcessCloudTrailRecorder cloudTrailRecorder) {
+                              InProcessCloudTrailRecorder cloudTrailRecorder,
+                              InProcessTargetAuthorizer targetAuthorizer) {
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
         this.snsService = snsService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.baseUrl();
         this.cloudTrailRecorder = cloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void invokeTarget(Target target, String eventJson, String region) {
+        invokeTarget(target, eventJson, region, null);
+    }
+
+    public void invokeTarget(Target target, String eventJson, String region, String ruleRoleArn) {
         String arn = target.getArn();
+        targetAuthorizer.authorizeEventBridgeTarget(ruleRoleArn, arn, region);
         String payload;
         if (target.getInput() != null) {
             payload = target.getInput();

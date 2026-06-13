@@ -134,7 +134,7 @@ public class RuleScheduler {
 
         for (Target target : data.targets) {
             try {
-                invoker.invokeTarget(target, eventJson, region);
+                invoker.invokeTarget(target, eventJson, region, data.rule.getRoleArn());
             } catch (Exception e) {
                 LOG.warnv("Failed to invoke target {0} for rule {1}: {2}",
                         target.getId(), data.rule.getName(), e.getMessage());

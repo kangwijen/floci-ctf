@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.lambda;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.cloudwatch.logs.CloudWatchLogsService;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,14 +50,17 @@ public class ApiGatewayController {
     private final RegionResolver regionResolver;
     private final ObjectMapper objectMapper;
     private final CloudWatchLogsService cloudWatchLogsService;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public ApiGatewayController(LambdaService lambdaService, RegionResolver regionResolver,
-                                ObjectMapper objectMapper, CloudWatchLogsService cloudWatchLogsService) {
+                                ObjectMapper objectMapper, CloudWatchLogsService cloudWatchLogsService,
+                                InProcessTargetAuthorizer targetAuthorizer) {
         this.lambdaService = lambdaService;
         this.regionResolver = regionResolver;
         this.objectMapper = objectMapper;
         this.cloudWatchLogsService = cloudWatchLogsService;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @GET
@@ -117,6 +121,7 @@ public class ApiGatewayController {
 
         InvokeResult result;
         try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
             result = lambdaService.invoke(region, functionName, eventJson.getBytes(),
                     InvocationType.RequestResponse);
         } catch (AwsException e) {

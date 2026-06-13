@@ -5,6 +5,7 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEvent;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventResource;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -37,6 +38,7 @@ public class CloudTrailDeliveryService {
     private final RegionResolver regionResolver;
     private final ObjectMapper mapper;
     private final CloudTrailEventStore eventStore;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, List<Map<String, Object>>> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TrailDeliveryContext> trailContexts = new ConcurrentHashMap<>();
     private volatile int bufferSize = DEFAULT_BUFFER_SIZE;
@@ -45,11 +47,13 @@ public class CloudTrailDeliveryService {
     public CloudTrailDeliveryService(S3Service s3Service,
                                      RegionResolver regionResolver,
                                      ObjectMapper mapper,
-                                     CloudTrailEventStore eventStore) {
+                                     CloudTrailEventStore eventStore,
+                                     InProcessTargetAuthorizer targetAuthorizer) {
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
         this.mapper = mapper;
         this.eventStore = eventStore;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     /**
@@ -164,6 +168,8 @@ public class CloudTrailDeliveryService {
                 + accountId + "_CloudTrail_" + region + "_" + FILE_TIMESTAMP.format(now) + ".json.gz";
         try {
             byte[] payload = gzipJsonArray(events);
+            targetAuthorizer.authorizeServiceS3Put(
+                    InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE, trail.getS3BucketName(), objectKey, region);
             s3Service.putObject(trail.getS3BucketName(), objectKey, payload, "application/json", Map.of());
             LOG.debugv("Delivered {0} CloudTrail events to s3://{1}/{2}",
                     events.size(), trail.getS3BucketName(), objectKey);

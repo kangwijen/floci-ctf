@@ -12,6 +12,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.Replay;
 import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.vertx.core.Vertx;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 class EventBridgeSchedulerIntegrationTest {
 
@@ -40,7 +42,9 @@ class EventBridgeSchedulerIntegrationTest {
         StorageBackend<String, Rule> ruleStore = new InMemoryStorage<>();
         StorageBackend<String, List<Target>> targetStore = new InMemoryStorage<>();
 
-        EventBridgeInvoker invoker = new EventBridgeInvoker(null, null, null, new ObjectMapper(), createConfig(), null);
+        EventBridgeInvoker invoker = new EventBridgeInvoker(
+                null, null, null, new ObjectMapper(), createConfig(), null,
+                mock(InProcessTargetAuthorizer.class));
         scheduler = new RuleScheduler(vertx, createConfig(), new ObjectMapper(), invoker);
 
         ReplayDispatcher replayDispatcher = new ReplayDispatcher(vertx);
@@ -48,7 +52,8 @@ class EventBridgeSchedulerIntegrationTest {
                 busStore, ruleStore, targetStore,
                 new InMemoryStorage<>(), new InMemoryStorage<>(), new InMemoryStorage<>(),
                 new RegionResolver(REGION, ACCOUNT),
-                new ObjectMapper(), scheduler, invoker, replayDispatcher);
+                new ObjectMapper(), scheduler, invoker, replayDispatcher,
+                mock(InProcessTargetAuthorizer.class));
     }
 
     @AfterEach

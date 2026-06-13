@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.dynamodb.DynamoDbStreamService;
 import io.github.hectorvent.floci.services.kinesis.KinesisService;
 import io.github.hectorvent.floci.services.pipes.model.DesiredState;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.pipes.model.Pipe;
 import io.github.hectorvent.floci.services.sqs.SqsService;
 import io.github.hectorvent.floci.services.sqs.model.Message;
@@ -45,6 +46,7 @@ public class PipesPoller {
     private final PipesFilterMatcher filterMatcher;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, Long> timerIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> activePolls = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> kinesisIterators = new ConcurrentHashMap<>();
@@ -63,7 +65,8 @@ public class PipesPoller {
                        PipesTargetInvoker targetInvoker,
                        PipesFilterMatcher filterMatcher,
                        ObjectMapper objectMapper,
-                       EmulatorConfig config) {
+                       EmulatorConfig config,
+                       InProcessTargetAuthorizer targetAuthorizer) {
         this.vertx = vertx;
         this.sqsService = sqsService;
         this.kinesisService = kinesisService;
@@ -72,6 +75,7 @@ public class PipesPoller {
         this.filterMatcher = filterMatcher;
         this.objectMapper = objectMapper;
         this.baseUrl = config.effectiveBaseUrl();
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @PreDestroy
@@ -138,6 +142,7 @@ public class PipesPoller {
     }
 
     private void pollSqs(Pipe pipe, String region) {
+        targetAuthorizer.authorizePipeSource(pipe.getRoleArn(), pipe.getSource(), region);
         String queueUrl = AwsArnUtils.arnToQueueUrl(pipe.getSource(), baseUrl);
         int batchSize = getBatchSize(pipe, "SqsQueueParameters");
         List<Message> messages = sqsService.receiveMessage(queueUrl, batchSize, 30, 0, region);
@@ -162,6 +167,7 @@ public class PipesPoller {
         for (Message msg : messages) {
             if (!matchedMessageIds.contains(msg.getMessageId())) {
                 try {
+                    targetAuthorizer.authorizePipeSourceDelete(pipe.getRoleArn(), pipe.getSource(), region);
                     sqsService.deleteMessage(queueUrl, msg.getReceiptHandle(), region);
                 } catch (Exception e) {
                     LOG.warnv("Pipe {0}: failed to delete SQS message {1}: {2}",
@@ -181,6 +187,7 @@ public class PipesPoller {
                 for (Message msg : messages) {
                     if (matchedMessageIds.contains(msg.getMessageId())) {
                         try {
+                            targetAuthorizer.authorizePipeSourceDelete(pipe.getRoleArn(), pipe.getSource(), region);
                             sqsService.deleteMessage(queueUrl, msg.getReceiptHandle(), region);
                         } catch (Exception e) {
                             LOG.warnv("Pipe {0}: failed to delete SQS message {1}: {2}",
@@ -200,6 +207,7 @@ public class PipesPoller {
                     Message msg = messagesById.get(messageId);
                     if (msg != null) {
                         try {
+                            targetAuthorizer.authorizePipeSourceDelete(pipe.getRoleArn(), pipe.getSource(), region);
                             sqsService.deleteMessage(queueUrl, msg.getReceiptHandle(), region);
                         } catch (Exception e) {
                             LOG.warnv("Pipe {0}: failed to delete SQS message {1}: {2}",
@@ -212,6 +220,7 @@ public class PipesPoller {
     }
 
     private void pollKinesis(Pipe pipe, String region) {
+        targetAuthorizer.authorizePipeSource(pipe.getRoleArn(), pipe.getSource(), region);
         String pipeKey = pipeKey(pipe);
         String streamName = extractResourceName(pipe.getSource());
         String pipeAccountId = pipe.getAccountId();
@@ -269,6 +278,7 @@ public class PipesPoller {
     }
 
     private void pollDynamoDbStreams(Pipe pipe, String region) {
+        targetAuthorizer.authorizePipeSource(pipe.getRoleArn(), pipe.getSource(), region);
         String pipeKey = pipeKey(pipe);
         String streamArn = pipe.getSource();
         int batchSize = getBatchSize(pipe, "DynamoDBStreamParameters");
@@ -352,6 +362,7 @@ public class PipesPoller {
             return false;
         }
         try {
+            targetAuthorizer.authorizePipeTarget(pipe.getRoleArn(), dlqArn, region);
             String queueUrl = AwsArnUtils.arnToQueueUrl(dlqArn, baseUrl);
             sqsService.sendMessage(queueUrl, payload, 0, region);
             LOG.infov("Pipe {0}: sent failed records to DLQ {1}", pipe.getName(), dlqArn);

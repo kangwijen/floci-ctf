@@ -268,9 +268,11 @@ public class CloudWatchLogsHandler {
         String filterName = request.path("filterName").asText();
         String filterPattern = request.path("filterPattern").asText();
         String destinationArn = request.path("destinationArn").asText();
+        String roleArn = request.has("roleArn") ? request.path("roleArn").asText(null) : null;
         String distribution = request.has("distribution") ? request.path("distribution").asText(null) : null;
 
-        logsService.putSubscriptionFilter(logGroupName, filterName, filterPattern, destinationArn, distribution, region);
+        logsService.putSubscriptionFilter(logGroupName, filterName, filterPattern, destinationArn, roleArn,
+                distribution, region);
         return Response.ok(objectMapper.createObjectNode()).build();
     }
 
@@ -291,6 +293,9 @@ public class CloudWatchLogsHandler {
             node.put("logGroupName", f.getLogGroupName());
             node.put("filterPattern", f.getFilterPattern());
             node.put("destinationArn", f.getDestinationArn());
+            if (f.getRoleArn() != null) {
+                node.put("roleArn", f.getRoleArn());
+            }
             if (f.getDistribution() != null) {
                 node.put("distribution", f.getDistribution());
             }

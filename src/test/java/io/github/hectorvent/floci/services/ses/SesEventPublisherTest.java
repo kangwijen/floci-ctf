@@ -57,7 +57,7 @@ class SesEventPublisherTest {
     @BeforeEach
     void setUp() {
         publisher = new SesEventPublisher(snsService, firehoseService, eventBridgeService,
-                cloudWatchMetricsService, MAPPER);
+                cloudWatchMetricsService, MAPPER, null);
     }
 
     @Test

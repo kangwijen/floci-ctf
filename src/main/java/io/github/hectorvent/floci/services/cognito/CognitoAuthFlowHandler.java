@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.cognito.model.CognitoUser;
 import io.github.hectorvent.floci.services.cognito.model.UserPool;
 import io.github.hectorvent.floci.services.cognito.model.UserPoolClient;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
@@ -44,6 +45,7 @@ final class CognitoAuthFlowHandler {
     private final CognitoService service;
     private final LambdaService lambdaService;
     private final RegionResolver regionResolver;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, SrpSession> srpSessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CustomAuthSession> customAuthSessions = new ConcurrentHashMap<>();
 
@@ -67,10 +69,12 @@ final class CognitoAuthFlowHandler {
         }
     }
 
-    CognitoAuthFlowHandler(CognitoService service, LambdaService lambdaService, RegionResolver regionResolver) {
+    CognitoAuthFlowHandler(CognitoService service, LambdaService lambdaService, RegionResolver regionResolver,
+                           InProcessTargetAuthorizer targetAuthorizer) {
         this.service = service;
         this.lambdaService = lambdaService;
         this.regionResolver = regionResolver;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     // ──────────────────────────── Public entry points ────────────────────────────
@@ -685,6 +689,9 @@ final class CognitoAuthFlowHandler {
 
         try {
             byte[] payload = MAPPER.writeValueAsBytes(event);
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeCognitoLambdaInvoke(functionRef, region);
+            }
             InvokeResult result = lambdaService.invoke(region, functionRef, payload, InvocationType.RequestResponse);
             if (result.getFunctionError() != null) {
                 String msg = String.format("trigger %s (%s) returned error: %s",
@@ -902,8 +909,12 @@ final class CognitoAuthFlowHandler {
 
         try {
             byte[] payload = MAPPER.writeValueAsBytes(event);
+            String migrationArn = resolveTriggerArn(pool, "UserMigration");
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeCognitoLambdaInvoke(migrationArn, regionForPool(pool));
+            }
             InvokeResult result = lambdaService.invoke(regionForPool(pool),
-                    resolveTriggerArn(pool, "UserMigration"), payload, InvocationType.RequestResponse);
+                    migrationArn, payload, InvocationType.RequestResponse);
             if (result.getFunctionError() != null) {
                 LOG.warnv("UserMigration trigger errored: {0}", result.getFunctionError());
                 return null;

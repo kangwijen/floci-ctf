@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
 import io.github.hectorvent.floci.services.sns.model.PlatformApplication;
@@ -80,6 +81,7 @@ public class SnsService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final Map<String, Instant> fifoDeduplicationCache = new ConcurrentHashMap<>();
     private static final HexFormat HEX = HexFormat.of();
     
@@ -87,7 +89,8 @@ public class SnsService {
     public SnsService(StorageFactory storageFactory, EmulatorConfig config,
                       RegionResolver regionResolver, SqsService sqsService,
                       LambdaService lambdaService, ObjectMapper objectMapper,
-                      InProcessCloudTrailRecorder cloudTrailRecorder) {
+                      InProcessCloudTrailRecorder cloudTrailRecorder,
+                      InProcessTargetAuthorizer targetAuthorizer) {
         this(
                 storageFactory.create("sns", "sns-topics.json",
                         new TypeReference<Map<String, Topic>>() {
@@ -110,7 +113,8 @@ public class SnsService {
                 config.effectiveBaseUrl(),
                 config.services().iam().enforcementEnabled(),
                 objectMapper,
-                cloudTrailRecorder
+                cloudTrailRecorder,
+                targetAuthorizer
         );
     }
 
@@ -146,6 +150,7 @@ public class SnsService {
         this.objectMapper = new ObjectMapper();
         this.httpClient = null;
         this.cloudTrailRecorder = null;
+        this.targetAuthorizer = null;
     }
 
     SnsService(StorageBackend<String, Topic> topicStore,
@@ -156,7 +161,7 @@ public class SnsService {
                RegionResolver regionResolver, SqsService sqsService,
                LambdaService lambdaService, String baseUrl, ObjectMapper objectMapper) {
         this(topicStore, subscriptionStore, platformAppStore, platformEndpointStore, smsStore,
-                regionResolver, sqsService, lambdaService, baseUrl, false, objectMapper, null);
+                regionResolver, sqsService, lambdaService, baseUrl, false, objectMapper, null, null);
     }
 
     SnsService(StorageBackend<String, Topic> topicStore,
@@ -168,7 +173,7 @@ public class SnsService {
                LambdaService lambdaService, String baseUrl, boolean iamEnforcementEnabled,
                ObjectMapper objectMapper) {
         this(topicStore, subscriptionStore, platformAppStore, platformEndpointStore, smsStore,
-                regionResolver, sqsService, lambdaService, baseUrl, iamEnforcementEnabled, objectMapper, null);
+                regionResolver, sqsService, lambdaService, baseUrl, iamEnforcementEnabled, objectMapper, null, null);
     }
 
     SnsService(StorageBackend<String, Topic> topicStore,
@@ -178,7 +183,8 @@ public class SnsService {
                StorageBackend<String, SentSms> smsStore,
                RegionResolver regionResolver, SqsService sqsService,
                LambdaService lambdaService, String baseUrl, boolean iamEnforcementEnabled,
-               ObjectMapper objectMapper, InProcessCloudTrailRecorder cloudTrailRecorder) {
+               ObjectMapper objectMapper, InProcessCloudTrailRecorder cloudTrailRecorder,
+               InProcessTargetAuthorizer targetAuthorizer) {
         this.topicStore = topicStore;
         this.subscriptionStore = subscriptionStore;
         this.platformAppStore = platformAppStore;
@@ -191,6 +197,7 @@ public class SnsService {
         this.iamEnforcementEnabled = iamEnforcementEnabled;
         this.objectMapper = objectMapper;
         this.cloudTrailRecorder = cloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
 
@@ -1281,6 +1288,9 @@ public class SnsService {
                     if (region == null) {
                         region = extractRegionFromArn(topicArn);
                     }
+                    if (targetAuthorizer != null) {
+                        targetAuthorizer.authorizeSnsDelivery(sub.getEndpoint(), "sqs", region);
+                    }
                     String queueUrl = sqsArnToUrl(sub.getEndpoint());
                     boolean rawDelivery = "true".equalsIgnoreCase(sub.getAttributes().get("RawMessageDelivery"));
                     String body = rawDelivery
@@ -1297,6 +1307,9 @@ public class SnsService {
                 case "lambda" -> {
                     String fnName = extractFunctionName(sub.getEndpoint());
                     String region = extractRegionFromArn(sub.getEndpoint());
+                    if (targetAuthorizer != null) {
+                        targetAuthorizer.authorizeSnsDelivery(sub.getEndpoint(), "lambda", region);
+                    }
                     String eventJson = buildSnsLambdaEvent(topicArn, messageId, message,
                             subject, messageAttributes, sub.getSubscriptionArn());
                     lambdaService.invoke(region, fnName, eventJson.getBytes(), InvocationType.Event);

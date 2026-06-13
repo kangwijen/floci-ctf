@@ -348,7 +348,7 @@ class CloudWatchLogsServiceTest {
     @Test
     void putSubscriptionFilter() {
         service.createLogGroup("/app/logs", null, null, REGION);
-        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION);
 
         CloudWatchLogsService.DescribeSubscriptionFiltersResult result =
                 service.describeSubscriptionFilters("/app/logs", null, null, 50, REGION);
@@ -365,7 +365,7 @@ class CloudWatchLogsServiceTest {
     @Test
     void putSubscriptionFilterDefaultsDistribution() {
         service.createLogGroup("/app/logs", null, null, REGION);
-        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION);
 
         SubscriptionFilter f = service.describeSubscriptionFilters("/app/logs", null, null, 50, REGION).subscriptionFilters().getFirst();
         assertEquals("ByLogStream", f.getDistribution());
@@ -374,15 +374,15 @@ class CloudWatchLogsServiceTest {
     @Test
     void putSubscriptionFilterWithoutLogGroupThrows() {
         assertThrows(AwsException.class, () ->
-                service.putSubscriptionFilter("/missing", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION));
+                service.putSubscriptionFilter("/missing", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION));
     }
 
     @Test
     void putSubscriptionFilterUpsertsDuplicate() {
         service.createLogGroup("/app/logs", null, null, REGION);
-        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION);
         // Upsert: calling with same name overwrites
-        service.putSubscriptionFilter("/app/logs", "my-filter", "WARN", "arn:aws:lambda:us-east-1:000000000000:function:other", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "my-filter", "WARN", "arn:aws:lambda:us-east-1:000000000000:function:other", null, null, REGION);
 
         CloudWatchLogsService.DescribeSubscriptionFiltersResult result =
                 service.describeSubscriptionFilters("/app/logs", null, null, 50, REGION);
@@ -394,8 +394,8 @@ class CloudWatchLogsServiceTest {
     @Test
     void describeSubscriptionFiltersWithPrefix() {
         service.createLogGroup("/app/logs", null, null, REGION);
-        service.putSubscriptionFilter("/app/logs", "alpha-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:a", null, REGION);
-        service.putSubscriptionFilter("/app/logs", "beta-filter", "WARN", "arn:aws:lambda:us-east-1:000000000000:function:b", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "alpha-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:a", null, null, REGION);
+        service.putSubscriptionFilter("/app/logs", "beta-filter", "WARN", "arn:aws:lambda:us-east-1:000000000000:function:b", null, null, REGION);
 
         CloudWatchLogsService.DescribeSubscriptionFiltersResult result =
                 service.describeSubscriptionFilters("/app/logs", "alpha", null, 50, REGION);
@@ -413,7 +413,7 @@ class CloudWatchLogsServiceTest {
     void describeSubscriptionFiltersPagination() {
         service.createLogGroup("/app/logs", null, null, REGION);
         for (int i = 0; i < 5; i++) {
-            service.putSubscriptionFilter("/app/logs", "filter-" + i, "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION);
+            service.putSubscriptionFilter("/app/logs", "filter-" + i, "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION);
         }
 
         CloudWatchLogsService.DescribeSubscriptionFiltersResult page1 =
@@ -429,7 +429,7 @@ class CloudWatchLogsServiceTest {
     @Test
     void deleteSubscriptionFilter() {
         service.createLogGroup("/app/logs", null, null, REGION);
-        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, REGION);
+        service.putSubscriptionFilter("/app/logs", "my-filter", "ERROR", "arn:aws:lambda:us-east-1:000000000000:function:test", null, null, REGION);
         service.deleteSubscriptionFilter("/app/logs", "my-filter", REGION);
 
         CloudWatchLogsService.DescribeSubscriptionFiltersResult result =

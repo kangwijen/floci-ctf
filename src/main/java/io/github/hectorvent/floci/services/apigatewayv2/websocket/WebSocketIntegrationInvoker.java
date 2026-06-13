@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.services.apigateway.AwsServiceRouter;
 import io.github.hectorvent.floci.services.apigateway.VtlTemplateEngine;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -44,15 +45,18 @@ public class WebSocketIntegrationInvoker {
     private final ObjectMapper objectMapper;
     private final VtlTemplateEngine vtlEngine;
     private final HttpClient httpClient;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public WebSocketIntegrationInvoker(LambdaService lambdaService, AwsServiceRouter serviceRouter,
-                                       ObjectMapper objectMapper, VtlTemplateEngine vtlEngine) {
+                                       ObjectMapper objectMapper, VtlTemplateEngine vtlEngine,
+                                       InProcessTargetAuthorizer targetAuthorizer) {
         this.lambdaService = lambdaService;
         this.serviceRouter = serviceRouter;
         this.objectMapper = objectMapper;
         this.vtlEngine = vtlEngine;
         this.httpClient = HttpClient.newHttpClient();
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @PreDestroy
@@ -132,6 +136,7 @@ public class WebSocketIntegrationInvoker {
 
         LOG.debugv("Invoking Lambda function {0} for AWS_PROXY integration", functionName);
 
+        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
         InvokeResult result = lambdaService.invoke(region, functionName,
                 eventJson.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
 
@@ -202,6 +207,7 @@ public class WebSocketIntegrationInvoker {
 
         LOG.debugv("Invoking Lambda function {0} for AWS integration", functionName);
 
+        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
         InvokeResult result = lambdaService.invoke(region, functionName,
                 transformedPayload.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
 

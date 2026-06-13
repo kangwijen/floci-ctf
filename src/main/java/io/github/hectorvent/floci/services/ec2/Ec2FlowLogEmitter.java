@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.ec2.model.InstanceNetworkInterface;
 import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import io.quarkus.runtime.ShutdownEvent;
 import jakarta.annotation.PostConstruct;
@@ -43,6 +44,7 @@ public class Ec2FlowLogEmitter {
     private final CloudWatchLogsService cloudWatchLogsService;
     private final String accountId;
     private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final Random random = new Random();
 
     private ScheduledExecutorService scheduler;
@@ -52,12 +54,14 @@ public class Ec2FlowLogEmitter {
                               S3Service s3Service,
                               CloudWatchLogsService cloudWatchLogsService,
                               EmulatorConfig config,
-                              InProcessCloudTrailRecorder inProcessCloudTrailRecorder) {
+                              InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
+                              InProcessTargetAuthorizer targetAuthorizer) {
         this.ec2Service = ec2Service;
         this.s3Service = s3Service;
         this.cloudWatchLogsService = cloudWatchLogsService;
         this.accountId = config.defaultAccountId();
         this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @PostConstruct
@@ -249,6 +253,7 @@ public class Ec2FlowLogEmitter {
         } catch (Exception e) {
             payload = (line + "\n").getBytes(StandardCharsets.UTF_8);
         }
+        targetAuthorizer.authorizeVpcFlowLogsS3Put(dest.bucket(), key, flowLog.getRegion());
         s3Service.putObject(dest.bucket(), key, payload, "text/plain", Map.of());
         recordFlowLogS3PutObject(flowLog.getRegion(), dest.bucket(), key);
         flowLog.setDeliverLogsStatus("SUCCESS");

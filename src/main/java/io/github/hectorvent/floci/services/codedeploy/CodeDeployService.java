@@ -16,6 +16,7 @@ import io.github.hectorvent.floci.services.ecs.EcsService;
 import io.github.hectorvent.floci.services.ecs.model.TaskSet;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.TargetGroup;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.ssm.SsmCommandService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -49,11 +50,13 @@ public class CodeDeployService {
     private final ObjectMapper mapper;
     private final ObjectMapper yamlMapper;
     private final RegionResolver regionResolver;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public CodeDeployService(LambdaService lambdaService, EcsService ecsService,
                              ElbV2Service elbV2Service, SsmCommandService ssmCommandService,
-                             Ec2Service ec2Service, ObjectMapper mapper, RegionResolver regionResolver) {
+                             Ec2Service ec2Service, ObjectMapper mapper, RegionResolver regionResolver,
+                             InProcessTargetAuthorizer targetAuthorizer) {
         this.lambdaService = lambdaService;
         this.ecsService = ecsService;
         this.elbV2Service = elbV2Service;
@@ -62,6 +65,7 @@ public class CodeDeployService {
         this.mapper = mapper;
         this.yamlMapper = new ObjectMapper(new YAMLFactory());
         this.regionResolver = regionResolver;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     // key: region -> name -> application
@@ -1543,6 +1547,7 @@ public class CodeDeployService {
                     + "\",\"LifecycleEventHookExecutionId\":\"" + executionId + "\"}";
 
             try {
+                targetAuthorizer.authorizeCodeDeployLambdaInvoke(hookFunctionName, region);
                 InvokeResult result = lambdaService.invoke(region, hookFunctionName,
                         payload.getBytes(), InvocationType.RequestResponse);
                 if (!future.isDone()) {

@@ -96,9 +96,77 @@ public class InProcessIamAuthorizer {
 
         String accountId = accountFromRoleArn(roleArn);
         String resource = arnBuilder.buildFromJsonBody(credentialScope, requestBody, region, accountId);
+        evaluateRoleAccess(roleArn, caller, credentialScope, action, resource, region);
+    }
+
+    /**
+     * Authorizes an in-process call when the target resource ARN is already known (pipes, scheduler, ESM).
+     */
+    public void authorizeWithResource(String roleArn,
+                                      String credentialScope,
+                                      String action,
+                                      String resourceArn,
+                                      String region) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (roleArn == null || roleArn.isBlank()) {
+            deny(credentialScope, action, roleArn, "missing execution role");
+            return;
+        }
+        CallerContext caller = iamService.resolveCallerContextFromRoleArn(roleArn);
+        if (caller == null) {
+            deny(credentialScope, action, roleArn, "unknown execution role");
+            return;
+        }
+        evaluateRoleAccess(roleArn, caller, credentialScope, action, resourceArn, region);
+    }
+
+    /**
+     * Authorizes service-to-service delivery using destination resource policies only.
+     * Matches AWS EventBridge, SNS, CloudWatch Logs, and ELB Lambda invoke patterns.
+     */
+    public void authorizeServicePrincipal(String servicePrincipal,
+                                          String credentialScope,
+                                          String action,
+                                          String resourceArn,
+                                          String region) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (servicePrincipal == null || servicePrincipal.isBlank()) {
+            deny(credentialScope, action, servicePrincipal, "missing service principal");
+            return;
+        }
+        String iamAction = toIamAction(credentialScope, action);
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(iamAction)) {
+            return;
+        }
+        String resource = resourceArn != null && !resourceArn.isBlank() ? resourceArn : "*";
+        String accountId = AwsArnUtils.accountOrDefault(resource, "000000000000");
+        List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+        Map<String, String> conditionCtx = buildConditionContext(servicePrincipal, accountId);
+        CallerContext emptyIdentity = CallerContext.of(List.of());
+        Decision decision = evaluator.evaluate(emptyIdentity, resourcePolicies, iamAction, resource, conditionCtx);
+        if (decision == Decision.DENY) {
+            deny(credentialScope, action, servicePrincipal, "resource policy denied");
+        }
+    }
+
+    private void evaluateRoleAccess(String roleArn,
+                                    CallerContext caller,
+                                    String credentialScope,
+                                    String action,
+                                    String resourceArn,
+                                    String region) {
+        String iamAction = toIamAction(credentialScope, action);
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(iamAction)) {
+            return;
+        }
+        String accountId = accountFromRoleArn(roleArn);
+        String resource = resourceArn != null && !resourceArn.isBlank() ? resourceArn : "*";
         List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
         Map<String, String> conditionCtx = buildConditionContext(roleArn, accountId);
-
         Decision decision = evaluator.evaluate(caller, resourcePolicies, iamAction, resource, conditionCtx);
         if (decision == Decision.DENY
                 && "kms".equals(credentialScope)

@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.lambda;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.model.EventSourceMapping;
 import io.github.hectorvent.floci.services.sqs.SqsService;
 import io.github.hectorvent.floci.services.sqs.model.Message;
@@ -39,7 +40,8 @@ class SqsEventSourcePollerTest {
                 mock(LambdaFunctionStore.class),
                 mock(EsmStore.class),
                 config,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                mock(InProcessTargetAuthorizer.class)
         );
     }
 

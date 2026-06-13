@@ -183,8 +183,17 @@ public class ResourceArnBuilder {
             case "monitoring" -> buildCloudWatchArnFromJson(node, region, accountId);
             case "cognito-idp" -> buildCognitoArnFromJson(node, region, accountId);
             case "s3" -> buildS3ArnFromJson(node);
+            case "acm" -> buildAcmArnFromJson(node, region, accountId);
             default -> "*";
         };
+    }
+
+    private String buildAcmArnFromJson(JsonNode node, String region, String accountId) {
+        String certArn = firstArn(jsonText(node, "CertificateArn"));
+        if (certArn != null) {
+            return certArn;
+        }
+        return AwsArnUtils.Arn.of("acm", region, accountId, "certificate/*").toString();
     }
 
     private String buildS3ArnFromJson(JsonNode node) {

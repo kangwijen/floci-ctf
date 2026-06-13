@@ -17,6 +17,7 @@ import io.github.hectorvent.floci.services.ses.model.ConfigurationSet;
 import io.github.hectorvent.floci.services.ses.model.EventDestination;
 import io.github.hectorvent.floci.services.ses.model.MessageHeader;
 import io.github.hectorvent.floci.services.ses.model.MessageTag;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.sns.SnsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -48,17 +49,20 @@ public class SesEventPublisher {
     private final EventBridgeService eventBridgeService;
     private final CloudWatchMetricsService cloudWatchMetricsService;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public SesEventPublisher(SnsService snsService, FirehoseService firehoseService,
                              EventBridgeService eventBridgeService,
                              CloudWatchMetricsService cloudWatchMetricsService,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             InProcessTargetAuthorizer targetAuthorizer) {
         this.snsService = snsService;
         this.firehoseService = firehoseService;
         this.eventBridgeService = eventBridgeService;
         this.cloudWatchMetricsService = cloudWatchMetricsService;
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void publish(ConfigurationSet configurationSet, String eventType, String messageId,
@@ -122,7 +126,8 @@ public class SesEventPublisher {
                         ed.getName(), eventType);
                 return;
             }
-            publishFirehose(streamArn, payloadJson, ed.getName(), eventType);
+            publishFirehose(ed.getKinesisFirehoseDestination().getIamRoleArn(),
+                    streamArn, payloadJson, ed.getName(), eventType);
             return;
         }
         if (ed.getEventBridgeDestination() != null) {
@@ -147,13 +152,16 @@ public class SesEventPublisher {
     private void publishSns(String topicArn, String payload, String defaultRegion) {
         String region = AwsArnUtils.regionOrDefault(topicArn, defaultRegion);
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeSesToSns(topicArn, region);
+            }
             snsService.publish(topicArn, null, payload, null, region);
         } catch (AwsException e) {
             LOG.warnf(e, "SES event publish to SNS topic %s skipped", topicArn);
         }
     }
 
-    private void publishFirehose(String streamArn, String payloadJson,
+    private void publishFirehose(String roleArn, String streamArn, String payloadJson,
                                  String destinationName, String eventType) {
         String streamName = extractArnResourceName(streamArn);
         if (streamName == null) {
@@ -163,6 +171,10 @@ public class SesEventPublisher {
             return;
         }
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeSesToFirehose(roleArn, streamArn,
+                        AwsArnUtils.regionOrDefault(streamArn, null));
+            }
             Record record = new Record();
             record.setData(payloadJson.getBytes(StandardCharsets.UTF_8));
             firehoseService.putRecord(streamName, record);
@@ -182,6 +194,9 @@ public class SesEventPublisher {
         }
         String region = AwsArnUtils.regionOrDefault(busArn, defaultRegion);
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeSesToEventBridge(busArn, region);
+            }
             Map<String, Object> entry = new HashMap<>();
             entry.put("Source", "aws.ses");
             entry.put("DetailType", SesEventPayload.eventBridgeDetailType(eventType));

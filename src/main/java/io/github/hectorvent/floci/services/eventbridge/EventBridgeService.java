@@ -17,6 +17,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.ReplayState;
 import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -49,6 +50,7 @@ public class EventBridgeService {
     private final RuleScheduler ruleScheduler;
     private final EventBridgeInvoker invoker;
     private final ReplayDispatcher replayDispatcher;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public EventBridgeService(StorageFactory storageFactory,
@@ -57,7 +59,8 @@ public class EventBridgeService {
                               ObjectMapper objectMapper,
                               RuleScheduler ruleScheduler,
                               EventBridgeInvoker invoker,
-                              ReplayDispatcher replayDispatcher) {
+                              ReplayDispatcher replayDispatcher,
+                              InProcessTargetAuthorizer targetAuthorizer) {
         this(
                 storageFactory.create("eventbridge", "eventbridge-buses.json",
                         new TypeReference<Map<String, EventBus>>() {}),
@@ -71,7 +74,8 @@ public class EventBridgeService {
                         new TypeReference<Map<String, List<ArchivedEvent>>>() {}),
                 storageFactory.create("eventbridge", "eventbridge-replays.json",
                         new TypeReference<Map<String, Replay>>() {}),
-                regionResolver, objectMapper, ruleScheduler, invoker, replayDispatcher
+                regionResolver, objectMapper, ruleScheduler, invoker, replayDispatcher,
+                targetAuthorizer
         );
     }
 
@@ -85,7 +89,8 @@ public class EventBridgeService {
                        ObjectMapper objectMapper,
                        RuleScheduler ruleScheduler,
                        EventBridgeInvoker invoker,
-                       ReplayDispatcher replayDispatcher) {
+                       ReplayDispatcher replayDispatcher,
+                       InProcessTargetAuthorizer targetAuthorizer) {
         this.busStore = busStore;
         this.ruleStore = ruleStore;
         this.targetStore = targetStore;
@@ -97,6 +102,7 @@ public class EventBridgeService {
         this.ruleScheduler = ruleScheduler;
         this.invoker = invoker;
         this.replayDispatcher = replayDispatcher;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @PostConstruct
@@ -662,7 +668,7 @@ public class EventBridgeService {
                     List<Target> targets = accountGet(targetStore, accountId, ruleKey).orElse(List.of());
                     String eventJson = buildEventEnvelope(entry, effectiveBus, eventId, region, accountId);
                     for (Target target : targets) {
-                        invoker.invokeTarget(target, eventJson, region);
+                        invoker.invokeTarget(target, eventJson, region, rule.getRoleArn());
                     }
                 }
             }
@@ -1178,6 +1184,10 @@ public class EventBridgeService {
         replay.setReplayStartTime(Instant.now());
         replay.setAccountId(capturedAccountId);
         replayStore.put(key, replay);
+
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeEventBridgeReplay(replay.getDestinationArn(), region);
+        }
 
         replayDispatcher.dispatch(
                 replay,

@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.lambda;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.dynamodb.DynamoDbStreamService;
 import io.github.hectorvent.floci.services.dynamodb.model.DynamoDbStreamRecord;
 import io.github.hectorvent.floci.services.lambda.model.EventSourceMapping;
@@ -34,6 +35,7 @@ public class DynamoDbStreamsEventSourcePoller {
     private final EsmStore esmStore;
     private final ObjectMapper objectMapper;
     private final long pollIntervalMs;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, Long> timerIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> activePolls = new ConcurrentHashMap<>();
     private final ExecutorService pollExecutor = Executors.newCachedThreadPool(r -> {
@@ -48,7 +50,8 @@ public class DynamoDbStreamsEventSourcePoller {
                                             LambdaFunctionStore functionStore,
                                             EsmStore esmStore,
                                             ObjectMapper objectMapper,
-                                            EmulatorConfig config) {
+                                            EmulatorConfig config,
+                                            InProcessTargetAuthorizer targetAuthorizer) {
         this.vertx = vertx;
         this.streamService = streamService;
         this.executorService = executorService;
@@ -56,6 +59,7 @@ public class DynamoDbStreamsEventSourcePoller {
         this.esmStore = esmStore;
         this.objectMapper = objectMapper;
         this.pollIntervalMs = config.services().lambda().pollIntervalMs();
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void startPersistedPollers() {
@@ -111,6 +115,8 @@ public class DynamoDbStreamsEventSourcePoller {
                     return;
                 }
 
+                targetAuthorizer.authorizeLambdaEventSourcePoll(
+                        fn.getRole(), esm.getEventSourceArn(), esm.getRegion());
                 String streamArn = esm.getEventSourceArn();
                 String shardId = DynamoDbStreamService.SHARD_ID;
                 String lastSeq = esm.getShardSequenceNumbers().get(shardId);

@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.services.kinesis.KinesisService;
 import io.github.hectorvent.floci.services.kinesis.model.KinesisRecord;
 import io.github.hectorvent.floci.services.kinesis.model.KinesisShard;
 import io.github.hectorvent.floci.services.kinesis.model.KinesisStream;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.model.EventSourceMapping;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
@@ -38,6 +39,7 @@ public class KinesisEventSourcePoller {
     private final EsmStore esmStore;
     private final long pollIntervalMs;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, Long> timerIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> activePolls = new ConcurrentHashMap<>();
     private final ExecutorService pollExecutor = Executors.newCachedThreadPool(r -> {
@@ -51,7 +53,8 @@ public class KinesisEventSourcePoller {
                                      LambdaExecutorService executorService,
                                      LambdaFunctionStore functionStore,
                                      EsmStore esmStore, EmulatorConfig config,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     InProcessTargetAuthorizer targetAuthorizer) {
         this.vertx = vertx;
         this.kinesisService = kinesisService;
         this.executorService = executorService;
@@ -59,6 +62,7 @@ public class KinesisEventSourcePoller {
         this.esmStore = esmStore;
         this.pollIntervalMs = config.services().lambda().pollIntervalMs();
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void startPersistedPollers() {
@@ -102,6 +106,8 @@ public class KinesisEventSourcePoller {
                 LambdaFunction fn = functionStore.getForAccount(esm.getAccountId(), esm.getRegion(), esm.getFunctionName()).orElse(null);
                 if (fn == null) return;
 
+                targetAuthorizer.authorizeLambdaEventSourcePoll(
+                        fn.getRole(), esm.getEventSourceArn(), esm.getRegion());
                 String streamName = streamNameFromArn(esm.getEventSourceArn());
                 KinesisStream stream = kinesisService.describeStream(streamName, esm.getRegion());
 

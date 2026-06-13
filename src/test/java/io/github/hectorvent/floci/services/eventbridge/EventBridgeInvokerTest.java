@@ -31,7 +31,8 @@ class EventBridgeInvokerTest {
                 snsService,
                 new ObjectMapper(),
                 mock(io.github.hectorvent.floci.config.EmulatorConfig.class),
-                mock(io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder.class)
+                mock(io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder.class),
+                mock(io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer.class)
         );
     }
 

@@ -18,6 +18,7 @@ import io.github.hectorvent.floci.services.apigatewayv2.websocket.ConnectionInfo
 import io.github.hectorvent.floci.services.apigatewayv2.websocket.WebSocketConnectionManager;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.Listener;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -72,6 +73,7 @@ public class ApiGatewayExecuteController {
     private final AwsServiceRouter serviceRouter;
     private final WebSocketConnectionManager webSocketConnectionManager;
     private final ElbV2Service elbV2Service;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public ApiGatewayExecuteController(ApiGatewayService apiGatewayService, ApiGatewayV2Service apiGatewayV2Service,
@@ -79,7 +81,8 @@ public class ApiGatewayExecuteController {
                                        ObjectMapper objectMapper, VtlTemplateEngine vtlEngine,
                                        AwsServiceRouter serviceRouter,
                                        WebSocketConnectionManager webSocketConnectionManager,
-                                       ElbV2Service elbV2Service) {
+                                       ElbV2Service elbV2Service,
+                                       InProcessTargetAuthorizer targetAuthorizer) {
         this.apiGatewayService = apiGatewayService;
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.lambdaService = lambdaService;
@@ -89,6 +92,7 @@ public class ApiGatewayExecuteController {
         this.serviceRouter = serviceRouter;
         this.webSocketConnectionManager = webSocketConnectionManager;
         this.elbV2Service = elbV2Service;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     /** Matches an ELBv2 listener ARN (ALB {@code app/} or NLB {@code net/}); group 1 = region. */
@@ -330,6 +334,7 @@ public class ApiGatewayExecuteController {
                 authorizerResult.principalId(), authorizerResult.context(), resolvedApiKey);
 
         try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
             InvokeResult result = lambdaService.invoke(region, functionName, eventJson.getBytes(),
                     InvocationType.RequestResponse);
             return buildProxyResponse(result);
@@ -363,6 +368,7 @@ public class ApiGatewayExecuteController {
 
             String event = toAuthorizerEvent(auth, headers, region, apiId, stageName, httpMethod, requestPath, resourcePath, resourceId, stage, uriInfo, resolvedApiKey);
             try {
+                targetAuthorizer.authorizeApigwLambdaInvoke(lambdaName, region);
                 InvokeResult result = lambdaService.invoke(region, lambdaName, event.getBytes(), InvocationType.RequestResponse);
                 if (result.getFunctionError() != null) {
                     return new AuthorizerResult(Response.status(403).build(), null, null);
@@ -1201,6 +1207,7 @@ public class ApiGatewayExecuteController {
         LOG.debugv("execute-api v2: {0} {1}/{2}{3} → Lambda {4}", httpMethod, apiId, stageName, path, functionName);
 
         try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
             InvokeResult result = lambdaService.invoke(region, functionName,
                     eventJson.getBytes(), InvocationType.RequestResponse);
             return buildProxyResponse(result);
@@ -1494,6 +1501,7 @@ public class ApiGatewayExecuteController {
         // Invoke the authorizer Lambda
         InvokeResult invokeResult;
         try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
             invokeResult = lambdaService.invoke(region, functionName,
                     eventJson.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
         } catch (Exception e) {

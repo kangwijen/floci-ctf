@@ -160,6 +160,39 @@ When a specific resource cannot be determined, the builder returns a service-sco
 
 **Tagging multi-ARN:** `TagResources`, `UntagResources`, and `GetResources` with multiple `ResourceARNList[]` entries call `ResourceArnBuilder.buildAllTaggingResources`; `IamEnforcementFilter` evaluates each ARN (CTF enhancement; AWS documents `tag:*` on `Resource`).
 
+### In-process IAM (non-HTTP)
+
+Some AWS integrations call emulated services inside the JVM without hitting `IamEnforcementFilter`. When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, Floci evaluates policies on these paths the same way as HTTP (identity + resource policies; explicit Deny wins).
+
+**Execution-role paths (`InProcessIamAuthorizer`):** Step Functions AWS SDK task integrations and API Gateway AWS integrations require a non-blank `roleArn` / integration `credentials` role. Identity and resource policies are evaluated via `ResourceArnBuilder.buildFromJsonBody`; KMS grant fallback applies on this path (same as HTTP).
+
+| Path | IAM actions (representative) | AWS reference |
+|---|---|---|
+| Step Functions task integrations | Per integration (e.g. `dynamodb:PutItem`, `secretsmanager:GetSecretValue`, `kms:Decrypt`) | [SFN service integrations](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html) |
+| API Gateway AWS integrations | Per integration JSON body | [API Gateway credentials](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-integration-settings-integration-request.html) |
+
+**Delivery paths (`InProcessTargetAuthorizer`):** Role-based callers use identity policies on the supplied role ARN. Service-to-service delivery uses destination resource policies with the AWS service principal shown.
+
+| Path | Caller identity | IAM actions on destination | AWS reference |
+|---|---|---|---|
+| EventBridge Pipes (source poll) | Pipe `roleArn` | SQS: `ReceiveMessage`, `GetQueueAttributes`; Kinesis: `DescribeStream`, `GetRecords`, `GetShardIterator`; DynamoDB Streams: `DescribeStream`, `GetRecords`, `GetShardIterator`; SQS delete on ack: `DeleteMessage` | [Pipes permissions](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-pipes-permissions.html) |
+| EventBridge Pipes / Scheduler (target) | Pipe or schedule `roleArn` | Lambda `InvokeFunction`, SQS `SendMessage`, SNS `Publish`, EventBridge `PutEvents`, Step Functions `StartExecution`, Kinesis/Firehose `PutRecord` | [Pipes permissions](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-pipes-permissions.html), [Scheduler target permissions](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-target-permissions.html) |
+| EventBridge rule targets | Rule `roleArn` if set; else `events.amazonaws.com` on destination | Same target mapping as Pipes/Scheduler | [EventBridge permissions](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-use-resource-based.html) |
+| EventBridge archive replay | Internal replay (no destination bus policy gate) | N/A | [Archive replay](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-archive-replay.html) |
+| SNS subscriptions (Lambda/SQS) | `sns.amazonaws.com` on endpoint | Lambda `InvokeFunction`, SQS `SendMessage` | [SNS access policies](https://docs.aws.amazon.com/sns/latest/dg/sns-access-policy-use-cases.html) |
+| S3 event notifications | `s3.amazonaws.com` on destination (EventBridge: no policy gate) | SQS `SendMessage`, SNS `Publish`, Lambda `InvokeFunction` | [S3 event notifications](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html) |
+| SES event destinations | `ses.amazonaws.com` on SNS; Firehose `roleArn` or service principal; EventBridge: no policy gate | SNS `Publish`, Firehose `PutRecord` / `PutRecordBatch` | [Monitor sending activity](https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity.html) |
+| Lambda event source mappings | Function execution role on source | SQS: `ReceiveMessage`, `GetQueueAttributes`, `DeleteMessage`; Kinesis/DynamoDB Streams: `DescribeStream`, `GetShardIterator`, `GetRecords` | [Lambda execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html), [Using Lambda with SQS](https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html) |
+| CloudWatch Logs subscription filters | Lambda: `logs.amazonaws.com` on function; Kinesis/Firehose: filter `roleArn` identity policy (fallback: service principal) | Lambda `InvokeFunction`, Firehose/Kinesis `PutRecord` | [Logs subscription permissions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/Subscriptions.html) |
+| ALB Lambda targets | `elasticloadbalancing.amazonaws.com` on function | Lambda `InvokeFunction` | [ALB Lambda permissions](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/lambda-functions.html) |
+| API Gateway Lambda proxy/authorizer | `apigateway.amazonaws.com` on function | Lambda `InvokeFunction` | [Lambda permissions for API Gateway](https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway.html) |
+| Cognito Lambda triggers | `cognito-idp.amazonaws.com` on function | Lambda `InvokeFunction` | [Cognito Lambda triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html) |
+| CodeDeploy lifecycle hooks | `codedeploy.amazonaws.com` on function | Lambda `InvokeFunction` | [CodeDeploy Lambda integrations](https://docs.aws.amazon.com/codedeploy/latest/userguide/integrations-lambda.html) |
+| CloudTrail / Config / Firehose / VPC flow logs (S3 delivery) | Service principal on bucket/object | `s3:GetBucketAcl` + scoped `s3:PutObject` (`cloudtrail.amazonaws.com`, `config.amazonaws.com`, `firehose.amazonaws.com`, `delivery.logs.amazonaws.com`) | [CloudTrail S3 bucket policy](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/create-s3-bucket-policy-for-cloudtrail.html), [Config S3 delivery](https://docs.aws.amazon.com/config/latest/developerguide/s3-bucket-policy.html), [Firehose access control](https://docs.aws.amazon.com/firehose/latest/dev/controlling-access.html), [Flow logs to S3](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-s3.html) |
+| CUR / BCM Data Exports (Parquet emit) | `bcm-data-exports.amazonaws.com` on staging and destination buckets | `s3:GetBucketAcl` + scoped `s3:PutObject` | [BCM Data Exports](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/dataexports.html) |
+
+Unmapped pipe sources (for example Amazon MQ) and unknown target ARNs are denied when enforcement is on. Container runtime credentials (Lambda/CodeBuild/ECS on ports 9170-9172) still call `:4566` over HTTP with SigV4 and pass through `IamEnforcementFilter`.
+
 **Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
 
 **Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth (secret from the registered IAM access key or operator root pair), `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential.

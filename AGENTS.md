@@ -156,7 +156,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
 
-**In-process IAM:** When `floci.services.iam.enforcement-enabled=true`, `InProcessIamAuthorizer` always denies SFN/APIGW calls without an execution role (state machine `roleArn` or integration `credentials`). Strict mode is not required for that check; when a role ARN is present, identity and resource policies are evaluated like HTTP.
+**In-process IAM:** When `floci.services.iam.enforcement-enabled=true`, `InProcessIamAuthorizer` always denies SFN/APIGW JSON-body calls without an execution role (state machine `roleArn` or integration `credentials`). `InProcessTargetAuthorizer` covers delivery paths: Pipes/Scheduler/EventBridge, SNS/S3/SES notifications, Lambda ESM pollers, Logs subscriptions (filter `roleArn` for Kinesis/Firehose), ELB/API Gateway/Cognito/CodeDeploy Lambda invoke, service S3 delivery (CloudTrail, Config, Firehose, VPC flow logs), and CUR/BCM Parquet emit. Strict mode is not required for the missing-role check; when a role or service principal is present, identity and resource policies are evaluated like HTTP.
 
 ---
 
@@ -171,7 +171,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator.validatePresignedUrl` |
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
 | KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
-| In-process IAM | `InProcessIamAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
+| In-process IAM | `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
 | In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder.buildInProcessEvent`, wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
 | Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
@@ -231,8 +231,16 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | S3 presigned query URLs | Yes (`PreSignedUrlFilter` SigV4; IAM or root credential secrets only) |
 | RDS / ElastiCache Redis TCP | Partial (token SigV4, not full IAM per query) |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
-| SFN / APIGW in-process | Yes when enforcement on (`InProcessIamAuthorizer`); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
-| Inter-service delivery (Firehose, SNS, EB, Config, flow logs) | CloudTrail audit when audit enabled (`invokedBy` AWSService events) |
+| SFN / APIGW AWS integrations in-process | Yes when enforcement on (`InProcessIamAuthorizer` on JSON-body calls); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
+| Pipes / Scheduler in-process | Yes (`InProcessTargetAuthorizer`: pipe/schedule `roleArn` on source poll with extended SQS/Kinesis/DynamoDB Streams actions, target delivery, SQS `DeleteMessage` on ack) |
+| EventBridge rule targets / archive replay | Yes (`InProcessTargetAuthorizer`: rule `roleArn` or `events.amazonaws.com` destination policy; replay uses `events:PutEvents` on destination bus) |
+| SNS / S3 / SES notification delivery | Yes (`InProcessTargetAuthorizer`: `sns.amazonaws.com`, `s3.amazonaws.com`, `ses.amazonaws.com` on destination resource policies) |
+| Lambda ESM pollers (SQS/Kinesis/DynamoDB Streams) | Yes (function execution role on `ReceiveMessage` / `GetQueueAttributes` / `GetRecords` / `DescribeStream` / `DeleteMessage`) |
+| CloudWatch Logs subscriptions | Yes (`logs.amazonaws.com` on Lambda; filter `roleArn` on Kinesis/Firehose) |
+| CUR / BCM Parquet emit | Yes (`bcm-data-exports.amazonaws.com` on S3 staging and destination) |
+| ELB / API Gateway / Cognito / CodeDeploy Lambda invoke | Yes (`elasticloadbalancing.amazonaws.com`, `apigateway.amazonaws.com`, `cognito-idp.amazonaws.com`, `codedeploy.amazonaws.com` on function resource policy) |
+| CloudTrail / Config / Firehose / EC2 flow logs S3 delivery | Yes (`InProcessTargetAuthorizer.authorizeServiceS3Put`: `s3:PutObject` on delivery bucket for `cloudtrail.amazonaws.com`, `config.amazonaws.com`, `firehose.amazonaws.com`, `ec2.amazonaws.com`) |
+| Inter-service delivery audit | CloudTrail audit when audit enabled (`invokedBy` AWSService events on Firehose, Config, flow logs, and other in-process delivery) |
 | Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
@@ -271,7 +279,7 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **E2E against running instance:**

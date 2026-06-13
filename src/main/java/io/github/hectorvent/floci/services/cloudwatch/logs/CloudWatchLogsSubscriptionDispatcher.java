@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.cloudwatch.logs.model.LogEvent;
 import io.github.hectorvent.floci.services.cloudwatch.logs.model.SubscriptionFilter;
@@ -36,6 +37,7 @@ public class CloudWatchLogsSubscriptionDispatcher {
     private final KinesisService kinesisService;
     private final LambdaService lambdaService;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public CloudWatchLogsSubscriptionDispatcher(ObjectMapper objectMapper,
@@ -43,13 +45,15 @@ public class CloudWatchLogsSubscriptionDispatcher {
                                                 FirehoseService firehoseService,
                                                 KinesisService kinesisService,
                                                 LambdaService lambdaService,
-                                                InProcessCloudTrailRecorder cloudTrailRecorder) {
+                                                InProcessCloudTrailRecorder cloudTrailRecorder,
+                                                InProcessTargetAuthorizer targetAuthorizer) {
         this.objectMapper = objectMapper;
         this.regionResolver = regionResolver;
         this.firehoseService = firehoseService;
         this.kinesisService = kinesisService;
         this.lambdaService = lambdaService;
         this.cloudTrailRecorder = cloudTrailRecorder;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public void dispatch(String logGroupName,
@@ -75,7 +79,7 @@ public class CloudWatchLogsSubscriptionDispatcher {
             try {
                 byte[] payload = buildSubscriptionMessage(
                         logGroupName, logStreamName, filter.getFilterName(), matched, region);
-                deliver(filter.getDestinationArn(), payload, logStreamName, region);
+                deliver(filter.getDestinationArn(), filter.getRoleArn(), payload, logStreamName, region);
             } catch (Exception e) {
                 LOG.warnv("Failed to deliver subscription filter {0} for log group {1}: {2}",
                         filter.getFilterName(), logGroupName, e.getMessage());
@@ -117,8 +121,9 @@ public class CloudWatchLogsSubscriptionDispatcher {
         return objectMapper.writeValueAsBytes(root);
     }
 
-    private void deliver(String destinationArn, byte[] jsonPayload, String partitionKey, String region)
+    private void deliver(String destinationArn, String roleArn, byte[] jsonPayload, String partitionKey, String region)
             throws Exception {
+        targetAuthorizer.authorizeLogsSubscription(roleArn, destinationArn, region);
         AwsArnUtils.Arn arn = AwsArnUtils.parse(destinationArn);
         String destRegion = arn.region().isEmpty() ? region : arn.region();
 

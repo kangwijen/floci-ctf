@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.EventBus;
 import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -42,7 +43,8 @@ class EventBridgeServiceTest {
                 new ObjectMapper(),
                 null,
                 invokerMock,
-                null
+                null,
+                mock(InProcessTargetAuthorizer.class)
         );
     }
 
@@ -360,7 +362,7 @@ class EventBridgeServiceTest {
         assertEquals(0, result.failedCount());
         assertEquals(1, result.entries().size());
         assertNotNull(result.entries().getFirst().get("EventId"));
-        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION));
+        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION), nullable(String.class));
     }
 
     @Test
@@ -381,7 +383,7 @@ class EventBridgeServiceTest {
         assertEquals(0, result.failedCount());
         assertEquals(1, result.entries().size());
         assertNotNull(result.entries().getFirst().get("EventId"));
-        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION));
+        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION), nullable(String.class));
     }
 
     @Test
@@ -402,7 +404,7 @@ class EventBridgeServiceTest {
         assertEquals(0, result.failedCount());
         assertEquals(1, result.entries().size());
         assertNotNull(result.entries().getFirst().get("EventId"));
-        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION));
+        verify(invokerMock).invokeTarget(eq(target), any(String.class), eq(REGION), nullable(String.class));
     }
 
     @Test
@@ -638,7 +640,7 @@ class EventBridgeServiceTest {
         assertEquals(0, result.failedCount());
 
         org.mockito.ArgumentCaptor<String> json = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("eu-west-1"));
+        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("eu-west-1"), nullable(String.class));
         com.fasterxml.jackson.databind.JsonNode envelope = OBJECT_MAPPER.readTree(json.getValue());
         assertEquals("eu-west-1", envelope.path("region").asText(),
                 "envelope.region should reflect the PutEvents call's region, not the resolver default");
@@ -666,7 +668,7 @@ class EventBridgeServiceTest {
         service.putEvents(List.of(entry), "us-west-2");
 
         org.mockito.ArgumentCaptor<String> json = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("us-west-2"));
+        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("us-west-2"), nullable(String.class));
         com.fasterxml.jackson.databind.JsonNode envelope = OBJECT_MAPPER.readTree(json.getValue());
         assertEquals("ap-northeast-1", envelope.path("region").asText(),
                 "entry.Region should win over the PutEvents call region");
@@ -693,7 +695,7 @@ class EventBridgeServiceTest {
                 Map.of("Source", "my.app", "DetailType", "Test", "Detail", "{}")), "eu-west-1");
 
         org.mockito.ArgumentCaptor<String> json = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("eu-west-1"));
+        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq("eu-west-1"), nullable(String.class));
         com.fasterxml.jackson.databind.JsonNode envelope = OBJECT_MAPPER.readTree(json.getValue());
         assertEquals("eu-west-1", envelope.path("region").asText(),
                 "envelope and pattern matching must agree on the entry's effective region");
@@ -717,7 +719,7 @@ class EventBridgeServiceTest {
         service.putEvents(List.of(
                 Map.of("Source", "my.app", "DetailType", "Test", "Detail", "{}")), "eu-west-1");
 
-        verify(invokerMock, org.mockito.Mockito.never()).invokeTarget(eq(target), any(), any());
+        verify(invokerMock, org.mockito.Mockito.never()).invokeTarget(eq(target), any(), any(), any());
     }
 
     @Test
@@ -736,7 +738,7 @@ class EventBridgeServiceTest {
                 Map.of("Source", "my.app", "DetailType", "Test", "Detail", "{}")), REGION);
 
         org.mockito.ArgumentCaptor<String> json = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq(REGION));
+        verify(invokerMock).invokeTarget(eq(target), json.capture(), eq(REGION), nullable(String.class));
         com.fasterxml.jackson.databind.JsonNode envelope = OBJECT_MAPPER.readTree(json.getValue());
         assertEquals(REGION, envelope.path("region").asText());
         assertEquals("000000000000", envelope.path("account").asText());

@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.services.apigateway.AwsServiceRouter;
 import io.github.hectorvent.floci.services.apigateway.VtlTemplateEngine;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,8 @@ class WebSocketIntegrationInvokerSubstitutionTest {
                 mock(LambdaService.class),
                 mock(AwsServiceRouter.class),
                 new ObjectMapper(),
-                mock(VtlTemplateEngine.class));
+                mock(VtlTemplateEngine.class),
+                mock(InProcessTargetAuthorizer.class));
     }
 
     @Test
