@@ -104,8 +104,62 @@ public class ResourceArnBuilder {
             case "cloudtrail"           -> buildCloudTrailArn(ctx, region, accountId);
             case "guardduty"            -> buildGuardDutyArn(ctx, region, accountId);
             case "config"               -> buildConfigArn(ctx, region, accountId);
+            case "rds-data"             -> buildRdsDataArn(ctx, region, accountId);
+            case "elasticmapreduce"     -> buildElasticMapReduceArn(ctx, region, accountId);
+            case "wafv2"                -> buildWafV2Arn(ctx, region, accountId);
+            case "securityhub"          -> buildSecurityHubArn(ctx, region, accountId);
+            case "apigatewayv2"         -> buildApiGatewayV2Arn(ctx, region, accountId);
+            case "scheduler"            -> buildSchedulerArn(ctx, path, region, accountId);
+            case "kafka"                -> buildKafkaArn(ctx, path, region, accountId);
+            case "pipes"                -> buildPipesArn(ctx, path, region, accountId);
+            case "codebuild"            -> buildCodeBuildArn(ctx, region, accountId);
+            case "codedeploy"           -> buildCodeDeployArn(ctx, region, accountId);
+            case "acm"                  -> buildAcmArn(ctx, region, accountId);
+            case "backup"               -> buildBackupArn(ctx, path, region, accountId);
+            case "route53"              -> buildRoute53Arn(ctx, path, region, accountId);
+            case "cloudfront"           -> buildCloudFrontArn(ctx, path, accountId);
+            case "bedrock", "bedrock-runtime" -> buildBedrockArn(path, region);
+            case "cur"                  -> buildCurArn(ctx, region, accountId);
+            case "bcm-data-exports"     -> buildBcmDataExportsArn(ctx, region, accountId);
+            case "transfer"             -> buildTransferArn(ctx, region, accountId);
+            case "transcribe"           -> buildTranscribeArn(ctx, region, accountId);
+            case "appconfig"            -> buildAppConfigArn(ctx, path, region, accountId);
+            case "appconfigdata"        -> buildAppConfigDataArn(ctx, region, accountId);
+            case "textract"             -> buildTextractArn(ctx, region, accountId);
+            case "tagging"              -> buildTaggingArn(ctx);
             default                    -> "*";
         };
+    }
+
+    /**
+     * Returns caller-supplied resource ARNs for tagging APIs ({@code ResourceARNList}).
+     * AWS IAM uses {@code *} for tagging actions; Floci evaluates listed ARNs for CTF cross-service policies.
+     */
+    public List<String> buildAllTaggingResources(ContainerRequestContext ctx) {
+        String operation = jsonTargetOperation(ctx);
+        if ("GetTagKeys".equals(operation) || "GetTagValues".equals(operation)) {
+            return List.of("*");
+        }
+        JsonNode node = readJsonBodyNode(ctx);
+        JsonNode arnList = node.get("ResourceARNList");
+        if (arnList == null || !arnList.isArray() || arnList.isEmpty()) {
+            return List.of("*");
+        }
+        List<String> out = new ArrayList<>(arnList.size());
+        for (JsonNode entry : arnList) {
+            if (entry != null && entry.isTextual()) {
+                String arn = entry.asText();
+                if (arn.startsWith("arn:")) {
+                    out.add(arn);
+                }
+            }
+        }
+        return out.isEmpty() ? List.of("*") : Collections.unmodifiableList(out);
+    }
+
+    private String buildTaggingArn(ContainerRequestContext ctx) {
+        List<String> arns = buildAllTaggingResources(ctx);
+        return arns.isEmpty() ? "*" : arns.getFirst();
     }
 
     /**
@@ -1373,6 +1427,709 @@ public class ResourceArnBuilder {
         return null;
     }
 
+    // ── RDS Data API (IAM resource uses rds:cluster/db prefix) ───────────────────
+
+    private String buildRdsDataArn(ContainerRequestContext ctx, String region, String accountId) {
+        String resourceArn = readJsonStringField(ctx, "resourceArn");
+        if (resourceArn != null && resourceArn.startsWith("arn:")) {
+            return resourceArn;
+        }
+        if (resourceArn != null && !resourceArn.isBlank()) {
+            return AwsArnUtils.Arn.of("rds", region, accountId, "cluster:" + resourceArn).toString();
+        }
+        return AwsArnUtils.Arn.of("rds", region, accountId, "cluster:*").toString();
+    }
+
+    // ── EMR (elasticmapreduce) ───────────────────────────────────────────────────
+
+    private String buildElasticMapReduceArn(ContainerRequestContext ctx, String region, String accountId) {
+        List<String> all = buildAllEmrClusterResources(ctx, region, accountId);
+        if (all.isEmpty()) {
+            return "*";
+        }
+        return all.getFirst();
+    }
+
+    /**
+     * Builds cluster ARNs for every {@code JobFlowIds[]} entry (TerminateJobFlows, Set*).
+     */
+    public List<String> buildAllEmrClusterResources(ContainerRequestContext ctx,
+                                                    String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        if ("RunJobFlow".equals(operation)
+                || "CreateSecurityConfiguration".equals(operation)
+                || "ListClusters".equals(operation)
+                || "ListSecurityConfigurations".equals(operation)) {
+            return List.of("*");
+        }
+
+        JsonNode jobFlowIds = node.get("JobFlowIds");
+        if (jobFlowIds != null && jobFlowIds.isArray() && !jobFlowIds.isEmpty()) {
+            List<String> arns = new ArrayList<>(jobFlowIds.size());
+            for (JsonNode id : jobFlowIds) {
+                if (id != null && id.isTextual()) {
+                    arns.add(emrClusterArn(id.asText(), region, accountId));
+                }
+            }
+            return arns.isEmpty()
+                    ? List.of(AwsArnUtils.Arn.of("elasticmapreduce", region, accountId, "cluster/*").toString())
+                    : Collections.unmodifiableList(arns);
+        }
+
+        String arn = firstArn(
+                jsonTextFromNode(node, "ClusterArn"),
+                jsonTextFromNode(node, "ResourceArn"));
+        if (arn != null) {
+            return List.of(arn);
+        }
+
+        String clusterId = firstNonBlank(
+                jsonTextFromNode(node, "ClusterId"),
+                jsonTextFromNode(node, "JobFlowId"),
+                jsonTextFromNode(node, "ResourceId"));
+        if (clusterId != null && !clusterId.isBlank()) {
+            if (clusterId.startsWith("arn:")) {
+                return List.of(clusterId);
+            }
+            return List.of(emrClusterArn(clusterId, region, accountId));
+        }
+
+        if ("DescribeSecurityConfiguration".equals(operation)
+                || "DeleteSecurityConfiguration".equals(operation)) {
+            return List.of("*");
+        }
+
+        return List.of(AwsArnUtils.Arn.of("elasticmapreduce", region, accountId, "cluster/*").toString());
+    }
+
+    private static String emrClusterArn(String clusterId, String region, String accountId) {
+        return AwsArnUtils.Arn.of("elasticmapreduce", region, accountId, "cluster/" + clusterId).toString();
+    }
+
+    // ── WAFv2 ───────────────────────────────────────────────────────────────────
+
+    private String buildWafV2Arn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        String directArn = firstArn(
+                jsonTextFromNode(node, "ARN"),
+                jsonTextFromNode(node, "Arn"),
+                jsonTextFromNode(node, "WebACLArn"),
+                jsonTextFromNode(node, "ResourceArn"),
+                jsonTextFromNode(node, "ResourceARN"));
+        if (directArn != null) {
+            return directArn;
+        }
+
+        JsonNode logging = node.get("LoggingConfiguration");
+        if (logging != null && logging.isObject()) {
+            String logResource = jsonTextFromNode(logging, "ResourceArn");
+            if (logResource != null && logResource.startsWith("arn:")) {
+                return logResource;
+            }
+        }
+
+        if (operation != null && (operation.startsWith("List") || "CheckCapacity".equals(operation))) {
+            return "*";
+        }
+
+        String scope = jsonTextFromNode(node, "Scope");
+        String scopePrefix = wafV2ScopePrefix(scope);
+        String arnRegion = wafV2ArnRegion(scope, region);
+
+        if (operation != null) {
+            String wafType = wafV2ResourceType(operation);
+            if (wafType != null) {
+                String name = jsonTextFromNode(node, "Name");
+                String id = jsonTextFromNode(node, "Id");
+                if (name != null && !name.isBlank() && id != null && !id.isBlank()) {
+                    return AwsArnUtils.Arn.of("wafv2", arnRegion, accountId,
+                            scopePrefix + "/" + wafType + "/" + name + "/" + id).toString();
+                }
+                if (id != null && !id.isBlank()) {
+                    return AwsArnUtils.Arn.of("wafv2", arnRegion, accountId,
+                            scopePrefix + "/" + wafType + "/*/" + id).toString();
+                }
+                if (name != null && !name.isBlank()) {
+                    return AwsArnUtils.Arn.of("wafv2", arnRegion, accountId,
+                            scopePrefix + "/" + wafType + "/" + name + "/*").toString();
+                }
+                return AwsArnUtils.Arn.of("wafv2", arnRegion, accountId,
+                        scopePrefix + "/" + wafType + "/*").toString();
+            }
+        }
+
+        return AwsArnUtils.Arn.of("wafv2", region, accountId, "*").toString();
+    }
+
+    private static String wafV2ScopePrefix(String scope) {
+        if (scope == null || scope.isBlank()) {
+            return "regional";
+        }
+        return "CLOUDFRONT".equalsIgnoreCase(scope) ? "global" : "regional";
+    }
+
+    private static String wafV2ArnRegion(String scope, String region) {
+        return "CLOUDFRONT".equalsIgnoreCase(scope) ? "us-east-1" : region;
+    }
+
+    private static String wafV2ResourceType(String operation) {
+        if (operation.contains("WebACL")) {
+            return "webacl";
+        }
+        if (operation.contains("IPSet")) {
+            return "ipset";
+        }
+        if (operation.contains("RuleGroup")) {
+            return "rulegroup";
+        }
+        if (operation.contains("RegexPatternSet")) {
+            return "regexpatternset";
+        }
+        return null;
+    }
+
+    // ── Security Hub ─────────────────────────────────────────────────────────────
+
+    private String buildSecurityHubArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        if ("BatchImportFindings".equals(operation) || "BatchUpdateFindings".equals(operation)) {
+            JsonNode findings = node.get("Findings");
+            if (findings != null && findings.isArray() && !findings.isEmpty()) {
+                String productArn = jsonTextFromNode(findings.get(0), "ProductArn");
+                if (productArn != null && productArn.startsWith("arn:")) {
+                    return productArn;
+                }
+            }
+        }
+
+        return AwsArnUtils.Arn.of("securityhub", region, accountId, "hub/default").toString();
+    }
+
+    // ── API Gateway v2 ───────────────────────────────────────────────────────────
+
+    private String buildApiGatewayV2Arn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String apiId = jsonTextFromNode(node, "ApiId");
+        if (apiId != null && !apiId.isBlank()) {
+            return "arn:aws:apigateway:" + region + "::/apis/" + apiId;
+        }
+        return "arn:aws:apigateway:" + region + "::/apis/*";
+    }
+
+    // ── EventBridge Scheduler ────────────────────────────────────────────────────
+
+    private static final Pattern SCHEDULER_SCHEDULE =
+            Pattern.compile("/schedules/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SCHEDULER_GROUP =
+            Pattern.compile("/schedule-groups/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildSchedulerArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String scheduleName = firstNonBlank(
+                jsonTextFromNode(node, "Name"),
+                extractPathSegment(path, SCHEDULER_SCHEDULE));
+        String groupName = firstNonBlank(
+                jsonTextFromNode(node, "GroupName"),
+                ctx.getUriInfo().getQueryParameters().getFirst("groupName"),
+                "default");
+        if (scheduleName != null && !scheduleName.isBlank()) {
+            return AwsArnUtils.Arn.of("scheduler", region, accountId,
+                    "schedule/" + groupName + "/" + scheduleName).toString();
+        }
+        String groupOnly = extractPathSegment(path, SCHEDULER_GROUP);
+        if (groupOnly != null && !groupOnly.isBlank()) {
+            return AwsArnUtils.Arn.of("scheduler", region, accountId,
+                    "schedule-group/" + groupOnly).toString();
+        }
+        return AwsArnUtils.Arn.of("scheduler", region, accountId, "schedule/*").toString();
+    }
+
+    // ── MSK (kafka) ──────────────────────────────────────────────────────────────
+
+    private String buildKafkaArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        String clusterArn = extractMskClusterArn(path);
+        if (clusterArn != null) {
+            return clusterArn;
+        }
+        String clusterName = readJsonStringField(ctx, "clusterName");
+        if (clusterName != null && !clusterName.isBlank()) {
+            return AwsArnUtils.Arn.of("kafka", region, accountId, "cluster/" + clusterName + "/*").toString();
+        }
+        return AwsArnUtils.Arn.of("kafka", region, accountId, "cluster/*").toString();
+    }
+
+    private static String extractMskClusterArn(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        for (String marker : List.of("/v1/clusters/", "/api/v2/clusters/")) {
+            int idx = normalized.indexOf(marker);
+            if (idx >= 0) {
+                String rest = normalized.substring(idx + marker.length());
+                if (rest.startsWith("arn:")) {
+                    int bootstrap = rest.indexOf("/bootstrap-brokers");
+                    String arn = bootstrap > 0 ? rest.substring(0, bootstrap) : rest;
+                    if (arn.endsWith("/")) {
+                        arn = arn.substring(0, arn.length() - 1);
+                    }
+                    try {
+                        return URLDecoder.decode(arn, StandardCharsets.UTF_8);
+                    } catch (IllegalArgumentException e) {
+                        return arn;
+                    }
+                }
+                int slash = rest.indexOf('/');
+                String candidate = slash > 0 ? rest.substring(0, slash) : rest;
+                if (candidate.startsWith("arn:")) {
+                    try {
+                        return URLDecoder.decode(candidate, StandardCharsets.UTF_8);
+                    } catch (IllegalArgumentException e) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // ── EventBridge Pipes ────────────────────────────────────────────────────────
+
+    private static final Pattern PIPES_NAME =
+            Pattern.compile("/v1/pipes/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildPipesArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        String name = firstNonBlank(
+                readJsonStringField(ctx, "Name"),
+                extractPathSegment(path, PIPES_NAME));
+        if (name != null && !name.isBlank()) {
+            return AwsArnUtils.Arn.of("pipes", region, accountId, "pipe/" + name).toString();
+        }
+        return AwsArnUtils.Arn.of("pipes", region, accountId, "pipe/*").toString();
+    }
+
+    // ── CodeBuild ────────────────────────────────────────────────────────────────
+
+    private String buildCodeBuildArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String project = firstNonBlank(
+                jsonTextFromNode(node, "projectName"),
+                jsonTextFromNode(node, "ProjectName"));
+        if (project != null && !project.isBlank()) {
+            return AwsArnUtils.Arn.of("codebuild", region, accountId, "project/" + project).toString();
+        }
+        return AwsArnUtils.Arn.of("codebuild", region, accountId, "project/*").toString();
+    }
+
+    // ── CodeDeploy ───────────────────────────────────────────────────────────────
+
+    private String buildCodeDeployArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String app = jsonTextFromNode(node, "applicationName");
+        String group = jsonTextFromNode(node, "deploymentGroupName");
+        if (app != null && group != null) {
+            return AwsArnUtils.Arn.of("codedeploy", region, accountId,
+                    "deploymentgroup:" + app + "/" + group).toString();
+        }
+        if (app != null && !app.isBlank()) {
+            return AwsArnUtils.Arn.of("codedeploy", region, accountId, "application:" + app).toString();
+        }
+        return AwsArnUtils.Arn.of("codedeploy", region, accountId, "*").toString();
+    }
+
+    // ── ACM ──────────────────────────────────────────────────────────────────────
+
+    private String buildAcmArn(ContainerRequestContext ctx, String region, String accountId) {
+        String arn = firstArn(readJsonStringField(ctx, "CertificateArn"));
+        if (arn != null) {
+            return arn;
+        }
+        return AwsArnUtils.Arn.of("acm", region, accountId, "certificate/*").toString();
+    }
+
+    // ── AWS Backup ───────────────────────────────────────────────────────────────
+
+    private static final Pattern BACKUP_VAULT =
+            Pattern.compile("/backup-vaults/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildBackupArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String vaultArn = firstArn(
+                jsonTextFromNode(node, "BackupVaultArn"),
+                jsonTextFromNode(node, "DestinationBackupVaultArn"));
+        if (vaultArn != null) {
+            return vaultArn;
+        }
+        String resourceArn = jsonTextFromNode(node, "ResourceArn");
+        if (resourceArn != null && resourceArn.startsWith("arn:")) {
+            return resourceArn;
+        }
+        String vaultName = firstNonBlank(
+                jsonTextFromNode(node, "BackupVaultName"),
+                extractPathSegment(path, BACKUP_VAULT));
+        if (vaultName != null && !vaultName.isBlank()) {
+            return AwsArnUtils.Arn.of("backup", region, accountId, "backup-vault:" + vaultName).toString();
+        }
+        return AwsArnUtils.Arn.of("backup", region, accountId, "backup-vault:*").toString();
+    }
+
+    // ── CloudFront ───────────────────────────────────────────────────────────────
+
+    private static final Pattern CF_DISTRIBUTION =
+            Pattern.compile("/distribution/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CF_CACHE_POLICY =
+            Pattern.compile("/cache-policy/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CF_ORIGIN_REQUEST_POLICY =
+            Pattern.compile("/origin-request-policy/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CF_RESPONSE_HEADERS_POLICY =
+            Pattern.compile("/response-headers-policy/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CF_ORIGIN_ACCESS_CONTROL =
+            Pattern.compile("/origin-access-control/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CF_FUNCTION =
+            Pattern.compile("/function/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildCloudFrontArn(ContainerRequestContext ctx, String path, String accountId) {
+        if (path != null && path.contains("/tagging")) {
+            String resource = ctx.getUriInfo().getQueryParameters().getFirst("Resource");
+            if (resource != null && !resource.isBlank() && resource.startsWith("arn:")) {
+                return resource;
+            }
+        }
+
+        String distributionId = extractPathSegment(path, CF_DISTRIBUTION);
+        if (distributionId != null && !distributionId.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "distribution/" + distributionId).toString();
+        }
+        String cachePolicyId = extractPathSegment(path, CF_CACHE_POLICY);
+        if (cachePolicyId != null && !cachePolicyId.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "cache-policy/" + cachePolicyId).toString();
+        }
+        String orpId = extractPathSegment(path, CF_ORIGIN_REQUEST_POLICY);
+        if (orpId != null && !orpId.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "origin-request-policy/" + orpId).toString();
+        }
+        String rhpId = extractPathSegment(path, CF_RESPONSE_HEADERS_POLICY);
+        if (rhpId != null && !rhpId.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "response-headers-policy/" + rhpId).toString();
+        }
+        String oacId = extractPathSegment(path, CF_ORIGIN_ACCESS_CONTROL);
+        if (oacId != null && !oacId.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "origin-access-control/" + oacId).toString();
+        }
+        String functionName = extractPathSegment(path, CF_FUNCTION);
+        if (functionName != null && !functionName.isBlank()) {
+            return AwsArnUtils.Arn.of("cloudfront", "", accountId, "function/" + functionName).toString();
+        }
+
+        if (path != null) {
+            String lower = path.toLowerCase();
+            if (lower.contains("/cache-policy")) {
+                return AwsArnUtils.Arn.of("cloudfront", "", accountId, "cache-policy/*").toString();
+            }
+            if (lower.contains("/origin-request-policy")) {
+                return AwsArnUtils.Arn.of("cloudfront", "", accountId, "origin-request-policy/*").toString();
+            }
+            if (lower.contains("/response-headers-policy")) {
+                return AwsArnUtils.Arn.of("cloudfront", "", accountId, "response-headers-policy/*").toString();
+            }
+            if (lower.contains("/origin-access-control")) {
+                return AwsArnUtils.Arn.of("cloudfront", "", accountId, "origin-access-control/*").toString();
+            }
+            if (lower.contains("/function")) {
+                return AwsArnUtils.Arn.of("cloudfront", "", accountId, "function/*").toString();
+            }
+        }
+        return AwsArnUtils.Arn.of("cloudfront", "", accountId, "distribution/*").toString();
+    }
+
+    // ── Bedrock Runtime ──────────────────────────────────────────────────────────
+
+    private static final Pattern BEDROCK_MODEL =
+            Pattern.compile("/model/(.+)/(converse|invoke)", Pattern.CASE_INSENSITIVE);
+
+    private String buildBedrockArn(String path, String region) {
+        String normalized = path == null || path.isBlank()
+                ? "/"
+                : (path.startsWith("/") ? path : "/" + path);
+        Matcher m = BEDROCK_MODEL.matcher(normalized);
+        if (m.find()) {
+            String modelId = decodeUrlPathSegment(m.group(1));
+            if (modelId.startsWith("arn:")) {
+                return modelId;
+            }
+            return AwsArnUtils.Arn.of("bedrock", region, "", "foundation-model/" + modelId).toString();
+        }
+        return AwsArnUtils.Arn.of("bedrock", region, "", "foundation-model/*").toString();
+    }
+
+    private static String decodeUrlPathSegment(String segment) {
+        try {
+            return URLDecoder.decode(segment, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return segment;
+        }
+    }
+
+    // ── Transfer Family ──────────────────────────────────────────────────────────
+
+    private String buildTransferArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        String directArn = firstArn(
+                jsonTextFromNode(node, "Arn"),
+                jsonTextFromNode(node, "ResourceArn"));
+        if (directArn != null) {
+            return directArn;
+        }
+
+        String serverId = jsonTextFromNode(node, "ServerId");
+        String userName = jsonTextFromNode(node, "UserName");
+        if (serverId != null && !serverId.isBlank() && userName != null && !userName.isBlank()) {
+            return AwsArnUtils.Arn.of("transfer", region, accountId,
+                    "user/" + serverId + "/" + userName).toString();
+        }
+        if (serverId != null && !serverId.isBlank()) {
+            return AwsArnUtils.Arn.of("transfer", region, accountId, "server/" + serverId).toString();
+        }
+
+        if (operation != null && (operation.startsWith("List") || "CreateServer".equals(operation))) {
+            return AwsArnUtils.Arn.of("transfer", region, accountId, "server/*").toString();
+        }
+
+        return AwsArnUtils.Arn.of("transfer", region, accountId, "server/*").toString();
+    }
+
+    // ── Transcribe ───────────────────────────────────────────────────────────────
+
+    private String buildTranscribeArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        String jobName = jsonTextFromNode(node, "TranscriptionJobName");
+        if (jobName != null && !jobName.isBlank()) {
+            return AwsArnUtils.Arn.of("transcribe", region, accountId,
+                    "transcription-job/" + jobName).toString();
+        }
+
+        String vocabularyName = jsonTextFromNode(node, "VocabularyName");
+        if (vocabularyName != null && !vocabularyName.isBlank()) {
+            return AwsArnUtils.Arn.of("transcribe", region, accountId,
+                    "vocabulary/" + vocabularyName).toString();
+        }
+
+        if (operation != null && operation.startsWith("List")) {
+            if (operation.contains("Vocabular")) {
+                return AwsArnUtils.Arn.of("transcribe", region, accountId, "vocabulary/*").toString();
+            }
+            return AwsArnUtils.Arn.of("transcribe", region, accountId, "transcription-job/*").toString();
+        }
+        if ("StartTranscriptionJob".equals(operation)) {
+            return AwsArnUtils.Arn.of("transcribe", region, accountId, "transcription-job/*").toString();
+        }
+        if ("CreateVocabulary".equals(operation)) {
+            return AwsArnUtils.Arn.of("transcribe", region, accountId, "vocabulary/*").toString();
+        }
+
+        return "*";
+    }
+
+    // ── AppConfig ────────────────────────────────────────────────────────────────
+
+    private static final Pattern APPCONFIG_DEPLOYMENT_STRATEGY =
+            Pattern.compile("/deploymentstrategies(?:/([^/]+))?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPCONFIG_DEPLOYMENT =
+            Pattern.compile("/applications/([^/]+)/environments/([^/]+)/deployments(?:/([^/]+))?",
+                    Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPCONFIG_HOSTED_VERSION =
+            Pattern.compile("/applications/([^/]+)/configurationprofiles/([^/]+)/hostedconfigurationversions(?:/([^/]+))?",
+                    Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPCONFIG_PROFILE =
+            Pattern.compile("/applications/([^/]+)/configurationprofiles(?:/([^/]+))?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPCONFIG_ENVIRONMENT =
+            Pattern.compile("/applications/([^/]+)/environments(?:/([^/]+))?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPCONFIG_APPLICATION =
+            Pattern.compile("/applications(?:/([^/]+))?", Pattern.CASE_INSENSITIVE);
+
+    private String buildAppConfigArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        String normalized = path != null && path.startsWith("/") ? path : "/" + (path != null ? path : "");
+
+        Matcher strategy = APPCONFIG_DEPLOYMENT_STRATEGY.matcher(normalized);
+        if (strategy.find()) {
+            String strategyId = strategy.group(1);
+            if (strategyId != null && !strategyId.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                        "deploymentstrategy/" + strategyId).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId, "deploymentstrategy/*").toString();
+        }
+
+        Matcher deployment = APPCONFIG_DEPLOYMENT.matcher(normalized);
+        if (deployment.find()) {
+            String appId = deployment.group(1);
+            String envId = deployment.group(2);
+            String deploymentNumber = deployment.group(3);
+            if (deploymentNumber != null && !deploymentNumber.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                        "application/" + appId + "/environment/" + envId + "/deployment/" + deploymentNumber).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                    "application/" + appId + "/environment/" + envId + "/deployment/*").toString();
+        }
+
+        Matcher hostedVersion = APPCONFIG_HOSTED_VERSION.matcher(normalized);
+        if (hostedVersion.find()) {
+            String appId = hostedVersion.group(1);
+            String profileId = hostedVersion.group(2);
+            String versionNumber = hostedVersion.group(3);
+            String prefix = "application/" + appId + "/configurationprofile/" + profileId
+                    + "/hostedconfigurationversion/";
+            if (versionNumber != null && !versionNumber.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId, prefix + versionNumber).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId, prefix + "*").toString();
+        }
+
+        Matcher profile = APPCONFIG_PROFILE.matcher(normalized);
+        if (profile.find()) {
+            String appId = profile.group(1);
+            String profileId = profile.group(2);
+            if (profileId != null && !profileId.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                        "application/" + appId + "/configurationprofile/" + profileId).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                    "application/" + appId + "/configurationprofile/*").toString();
+        }
+
+        Matcher environment = APPCONFIG_ENVIRONMENT.matcher(normalized);
+        if (environment.find()) {
+            String appId = environment.group(1);
+            String envId = environment.group(2);
+            if (envId != null && !envId.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                        "application/" + appId + "/environment/" + envId).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                    "application/" + appId + "/environment/*").toString();
+        }
+
+        Matcher application = APPCONFIG_APPLICATION.matcher(normalized);
+        if (application.find()) {
+            String appId = application.group(1);
+            if (appId != null && !appId.isBlank()) {
+                return AwsArnUtils.Arn.of("appconfig", region, accountId, "application/" + appId).toString();
+            }
+            return AwsArnUtils.Arn.of("appconfig", region, accountId, "application/*").toString();
+        }
+
+        return AwsArnUtils.Arn.of("appconfig", region, accountId, "application/*").toString();
+    }
+
+    // ── AppConfig Data ───────────────────────────────────────────────────────────
+
+    private String buildAppConfigDataArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String appId = firstNonBlank(
+                jsonTextFromNode(node, "ApplicationIdentifier"),
+                jsonTextFromNode(node, "ApplicationId"));
+        String envId = firstNonBlank(
+                jsonTextFromNode(node, "EnvironmentIdentifier"),
+                jsonTextFromNode(node, "EnvironmentId"));
+        String profileId = firstNonBlank(
+                jsonTextFromNode(node, "ConfigurationProfileIdentifier"),
+                jsonTextFromNode(node, "ConfigurationProfileId"));
+
+        if (appId != null && !appId.isBlank()
+                && envId != null && !envId.isBlank()
+                && profileId != null && !profileId.isBlank()) {
+            return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                    "application/" + appId + "/environment/" + envId + "/configuration/" + profileId).toString();
+        }
+
+        return AwsArnUtils.Arn.of("appconfig", region, accountId,
+                "application/*/environment/*/configuration/*").toString();
+    }
+
+    // ── Textract ─────────────────────────────────────────────────────────────────
+
+    private String buildTextractArn(ContainerRequestContext ctx, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String operation = jsonTargetOperation(ctx);
+
+        String jobId = jsonTextFromNode(node, "JobId");
+        if (jobId != null && !jobId.isBlank()) {
+            return AwsArnUtils.Arn.of("textract", region, accountId, "job/" + jobId).toString();
+        }
+
+        if (operation != null
+                && (operation.startsWith("Get") || operation.startsWith("Start"))
+                && operation.contains("Document")) {
+            return AwsArnUtils.Arn.of("textract", region, accountId, "job/*").toString();
+        }
+
+        return "*";
+    }
+
+    // ── Route 53 ─────────────────────────────────────────────────────────────────
+
+    private static final Pattern ROUTE53_HOSTED_ZONE =
+            Pattern.compile("/hostedzone/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ROUTE53_HEALTH_CHECK =
+            Pattern.compile("/healthcheck/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildRoute53Arn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        String zoneId = extractPathSegment(path, ROUTE53_HOSTED_ZONE);
+        if (zoneId != null && !zoneId.isBlank()) {
+            return AwsArnUtils.Arn.of("route53", "", "", "hostedzone/" + zoneId).toString();
+        }
+        String healthCheckId = extractPathSegment(path, ROUTE53_HEALTH_CHECK);
+        if (healthCheckId != null && !healthCheckId.isBlank()) {
+            return AwsArnUtils.Arn.of("route53", "", "", "healthcheck/" + healthCheckId).toString();
+        }
+        return AwsArnUtils.Arn.of("route53", "", "", "hostedzone/*").toString();
+    }
+
+    // ── CUR (Cost and Usage Reports) ─────────────────────────────────────────────
+
+    private String buildCurArn(ContainerRequestContext ctx, String region, String accountId) {
+        String operation = jsonTargetOperation(ctx);
+        if ("DescribeReportDefinitions".equals(operation)) {
+            return AwsArnUtils.Arn.of("cur", region, accountId, "definition/*").toString();
+        }
+        String reportName = firstNonBlank(
+                readJsonStringField(ctx, "ReportName"),
+                readNestedJsonStringField(ctx, "ReportDefinition", "ReportName"));
+        if (reportName != null && !reportName.isBlank()) {
+            return AwsArnUtils.Arn.of("cur", region, accountId, "definition/" + reportName).toString();
+        }
+        return AwsArnUtils.Arn.of("cur", region, accountId, "definition/*").toString();
+    }
+
+    // ── BCM Data Exports ─────────────────────────────────────────────────────────
+
+    private String buildBcmDataExportsArn(ContainerRequestContext ctx, String region, String accountId) {
+        String operation = jsonTargetOperation(ctx);
+        if ("ListExports".equals(operation)) {
+            return AwsArnUtils.Arn.of("bcm-data-exports", region, accountId, "export/*").toString();
+        }
+        String exportArn = firstArn(readJsonStringField(ctx, "ExportArn"));
+        if (exportArn != null) {
+            return exportArn;
+        }
+        String exportName = readNestedJsonStringField(ctx, "Export", "Name");
+        if (exportName != null && !exportName.isBlank()) {
+            return AwsArnUtils.Arn.of("bcm-data-exports", region, accountId, "export/" + exportName).toString();
+        }
+        return AwsArnUtils.Arn.of("bcm-data-exports", region, accountId, "export/*").toString();
+    }
+
     // ── Cloud Map (servicediscovery) ─────────────────────────────────────────────
 
     private String buildServiceDiscoveryArn(ContainerRequestContext ctx, String region, String accountId) {
@@ -1416,6 +2173,44 @@ public class ResourceArnBuilder {
     }
 
     // ── Shared helpers ────────────────────────────────────────────────────────────
+
+    private JsonNode readJsonBodyNode(ContainerRequestContext ctx) {
+        byte[] body = bufferBody(ctx);
+        if (body == null || body.length == 0) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            return objectMapper.readTree(body);
+        } catch (Exception ignored) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
+    private static String jsonTextFromNode(JsonNode node, String fieldName) {
+        if (node == null) {
+            return null;
+        }
+        JsonNode field = node.get(fieldName);
+        return field != null && field.isTextual() ? field.asText() : null;
+    }
+
+    private static String jsonTargetOperation(ContainerRequestContext ctx) {
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || target.isBlank()) {
+            return null;
+        }
+        int dot = target.lastIndexOf('.');
+        return dot >= 0 ? target.substring(dot + 1) : target;
+    }
+
+    private static String extractPathSegment(String path, Pattern pattern) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        Matcher m = pattern.matcher(normalized);
+        return m.find() ? m.group(1) : null;
+    }
 
     private static String firstNonBlank(String... values) {
         if (values == null) {

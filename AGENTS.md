@@ -124,8 +124,33 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `cloudtrail:StopLogging` | `arn:aws:cloudtrail:REGION:ACCOUNT:trail/name` | `Name` in JSON body |
 | `guardduty:GetFindings` | `arn:aws:guardduty:REGION:ACCOUNT:detector/id` | `DetectorId` in JSON body |
 | `config:PutConfigRule` | `arn:aws:config:REGION:ACCOUNT:config-rule/name` | `ConfigRule.ConfigRuleName` in JSON body |
+| `rds-data:ExecuteStatement` | `arn:aws:rds:REGION:ACCOUNT:cluster/name` | `resourceArn` in JSON body (REST routes) |
+| `elasticmapreduce:DescribeCluster` | `arn:aws:elasticmapreduce:REGION:ACCOUNT:cluster/id` | `ClusterId`, `JobFlowId`, `ClusterArn`, or `JobFlowIds[]` in JSON (`X-Amz-Target`) |
+| `wafv2:GetWebACL` | `arn:aws:wafv2:REGION:ACCOUNT:regional/webacl/*/id` (or name wildcard on create) | `Id`, `Name`, `Scope`, or direct ARN fields in JSON |
+| `scheduler:GetSchedule` | `arn:aws:scheduler:REGION:ACCOUNT:schedule/group/name` | `Name`, `GroupName`, path `/schedules/`, or `groupName` query |
+| `pipes:DescribePipe` | `arn:aws:pipes:REGION:ACCOUNT:pipe/name` | `Name` in JSON or path `/v1/pipes/` |
+| `kafka:DescribeCluster` | `arn:aws:kafka:REGION:ACCOUNT:cluster/name/*` | cluster ARN in path (`/v1/clusters/`, `/api/v2/clusters/`) or `clusterName` in JSON |
+| `securityhub:GetFindings` | `arn:aws:securityhub:REGION:ACCOUNT:hub/default` | hub default; `Findings[].ProductArn` on batch import/update |
+| `apigatewayv2:GetApi` | `arn:aws:apigateway:REGION::/apis/id` | `ApiId` in JSON body |
+| `codebuild:BatchGetProjects` | `arn:aws:codebuild:REGION:ACCOUNT:project/name` | `projectName` / `ProjectName` in JSON |
+| `codedeploy:GetDeployment` | `arn:aws:codedeploy:REGION:ACCOUNT:deploymentgroup:app/group` | `applicationName`, `deploymentGroupName` in JSON |
+| `acm:DescribeCertificate` | `arn:aws:acm:REGION:ACCOUNT:certificate/*` or full cert ARN | `CertificateArn` in JSON |
+| `backup:DescribeBackupVault` | `arn:aws:backup:REGION:ACCOUNT:backup-vault:name` | `BackupVaultName`, vault ARNs, or path `/backup-vaults/` |
+| `route53:GetHostedZone` | `arn:aws:route53:::hostedzone/id` | path `/hostedzone/` or `/healthcheck/` |
+| `cloudfront:GetDistribution` | `arn:aws:cloudfront::ACCOUNT:distribution/id` | path `/2020-05-31/distribution/`; invalidation scopes to parent distribution |
+| `bedrock:Converse` / `InvokeModel` | `arn:aws:bedrock:REGION::foundation-model/model-id` | path `/model/{modelId}/converse` or `/invoke` |
+| `transfer:DescribeServer` | `arn:aws:transfer:REGION:ACCOUNT:server/id` | `ServerId` in JSON; `user/server/user` when `UserName` set |
+| `transcribe:GetTranscriptionJob` | `arn:aws:transcribe:REGION:ACCOUNT:transcription-job/name` | `TranscriptionJobName` or `VocabularyName` (JSON) |
+| `cur:PutReportDefinition` | `arn:aws:cur:REGION:ACCOUNT:definition/name` | `ReportName` or `ReportDefinition.ReportName` (JSON) |
+| `bcm-data-exports:GetExport` | `arn:aws:bcm-data-exports:REGION:ACCOUNT:export/name` | `ExportArn` or `Export.Name` (JSON) |
+| `appconfig:GetApplication` | `arn:aws:appconfig:REGION:ACCOUNT:application/id` | REST path `/applications/{id}` and nested env/profile paths |
+| `appconfig:StartConfigurationSession` | `arn:aws:appconfig:REGION:ACCOUNT:application/.../configuration/...` | `ApplicationIdentifier`, `EnvironmentIdentifier`, `ConfigurationProfileIdentifier` (JSON) |
+| `textract:GetDocumentTextDetection` | `arn:aws:textract:REGION:ACCOUNT:job/id` | `JobId` (JSON); sync detect APIs use `*` per AWS |
+| `tagging:TagResources` | caller `ResourceARNList[]` ARNs | Floci evaluates each listed ARN (multi-ARN deny like EMR); AWS SAR uses `*` |
 
-**Not yet scoped in `ResourceArnBuilder` (policy `Resource` evaluates as `*`):** `rds-data:*` (REST paths only; `resourceArn` in body not mapped), `elasticmapreduce:*` and `wafv2:*` (JSON 1.1 via `X-Amz-Target`). Actions still resolve under strict mode; extend `ResourceArnBuilder` before requiring cluster/Web ACL ARNs in participant policies.
+**AWS-intentional `*` (no per-resource ARN in IAM):** `pricing` / `api.pricing`, `ce` query APIs, `ec2messages` (use condition keys on instance ARN). List-only APIs (`List*`, `DescribeReportDefinitions`, `ListExports`) use service wildcards where AWS does.
+
+**EMR `JobFlowIds[]` multi-cluster evaluation:** `TerminateJobFlows` and similar calls with multiple `JobFlowIds[]` entries build one cluster ARN per ID (`ResourceArnBuilder.buildAllEmrClusterResources`). `IamEnforcementFilter` evaluates identity policy against every derived ARN; explicit Deny on any cluster denies the request.
 
 **Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
@@ -216,7 +241,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** 20 commits post-**1.5.24** from `upstream/main` on **2026-06-13** (WAFv2, EMR, RDS Data API, Glue partitions, SQS, ELBv2, SES, EC2, MSK, Athena, Cognito SRP). CTF hardening preserved; new services wired in `ResolvedServiceCatalog` and `IamActionRegistry` (`rds-data` REST rules; EMR/WAFv2 via JSON 1.1 `X-Amz-Target`).
+**Latest merge:** 20 commits post-**1.5.24** from `upstream/main` on **2026-06-13** (WAFv2, EMR, RDS Data API, Glue partitions, SQS, ELBv2, SES, EC2, MSK, Athena, Cognito SRP). CTF hardening preserved; new services wired in `ResolvedServiceCatalog` and `IamActionRegistry` (`rds-data` REST rules; EMR/WAFv2 via JSON 1.1 `X-Amz-Target`). `ResourceArnBuilder` now scopes those merge-gap services plus scheduler, pipes, kafka, securityhub, apigatewayv2, codebuild, codedeploy, acm, backup, and route53.
 
 ```bash
 git fetch upstream main

@@ -658,6 +658,317 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:s3:::my-bucket", arn);
     }
 
+    // ── RDS Data API ────────────────────────────────────────────────────────────
+
+    @Test
+    void rdsDataExecuteUsesResourceArnFromBody() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"resourceArn":"arn:aws:rds:us-east-1:222222222222:cluster:lab-db"}
+                """);
+        String arn = builder.build("rds-data", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:rds:us-east-1:222222222222:cluster:lab-db", arn);
+    }
+
+    @Test
+    void rdsDataMissingResourceArnFallsBackToClusterWildcard() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        String arn = builder.build("rds-data", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:rds:us-east-1:222222222222:cluster:*", arn);
+    }
+
+    // ── EMR ─────────────────────────────────────────────────────────────────────
+
+    @Test
+    void emrDescribeClusterBuildsClusterArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ClusterId\":\"j-ABCDEFGHIJK1\"}");
+        String arn = builder.build("elasticmapreduce", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:elasticmapreduce:us-east-1:222222222222:cluster/j-ABCDEFGHIJK1", arn);
+    }
+
+    @Test
+    void emrJobFlowIdsBuildsAllClusterArns() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"JobFlowIds":["j-CLUSTERONE123","j-CLUSTERTWO456"]}
+                """);
+        var arns = builder.buildAllEmrClusterResources(ctx, REGION, ACCOUNT);
+        assertEquals(2, arns.size());
+        assertEquals("arn:aws:elasticmapreduce:us-east-1:222222222222:cluster/j-CLUSTERONE123", arns.get(0));
+        assertEquals("arn:aws:elasticmapreduce:us-east-1:222222222222:cluster/j-CLUSTERTWO456", arns.get(1));
+    }
+
+    // ── WAFv2 ─────────────────────────────────────────────────────────────────
+
+    @Test
+    void wafV2GetWebAclBuildsScopedArnFromNameAndId() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
+                {"Scope":"REGIONAL","Name":"ctf-acl","Id":"abc12345-6789-0123-4567-890abcdef012"}
+                """, "AWSWAF_20190729.GetWebACL");
+        String arn = builder.build("wafv2", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/ctf-acl/abc12345-6789-0123-4567-890abcdef012", arn);
+    }
+
+    @Test
+    void wafV2CreateWebAclBuildsNameWildcardArn() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
+                {"Scope":"REGIONAL","Name":"ctf-acl"}
+                """, "AWSWAF_20190729.CreateWebACL");
+        String arn = builder.build("wafv2", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/ctf-acl/*", arn);
+    }
+
+    // ── Security Hub ──────────────────────────────────────────────────────────
+
+    @Test
+    void securityHubDefaultsToHubArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        String arn = builder.build("securityhub", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:securityhub:us-east-1:222222222222:hub/default", arn);
+    }
+
+    // ── API Gateway v2 ────────────────────────────────────────────────────────
+
+    @Test
+    void apiGatewayV2UsesApiIdFromBody() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ApiId\":\"abc123xyz0\"}");
+        String arn = builder.build("apigatewayv2", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:apigateway:us-east-1::/apis/abc123xyz0", arn);
+    }
+
+    // ── CloudFront ────────────────────────────────────────────────────────────
+
+    @Test
+    void cloudFrontGetDistributionBuildsDistributionArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        ctx = pathCtx("2020-05-31/distribution/E1Z2X3C4V5B6N7", ctx);
+        String arn = builder.build("cloudfront", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudfront::222222222222:distribution/E1Z2X3C4V5B6N7", arn);
+    }
+
+    @Test
+    void cloudFrontCreateInvalidationUsesParentDistributionArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        ctx = pathCtx("2020-05-31/distribution/E1Z2X3C4V5B6N7/invalidation", ctx);
+        String arn = builder.build("cloudfront", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudfront::222222222222:distribution/E1Z2X3C4V5B6N7", arn);
+    }
+
+    @Test
+    void cloudFrontTaggingUsesResourceQueryParam() {
+        String resourceArn = "arn:aws:cloudfront::222222222222:cache-policy/abcd1234-5678-90ab-cdef";
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("Resource", resourceArn);
+        ContainerRequestContext ctx = ctxWithStream(
+                query,
+                MediaType.APPLICATION_XML_TYPE,
+                new AtomicReference<>(new ByteArrayInputStream(new byte[0])));
+        ctx = pathCtx("2020-05-31/tagging", query, ctx);
+        String arn = builder.build("cloudfront", ctx, REGION, ACCOUNT);
+        assertEquals(resourceArn, arn);
+    }
+
+    // ── Bedrock Runtime ───────────────────────────────────────────────────────
+
+    @Test
+    void bedrockConverseBuildsFoundationModelArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"messages":[{"role":"user","content":[{"text":"hi"}]}]}
+                """);
+        ctx = pathCtx("model/anthropic.claude-3-haiku-20240307-v1:0/converse", ctx);
+        String arn = builder.build("bedrock-runtime", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0", arn);
+    }
+
+    @Test
+    void bedrockInvokePreservesFullModelArnFromPath() {
+        String modelArn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
+                + "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        ctx = pathCtx("model/" + modelArn + "/invoke", ctx);
+        String arn = builder.build("bedrock", ctx, REGION, ACCOUNT);
+        assertEquals(modelArn, arn);
+    }
+
+    // ── Scheduler / Pipes / Kafka ─────────────────────────────────────────────
+
+    @Test
+    void schedulerBuildsScheduleArnFromPath() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        ctx = pathCtx("schedules/nightly-sync", ctx);
+        String arn = builder.build("scheduler", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:scheduler:us-east-1:222222222222:schedule/default/nightly-sync", arn);
+    }
+
+    @Test
+    void pipesBuildsPipeArnFromPath() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        ctx = pathCtx("v1/pipes/ingest-pipe", ctx);
+        String arn = builder.build("pipes", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:pipes:us-east-1:222222222222:pipe/ingest-pipe", arn);
+    }
+
+    @Test
+    void kafkaDescribeUsesClusterArnFromPath() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        String clusterArn = "arn:aws:kafka:us-east-1:222222222222:cluster/demo/uuid";
+        ctx = pathCtx("v1/clusters/" + clusterArn, ctx);
+        String arn = builder.build("kafka", ctx, REGION, ACCOUNT);
+        assertEquals(clusterArn, arn);
+    }
+
+    // ── CUR ───────────────────────────────────────────────────────────────────
+
+    @Test
+    void curDeleteReportDefinitionBuildsDefinitionArnFromReportName() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ReportName\":\"monthly-report\"}");
+        String arn = builder.build("cur", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cur:us-east-1:222222222222:definition/monthly-report", arn);
+    }
+
+    @Test
+    void curPutReportDefinitionBuildsDefinitionArnFromNestedReportName() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ReportDefinition":{"ReportName":"daily-cost","TimeUnit":"DAILY"}}
+                """);
+        String arn = builder.build("cur", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cur:us-east-1:222222222222:definition/daily-cost", arn);
+    }
+
+    @Test
+    void curDescribeReportDefinitionsBuildsDefinitionWildcard() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget(
+                "{}",
+                "AWSOrigamiServiceGatewayService.DescribeReportDefinitions");
+        String arn = builder.build("cur", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cur:us-east-1:222222222222:definition/*", arn);
+    }
+
+    // ── Transfer ────────────────────────────────────────────────────────────────
+
+    @Test
+    void transferDescribeServerBuildsServerArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ServerId\":\"s-abc12345\"}");
+        String arn = builder.build("transfer", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:transfer:us-east-1:222222222222:server/s-abc12345", arn);
+    }
+
+    @Test
+    void transferDescribeUserBuildsUserArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ServerId":"s-abc12345","UserName":"player1"}
+                """);
+        String arn = builder.build("transfer", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:transfer:us-east-1:222222222222:user/s-abc12345/player1", arn);
+    }
+
+    // ── Transcribe ────────────────────────────────────────────────────────────
+
+    @Test
+    void transcribeGetTranscriptionJobBuildsJobArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"TranscriptionJobName\":\"interview-audio\"}");
+        String arn = builder.build("transcribe", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:transcribe:us-east-1:222222222222:transcription-job/interview-audio", arn);
+    }
+
+    @Test
+    void transcribeGetVocabularyBuildsVocabularyArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"VocabularyName\":\"ctf-terms\"}");
+        String arn = builder.build("transcribe", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:transcribe:us-east-1:222222222222:vocabulary/ctf-terms", arn);
+    }
+
+    // ── AppConfig ───────────────────────────────────────────────────────────────
+
+    @Test
+    void appConfigGetApplicationBuildsApplicationArn() {
+        ContainerRequestContext ctx = pathCtx("applications/app12345", jsonBodyCtx("{}"));
+        String arn = builder.build("appconfig", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:appconfig:us-east-1:222222222222:application/app12345", arn);
+    }
+
+    @Test
+    void appConfigGetEnvironmentBuildsEnvironmentArn() {
+        ContainerRequestContext ctx = pathCtx("applications/app12345/environments/env67890", jsonBodyCtx("{}"));
+        String arn = builder.build("appconfig", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:appconfig:us-east-1:222222222222:application/app12345/environment/env67890", arn);
+    }
+
+    @Test
+    void appConfigGetConfigurationProfileBuildsProfileArn() {
+        ContainerRequestContext ctx = pathCtx("applications/app12345/configurationprofiles/prof11111", jsonBodyCtx("{}"));
+        String arn = builder.build("appconfig", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:appconfig:us-east-1:222222222222:application/app12345/configurationprofile/prof11111", arn);
+    }
+
+    // ── AppConfig Data ──────────────────────────────────────────────────────────
+
+    @Test
+    void appConfigDataStartSessionBuildsConfigurationArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ApplicationIdentifier":"app12345","EnvironmentIdentifier":"env67890","ConfigurationProfileIdentifier":"prof11111"}
+                """);
+        String arn = builder.build("appconfigdata", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:appconfig:us-east-1:222222222222:application/app12345/environment/env67890/configuration/prof11111", arn);
+    }
+
+    // ── Textract ────────────────────────────────────────────────────────────────
+
+    @Test
+    void textractGetDocumentAnalysisBuildsJobArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"JobId\":\"abc123job456\"}");
+        String arn = builder.build("textract", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:textract:us-east-1:222222222222:job/abc123job456", arn);
+    }
+
+    // ── BCM Data Exports ──────────────────────────────────────────────────────
+
+    @Test
+    void bcmDataExportsGetExportUsesExportArnField() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"ExportArn":"arn:aws:bcm-data-exports:us-east-1:222222222222:export/focus-monthly"}
+                """);
+        String arn = builder.build("bcm-data-exports", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:bcm-data-exports:us-east-1:222222222222:export/focus-monthly", arn);
+    }
+
+    @Test
+    void bcmDataExportsCreateExportBuildsExportArnFromNestedName() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
+                {"Export":{"Name":"focus-monthly","Description":"FOCUS export"}}
+                """, "AWSBillingAndCostManagementDataExports.CreateExport");
+        String arn = builder.build("bcm-data-exports", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:bcm-data-exports:us-east-1:222222222222:export/focus-monthly", arn);
+    }
+
+    @Test
+    void bcmDataExportsListExportsBuildsExportWildcard() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget(
+                "{}",
+                "AWSBillingAndCostManagementDataExports.ListExports");
+        String arn = builder.build("bcm-data-exports", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:bcm-data-exports:us-east-1:222222222222:export/*", arn);
+    }
+
+    @Test
+    void taggingTagResourcesUsesFirstResourceArn() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
+                {"ResourceARNList":["arn:aws:s3:::allowed-bucket","arn:aws:s3:::decoy-bucket"],
+                 "Tags":{"env":"ctf"}}
+                """, "ResourceGroupsTaggingAPI_20170126.TagResources");
+        String arn = builder.build("tagging", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:s3:::allowed-bucket", arn);
+    }
+
+    @Test
+    void taggingBuildsAllResourceArns() {
+        ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
+                {"ResourceARNList":["arn:aws:s3:::a","arn:aws:s3:::b"]}
+                """, "ResourceGroupsTaggingAPI_20170126.UntagResources");
+        var arns = builder.buildAllTaggingResources(ctx);
+        assertEquals(2, arns.size());
+        assertEquals("arn:aws:s3:::a", arns.get(0));
+        assertEquals("arn:aws:s3:::b", arns.get(1));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ContainerRequestContext jsonBodyCtx(String json) {
@@ -667,6 +978,12 @@ class ResourceArnBuilderTest {
                 new MultivaluedHashMap<>(),
                 MediaType.valueOf("application/x-amz-json-1.1"),
                 streamRef);
+    }
+
+    private static ContainerRequestContext jsonBodyCtxWithTarget(String json, String target) {
+        ContainerRequestContext ctx = jsonBodyCtx(json);
+        when(ctx.getHeaderString("X-Amz-Target")).thenReturn(target);
+        return ctx;
     }
 
     private static ContainerRequestContext formBodyCtx(String body) {
@@ -679,8 +996,14 @@ class ResourceArnBuilderTest {
     }
 
     private static ContainerRequestContext pathCtx(String path, ContainerRequestContext base) {
+        return pathCtx(path, new MultivaluedHashMap<>(), base);
+    }
+
+    private static ContainerRequestContext pathCtx(String path,
+                                                   MultivaluedMap<String, String> queryParams,
+                                                   ContainerRequestContext base) {
         UriInfo uriInfo = Mockito.mock(UriInfo.class);
-        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(uriInfo.getQueryParameters()).thenReturn(queryParams);
         when(uriInfo.getPath()).thenReturn(path);
         when(base.getUriInfo()).thenReturn(uriInfo);
         return base;

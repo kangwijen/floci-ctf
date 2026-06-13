@@ -20,6 +20,7 @@ import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.logging.Logger;
 
 import java.util.HashMap;
@@ -46,6 +47,7 @@ import java.util.regex.Pattern;
 public class IamEnforcementFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(IamEnforcementFilter.class);
+    private static final ObjectMapper EMR_BODY_MAPPER = new ObjectMapper();
 
     private static final Pattern SERVICE_PATTERN =
             Pattern.compile("Credential=\\S+/\\d{8}/[^/]+/([^/]+)/");
@@ -207,6 +209,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             evaluateDynamoDbBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
         }
+        if (isEmrMultiClusterRequest(credentialScope, ctx)) {
+            evaluateEmrMultiClusterAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
+        if (isTaggingMultiResourceRequest(credentialScope, ctx)) {
+            evaluateTaggingMultiResourceAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
 
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
@@ -327,6 +337,136 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             String unknownAction = credentialScope + ":*";
             LOG.infov("IAM strict enforcement DENY: BatchExecuteStatement action/resource count mismatch");
             ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+        }
+    }
+
+    private static boolean isEmrMultiClusterRequest(String credentialScope, ContainerRequestContext ctx) {
+        if (!"elasticmapreduce".equals(credentialScope)) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            var ids = node.get("JobFlowIds");
+            return ids != null && ids.isArray() && ids.size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void evaluateEmrMultiClusterAndAbortIfDenied(ContainerRequestContext ctx,
+                                                       String credentialScope,
+                                                       String akid,
+                                                       String region,
+                                                       String accountId,
+                                                       boolean strict) {
+        String action = actionRegistry.resolve(credentialScope, ctx);
+        if (action == null) {
+            if (strict) {
+                String unknownAction = credentialScope + ":*";
+                LOG.infov("IAM strict enforcement DENY: unmapped EMR multi-cluster scope={0}", credentialScope);
+                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
+        List<String> resources = arnBuilder.buildAllEmrClusterResources(ctx, region, accountId);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+
+        for (String resource : resources) {
+            if ("*".equals(resource)) {
+                continue;
+            }
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} emrMultiCluster", akid, action, resource);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+        }
+    }
+
+    private static boolean isTaggingMultiResourceRequest(String credentialScope, ContainerRequestContext ctx) {
+        if (!"tagging".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null) {
+            return false;
+        }
+        String operation = target.contains(".") ? target.substring(target.lastIndexOf('.') + 1) : target;
+        if ("GetTagKeys".equals(operation) || "GetTagValues".equals(operation)) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            var arnList = node.get("ResourceARNList");
+            return arnList != null && arnList.isArray() && arnList.size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void evaluateTaggingMultiResourceAndAbortIfDenied(ContainerRequestContext ctx,
+                                                              String credentialScope,
+                                                              String akid,
+                                                              String region,
+                                                              String accountId,
+                                                              boolean strict) {
+        String action = actionRegistry.resolve(credentialScope, ctx);
+        if (action == null) {
+            if (strict) {
+                String unknownAction = credentialScope + ":*";
+                LOG.infov("IAM strict enforcement DENY: unmapped tagging scope={0}", credentialScope);
+                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
+        List<String> resources = arnBuilder.buildAllTaggingResources(ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+
+        for (String resource : resources) {
+            if ("*".equals(resource)) {
+                continue;
+            }
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} taggingMultiArn", akid, action, resource);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
         }
     }
 

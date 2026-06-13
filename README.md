@@ -38,7 +38,7 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
 | Role trust `sts:ExternalId` | Not enforced | Trust policy conditions evaluated on `AssumeRole` |
 | Resource-based policies | Not enforced on HTTP | S3/Lambda/SQS/SNS/KMS/Secrets resource policies in `IamEnforcementFilter`; presigned S3 uses SigV4 query auth then evaluates bucket policy; `NotPrincipal` supported; account `:root` in resource policies does **not** directly allow IAM users (identity policy still required) |
-| Scoped IAM `Resource` ARNs | Most requests use `*` | `ResourceArnBuilder` maps per-service ARNs for S3, IAM, DynamoDB, KMS, SQS, SNS, SSM, STS, and more on HTTP `:4566` |
+| Scoped IAM `Resource` ARNs | Most requests use `*` | `ResourceArnBuilder` maps per-service ARNs on HTTP `:4566` (core data plane plus RDS Data API, EMR, WAFv2, Transfer, CloudFront, Bedrock runtime, Transcribe, CUR, BCM Data Exports, AppConfig, Textract, tagging multi-ARN, and others; `pricing`/`ce`/`ec2messages` stay `*` per AWS) |
 | Health `services` map | Lists all services as `running` or `available` | Only **enabled** services appear as `running`; disabled services omitted |
 | Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides `/_floci/*`, `/_localstack/*`, and `/_aws/*`; `all` also hides `/health` |
 | Temporary creds (`ASIA*`) | Secret key alone | `x-amz-security-token` required and validated when SigV4 is on |
@@ -245,7 +245,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and f
 | Cognito | SRP `PASSWORD_VERIFIER` challenge includes `USERNAME` |
 | S3 | SDK ranged-get coverage (upstream test) |
 
-**CTF fork:** IAM enforcement applies to new HTTP surfaces (SigV4 + action mapping). `rds-data`, `elasticmapreduce`, and `wafv2` actions resolve from routes or `X-Amz-Target`; policy `Resource` scoping stays `*` until `ResourceArnBuilder` is extended (same pattern as most JSON 1.1 services).
+**CTF fork:** IAM enforcement applies to new HTTP surfaces (SigV4 + action mapping). `ResourceArnBuilder` scopes virtually all player-facing data-plane services; `pricing`, `ce` query APIs, and `ec2messages` intentionally stay `*` per AWS SAR. EMR `JobFlowIds[]` and tagging `ResourceARNList[]` evaluate every listed ARN. See [IAM scoped resources](./docs/services/iam.md#evaluation-rules) and [AGENTS.md](./AGENTS.md#iam-and-scoped-resources).
 
 ## Upstream sync
 

@@ -128,8 +128,37 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 | `cloudtrail` | `Name`, `TrailName`, or `TrailARN` (JSON) |
 | `guardduty` | `DetectorId` (JSON) |
 | `config` | `ConfigRuleName` / `ConfigRule.ConfigRuleName`, or `ResourceArn` (JSON) |
+| `rds-data` | `resourceArn` (JSON; full ARN or `rds:cluster:` prefix on REST execute/transaction routes) |
+| `elasticmapreduce` | `ClusterId`, `JobFlowId`, `ClusterArn`, `ResourceArn`, or `JobFlowIds[]` (JSON `X-Amz-Target`); multi-ID requests evaluate every cluster ARN |
+| `wafv2` | `Id`, `Name`, `Scope`, `ARN`/`Arn`/`WebACLArn`/`ResourceArn`, logging `ResourceArn` (JSON) |
+| `scheduler` | `Name`, `GroupName`, path `/schedules/` or `/schedule-groups/`, `groupName` query |
+| `pipes` | `Name` (JSON) or path `/v1/pipes/` |
+| `kafka` | cluster ARN in path (`/v1/clusters/`, `/api/v2/clusters/`) or `clusterName` (JSON) |
+| `securityhub` | `hub/default`; `Findings[].ProductArn` on `BatchImportFindings` / `BatchUpdateFindings` (JSON) |
+| `apigatewayv2` | `ApiId` (JSON) |
+| `codebuild` | `projectName` / `ProjectName` (JSON) |
+| `codedeploy` | `applicationName`, `deploymentGroupName` (JSON) |
+| `acm` | `CertificateArn` (JSON) |
+| `backup` | `BackupVaultName`, `BackupVaultArn`, `DestinationBackupVaultArn`, `ResourceArn`, path `/backup-vaults/` (JSON) |
+| `route53` | path `/hostedzone/` or `/healthcheck/` |
+| `cloudfront` | path `/2020-05-31/distribution/`, policy paths, `function/`, query `Resource` on `/tagging` |
+| `bedrock` / `bedrock-runtime` | path `/model/{modelId}/converse` or `/invoke` |
+| `transfer` | `ServerId`, `UserName`, `Arn` (JSON `X-Amz-Target`) |
+| `transcribe` | `TranscriptionJobName`, `VocabularyName` (JSON) |
+| `cur` | `ReportName`, `ReportDefinition.ReportName` (JSON) |
+| `bcm-data-exports` | `ExportArn`, `Export.Name` (JSON) |
+| `appconfig` | REST paths under `/applications/` (application, environment, configuration profile, deployment) |
+| `appconfigdata` | `ApplicationIdentifier`, `EnvironmentIdentifier`, `ConfigurationProfileIdentifier` (JSON) |
+| `textract` | `JobId` on async job APIs (JSON) |
+| `tagging` | `ResourceARNList[]` (multi-ARN evaluation for Tag/Untag/GetResources; `GetTagKeys`/`GetTagValues` stay `*`) |
+
+**Intentionally unscoped per AWS SAR:** `pricing`, `api.pricing`, `ce` (query APIs in Floci), `ec2messages`.
 
 When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not.
+
+**EMR multi-cluster:** requests with more than one `JobFlowIds[]` entry (for example `TerminateJobFlows`) call `ResourceArnBuilder.buildAllEmrClusterResources`; `IamEnforcementFilter` runs policy evaluation against each cluster ARN and denies the request if any cluster hits an explicit Deny.
+
+**Tagging multi-ARN:** `TagResources`, `UntagResources`, and `GetResources` with multiple `ResourceARNList[]` entries call `ResourceArnBuilder.buildAllTaggingResources`; `IamEnforcementFilter` evaluates each ARN (CTF enhancement; AWS documents `tag:*` on `Resource`).
 
 **Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
 

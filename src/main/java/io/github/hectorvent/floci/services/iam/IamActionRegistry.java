@@ -128,7 +128,89 @@ public class IamActionRegistry {
         rule("eks", "POST",   "^/clusters/[^/]+/node-groups/?$",                  "eks:CreateNodegroup"),
         rule("eks", "GET",    "^/clusters/[^/]+/node-groups/?$",                  "eks:ListNodegroups"),
         rule("eks", "GET",    "^/clusters/[^/]+/node-groups/[^/]+/?$",            "eks:DescribeNodegroup"),
-        rule("eks", "DELETE", "^/clusters/[^/]+/node-groups/[^/]+/?$",            "eks:DeleteNodegroup")
+        rule("eks", "DELETE", "^/clusters/[^/]+/node-groups/[^/]+/?$",            "eks:DeleteNodegroup"),
+
+        // ── EventBridge Scheduler (REST JSON) ───────────────────────────────────
+        rule("scheduler", "POST",   "^/schedules/[^/]+/?$",                       "scheduler:CreateSchedule"),
+        rule("scheduler", "GET",    "^/schedules/[^/]+/?$",                       "scheduler:GetSchedule"),
+        rule("scheduler", "PUT",    "^/schedules/[^/]+/?$",                       "scheduler:UpdateSchedule"),
+        rule("scheduler", "DELETE", "^/schedules/[^/]+/?$",                       "scheduler:DeleteSchedule"),
+        rule("scheduler", "GET",    "^/schedules/?$",                              "scheduler:ListSchedules"),
+        rule("scheduler", "POST",   "^/schedule-groups/[^/]+/?$",                 "scheduler:CreateScheduleGroup"),
+        rule("scheduler", "GET",    "^/schedule-groups/[^/]+/?$",                 "scheduler:GetScheduleGroup"),
+        rule("scheduler", "DELETE", "^/schedule-groups/[^/]+/?$",                 "scheduler:DeleteScheduleGroup"),
+        rule("scheduler", "GET",    "^/schedule-groups/?$",                        "scheduler:ListScheduleGroups"),
+
+        // ── EventBridge Pipes (REST JSON) ───────────────────────────────────────
+        rule("pipes", "POST",   "^/v1/pipes/[^/]+/?$",                             "pipes:CreatePipe"),
+        rule("pipes", "GET",    "^/v1/pipes/[^/]+/?$",                             "pipes:DescribePipe"),
+        rule("pipes", "PUT",    "^/v1/pipes/[^/]+/?$",                             "pipes:UpdatePipe"),
+        rule("pipes", "DELETE", "^/v1/pipes/[^/]+/?$",                             "pipes:DeletePipe"),
+        rule("pipes", "GET",    "^/v1/pipes/?$",                                   "pipes:ListPipes"),
+        rule("pipes", "POST",   "^/v1/pipes/[^/]+/start/?$",                       "pipes:StartPipe"),
+        rule("pipes", "POST",   "^/v1/pipes/[^/]+/stop/?$",                        "pipes:StopPipe"),
+
+        // ── MSK (kafka REST) ──────────────────────────────────────────────────
+        rule("kafka", "POST",   "^/v1/clusters/?$",                                "kafka:CreateCluster"),
+        rule("kafka", "POST",   "^/api/v2/clusters/?$",                           "kafka:CreateClusterV2"),
+        rule("kafka", "GET",    "^/v1/clusters/[^/]+/?$",                          "kafka:DescribeCluster"),
+        rule("kafka", "GET",    "^/api/v2/clusters/[^/]+/?$",                     "kafka:DescribeClusterV2"),
+        rule("kafka", "DELETE", "^/v1/clusters/[^/]+/?$",                          "kafka:DeleteCluster"),
+        rule("kafka", "GET",    "^/v1/clusters/?$",                                "kafka:ListClusters"),
+
+        // ── CloudFront (REST XML) ─────────────────────────────────────────────
+        rule("cloudfront", "GET",    ".*/distribution/[^/]+/?$",                 "cloudfront:GetDistribution"),
+        rule("cloudfront", "PUT",    ".*/distribution/[^/]+/config/?$",          "cloudfront:UpdateDistribution"),
+        rule("cloudfront", "DELETE", ".*/distribution/[^/]+/?$",                 "cloudfront:DeleteDistribution"),
+        rule("cloudfront", "POST",   ".*/distribution/[^/]+/invalidation/?$",    "cloudfront:CreateInvalidation"),
+
+        // ── Bedrock Runtime (REST JSON) ───────────────────────────────────────
+        rule("bedrock", "POST",         ".*/model/.+/converse/?$",               "bedrock:Converse"),
+        rule("bedrock", "POST",         ".*/model/.+/invoke/?$",                "bedrock:InvokeModel"),
+        rule("bedrock-runtime", "POST", ".*/model/.+/converse/?$",               "bedrock:Converse"),
+        rule("bedrock-runtime", "POST", ".*/model/.+/invoke/?$",                "bedrock:InvokeModel"),
+
+        // ── AppConfig (REST JSON) ───────────────────────────────────────────────
+        rule("appconfig", "POST",   "^/applications/[^/]+/environments/[^/]+/deployments/?$",
+                "appconfig:StartDeployment"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/environments/[^/]+/deployments/[^/]+/?$",
+                "appconfig:GetDeployment"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/configurationprofiles/[^/]+/hostedconfigurationversions/[^/]+/?$",
+                "appconfig:GetHostedConfigurationVersion"),
+        rule("appconfig", "POST",   "^/applications/[^/]+/configurationprofiles/[^/]+/hostedconfigurationversions/?$",
+                "appconfig:CreateHostedConfigurationVersion"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/configurationprofiles/[^/]+/hostedconfigurationversions/?$",
+                "appconfig:ListHostedConfigurationVersions"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/configurationprofiles/[^/]+/?$",
+                "appconfig:GetConfigurationProfile"),
+        rule("appconfig", "POST",   "^/applications/[^/]+/configurationprofiles/?$",
+                "appconfig:CreateConfigurationProfile"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/configurationprofiles/?$",
+                "appconfig:ListConfigurationProfiles"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/environments/[^/]+/?$",
+                "appconfig:GetEnvironment"),
+        rule("appconfig", "POST",   "^/applications/[^/]+/environments/?$",
+                "appconfig:CreateEnvironment"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/environments/?$",
+                "appconfig:ListEnvironments"),
+        rule("appconfig", "GET",    "^/deploymentstrategies/[^/]+/?$",
+                "appconfig:GetDeploymentStrategy"),
+        rule("appconfig", "POST",   "^/deploymentstrategies/?$",
+                "appconfig:CreateDeploymentStrategy"),
+        rule("appconfig", "GET",    "^/applications/[^/]+/?$",
+                "appconfig:GetApplication"),
+        rule("appconfig", "DELETE", "^/applications/[^/]+/?$",
+                "appconfig:DeleteApplication"),
+        rule("appconfig", "POST",   "^/applications/?$",
+                "appconfig:CreateApplication"),
+        rule("appconfig", "GET",    "^/applications/?$",
+                "appconfig:ListApplications"),
+
+        // ── AppConfig Data (REST JSON; IAM actions use appconfig: prefix per AWS) ─
+        rule("appconfigdata", "POST", "^/configurationsessions/?$",
+                "appconfig:StartConfigurationSession"),
+        rule("appconfigdata", "GET",  "^/configuration/?$",
+                "appconfig:GetLatestConfiguration")
     );
 
     private static ActionRule rule(String service, String method, String path, String action) {
