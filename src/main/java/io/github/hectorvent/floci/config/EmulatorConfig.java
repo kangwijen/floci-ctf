@@ -176,6 +176,7 @@ public interface EmulatorConfig {
         BackupStorageConfig backup();
         CloudFrontStorageConfig cloudfront();
         AppSyncStorageConfig appsync();
+        BatchStorageConfig batch();
     }
 
     interface SsmStorageConfig {
@@ -290,6 +291,13 @@ public interface EmulatorConfig {
     }
 
     interface AppSyncStorageConfig {
+        Optional<String> mode();
+
+        @WithDefault("5000")
+        long flushIntervalMs();
+    }
+
+    interface BatchStorageConfig {
         Optional<String> mode();
 
         @WithDefault("5000")
@@ -472,6 +480,7 @@ public interface EmulatorConfig {
         SecurityHubServiceConfig securityhub();
         CloudFrontServiceConfig cloudfront();
         AppSyncServiceConfig appsync();
+        BatchServiceConfig batch();
     }
 
     interface CloudTrailServiceConfig {
@@ -554,6 +563,16 @@ public interface EmulatorConfig {
         int containerCredentialsPort();
     }
 
+    interface BatchServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("immediate")
+        String runnerMode();
+
+        Optional<String> dockerNetwork();
+    }
+
     interface CodeDeployServiceConfig {
         @WithDefault("true")
         boolean enabled();
@@ -574,7 +593,7 @@ public interface EmulatorConfig {
         @WithDefault("30")
         int defaultVisibilityTimeout();
 
-        @WithDefault("262144")
+        @WithDefault("1048576")
         int maxMessageSize();
 
         @WithDefault("false")

@@ -37,6 +37,8 @@ floci:
         flush-interval-ms: 60000
       opensearch:
         flush-interval-ms: 60000
+      batch:
+        flush-interval-ms: 60000
       cloudfront:
 
   auth:
@@ -67,7 +69,7 @@ floci:
     sqs:
       enabled: true
       default-visibility-timeout: 30
-      max-message-size: 262144
+      max-message-size: 1048576
     s3:
       enabled: true
       default-presign-expiry-seconds: 3600
@@ -185,6 +187,9 @@ floci:
     codebuild:
       enabled: true
       # docker-network: floci-network
+    batch:
+      enabled: true
+      runner-mode: immediate
     codedeploy:
       enabled: true
     autoscaling:

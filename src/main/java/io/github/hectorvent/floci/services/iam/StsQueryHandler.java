@@ -90,7 +90,8 @@ public class StsQueryHandler {
         String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId, "assumed-role/" + roleName + "/" + sessionName).toString();
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
 
-        // Register session so IAM enforcement can resolve the role's policies
+        // Register session so IAM enforcement can resolve the role's policies and so that
+        // RDS/ElastiCache IAM token validation can find the temporary secret key.
         String sessionPolicy = getParam(params, "Policy");
         iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
                 assumedRoleId, assumedRoleArn, null, sessionToken);

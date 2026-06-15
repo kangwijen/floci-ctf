@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.24 + 20 commits (merged 2026-06-13) |
+| Upstream release | 1.5.25 (merged 2026-06-15) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -236,10 +236,10 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | EventBridge rule targets / archive replay | Yes (`InProcessTargetAuthorizer`: rule `roleArn` or `events.amazonaws.com` destination policy; replay uses `events:PutEvents` on destination bus) |
 | SNS / S3 / SES notification delivery | Yes (`InProcessTargetAuthorizer`: `sns.amazonaws.com`, `s3.amazonaws.com`, `ses.amazonaws.com` on destination resource policies) |
 | Lambda ESM pollers (SQS/Kinesis/DynamoDB Streams) | Yes (function execution role on `ReceiveMessage` / `GetQueueAttributes` / `GetRecords` / `DescribeStream` / `DeleteMessage`) |
-| CloudWatch Logs subscriptions | Yes (`logs.amazonaws.com` on Lambda; filter `roleArn` on Kinesis/Firehose) |
-| CUR / BCM Parquet emit | Yes (`bcm-data-exports.amazonaws.com` on S3 staging and destination) |
+| CloudWatch Logs subscriptions | Yes (`logs.amazonaws.com` on Lambda; filter `roleArn` required for Kinesis/Firehose) |
+| CUR / BCM Parquet emit | Yes (`bcm-data-exports.amazonaws.com` `s3:PutObject` on staging and destination; legacy CUR uses `billingreports.amazonaws.com` with `s3:PutObject` + `s3:GetBucketPolicy`) |
 | ELB / API Gateway / Cognito / CodeDeploy Lambda invoke | Yes (`elasticloadbalancing.amazonaws.com`, `apigateway.amazonaws.com`, `cognito-idp.amazonaws.com`, `codedeploy.amazonaws.com` on function resource policy) |
-| CloudTrail / Config / Firehose / EC2 flow logs S3 delivery | Yes (`InProcessTargetAuthorizer.authorizeServiceS3Put`: `s3:PutObject` on delivery bucket for `cloudtrail.amazonaws.com`, `config.amazonaws.com`, `firehose.amazonaws.com`, `ec2.amazonaws.com`) |
+| CloudTrail / Config / Firehose / VPC flow logs S3 delivery | Yes (`authorizeServiceS3Put` for CloudTrail and Config (`s3:ListBucket` for Config); Firehose stream `RoleARN` identity policy on `s3:PutObject`; VPC flow logs use `delivery.logs.amazonaws.com`) |
 | Inter-service delivery audit | CloudTrail audit when audit enabled (`invokedBy` AWSService events on Firehose, Config, flow logs, and other in-process delivery) |
 | Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`) |
 
@@ -249,7 +249,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** 20 commits post-**1.5.24** from `upstream/main` on **2026-06-13** (WAFv2, EMR, RDS Data API, Glue partitions, SQS, ELBv2, SES, EC2, MSK, Athena, Cognito SRP). CTF hardening preserved; new services wired in `ResolvedServiceCatalog` and `IamActionRegistry` (`rds-data` REST rules; EMR/WAFv2 via JSON 1.1 `X-Amz-Target`). `ResourceArnBuilder` now scopes those merge-gap services plus scheduler, pipes, kafka, securityhub, apigatewayv2, codebuild, codedeploy, acm, backup, and route53.
+**Latest merge:** upstream **1.5.25** (2026-06-15): AWS Batch, RDS provisioning, STS session secret persistence for RDS/ElastiCache IAM tokens, S3 conditional put atomicity, CloudFormation EC2 VPC/subnet provisioning, Glue partition ordering, SQS 1MB max message, AppConfig route fix. CTF hardening preserved; `InProcessTargetAuthorizer` hardened per AWS docs (Config `ListBucket`, Firehose stream `RoleARN`, BCM/CUR principals, Logs `roleArn` required for Kinesis/Firehose, EventBridge Batch `SubmitJob`).
 
 ```bash
 git fetch upstream main

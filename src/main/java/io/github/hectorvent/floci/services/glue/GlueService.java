@@ -236,6 +236,7 @@ public class GlueService {
     }
 
     public void deleteTable(String databaseName, String tableName) {
+        getTable(databaseName, tableName);
         String key = tableKey(databaseName, tableName);
         tableStore.delete(key);
         tableVersionStore.keys().stream()
@@ -306,6 +307,11 @@ public class GlueService {
             }
         }
         return new ColumnStatisticsResult(columnStatistics, errors);
+    }
+
+    public void deleteColumnStatisticsForTable(String databaseName, String tableName, String columnName) {
+        getTable(databaseName, tableName);
+        columnStatisticsStore.delete(columnStatisticsKey(databaseName, tableName, columnName));
     }
 
     public void createPartition(String databaseName, String tableName, Partition partition) {
@@ -385,7 +391,23 @@ public class GlueService {
         String prefix = tableKey(databaseName, tableName) + ":";
         return partitionStore.scan(k -> k.startsWith(prefix)).stream()
                 .filter(partition -> matchesPartitionExpression(table, partition, expression))
+                .sorted(GlueService::comparePartitionValues)
                 .toList();
+    }
+
+    // The partition store scan returns values in storage iteration order, which is not stable.
+    // Return partitions ordered by their values so GetPartitions is deterministic across calls.
+    private static int comparePartitionValues(Partition a, Partition b) {
+        List<String> aValues = a.getValues() == null ? List.of() : a.getValues();
+        List<String> bValues = b.getValues() == null ? List.of() : b.getValues();
+        int shared = Math.min(aValues.size(), bValues.size());
+        for (int i = 0; i < shared; i++) {
+            int comparison = Comparator.nullsFirst(String::compareTo).compare(aValues.get(i), bValues.get(i));
+            if (comparison != 0) {
+                return comparison;
+            }
+        }
+        return Integer.compare(aValues.size(), bValues.size());
     }
 
     public void deletePartition(String databaseName, String tableName, List<String> partitionValues) {

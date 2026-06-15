@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.cur;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.ResourceUsageEnumerator;
 import io.github.hectorvent.floci.core.common.UsageLine;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -52,7 +53,8 @@ public class EmissionEngine {
      */
     public ParquetEmitter.Result emitForCurrentMonth(String reportName, String destBucket,
                                                       String destPrefix, String region) {
-        return emitForCurrentMonth(reportName, destBucket, destPrefix, region, null);
+        return emitForCurrentMonth(reportName, destBucket, destPrefix, region, null,
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE);
     }
 
     /**
@@ -65,6 +67,14 @@ public class EmissionEngine {
     public ParquetEmitter.Result emitForCurrentMonth(String reportName, String destBucket,
                                                       String destPrefix, String region,
                                                       String ownerAccountId) {
+        return emitForCurrentMonth(reportName, destBucket, destPrefix, region, ownerAccountId,
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE);
+    }
+
+    public ParquetEmitter.Result emitForCurrentMonth(String reportName, String destBucket,
+                                                      String destPrefix, String region,
+                                                      String ownerAccountId,
+                                                      String deliveryServicePrincipal) {
         Instant now = Instant.now();
         YearMonth ym = YearMonth.from(now.atOffset(ZoneOffset.UTC));
         Instant start = ym.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
@@ -76,7 +86,7 @@ public class EmissionEngine {
         List<UsageLine> lines = collectLines(start, end, resolvedRegion);
         LOG.infov("Emission: report={0} destination=s3://{1}/{2} lines={3} owner={4}",
                 reportName, destBucket, destPrefix, lines.size(), ownerAccountId);
-        return parquetEmitter.emit(reportName, destBucket, destPrefix, lines, ownerAccountId);
+        return parquetEmitter.emit(reportName, destBucket, destPrefix, lines, ownerAccountId, deliveryServicePrincipal);
     }
 
     private List<UsageLine> collectLines(Instant start, Instant end, String region) {

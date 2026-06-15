@@ -42,7 +42,8 @@ public class FirehoseJsonHandler {
                         tags.add(mapper.treeToValue(tNode, io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription.Tag.class));
                     }
                 }
-                String arn = firehoseService.createDeliveryStream(name, s3, tags);
+                String roleArn = request.has("RoleARN") ? request.get("RoleARN").asText() : null;
+                String arn = firehoseService.createDeliveryStream(name, roleArn, s3, tags);
                 yield Response.ok(Map.of("DeliveryStreamARN", arn)).build();
             }
             case "DescribeDeliveryStream" -> {

@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
+import io.github.hectorvent.floci.core.common.docker.ContainerReachableEndpoint;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
@@ -242,9 +243,12 @@ class LambdaImageConfigTest {
             when(embeddedDnsServer.getServerIp()).thenReturn(Optional.empty());
 
             ContainerBuilder containerBuilder = new ContainerBuilder(config, dockerHostResolver, embeddedDnsServer);
+            ContainerReachableEndpoint reachableEndpoint =
+                    new ContainerReachableEndpoint(config, dockerHostResolver, embeddedDnsServer);
             launcher = new ContainerLauncher(containerBuilder, lifecycleManager, logStreamer, imageResolver,
-                    runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager, embeddedDnsServer,
-                    mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class), credentialsServer);
+                    runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager,
+                    mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class),
+                    credentialsServer, reachableEndpoint);
 
             lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 

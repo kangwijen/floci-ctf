@@ -387,4 +387,89 @@ class InProcessTargetAuthorizerTest {
 
         verifyNoInteractions(iamAuthorizer);
     }
+
+    @Test
+    void configS3PutChecksAclListBucketAndObjectKey() {
+        authorizer.authorizeServiceS3Put(
+                InProcessTargetAuthorizer.CONFIG_SERVICE, "ctf-delivery-bucket", "AWSLogs/key.json", REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("GetBucketAcl"),
+                eq(BUCKET_ARN), eq(REGION));
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("ListBucket"),
+                eq(BUCKET_ARN), eq(REGION));
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION));
+    }
+
+    @Test
+    void bcmDataExportsS3PutChecksPutObjectOnly() {
+        authorizer.authorizeServiceS3Put(
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, "ctf-delivery-bucket", "billing/out.parquet", REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/billing/out.parquet"), eq(REGION));
+        verify(iamAuthorizer, never()).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("GetBucketAcl"),
+                eq(BUCKET_ARN), eq(REGION));
+    }
+
+    @Test
+    void billingReportsS3PutChecksPutObjectAndGetBucketPolicy() {
+        authorizer.authorizeServiceS3Put(
+                InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE, "ctf-delivery-bucket", "cur/out.parquet", REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/cur/out.parquet"), eq(REGION));
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("GetBucketPolicy"),
+                eq(BUCKET_ARN), eq(REGION));
+    }
+
+    @Test
+    void firehoseS3PutUsesStreamRoleArn() {
+        authorizer.authorizeFirehoseS3Put(ROLE_ARN, "ctf-delivery-bucket", "stream/out.json", REGION);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/stream/out.json"), eq(REGION));
+        verify(iamAuthorizer, never()).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.FIREHOSE_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/stream/out.json"), eq(REGION));
+    }
+
+    @Test
+    void logsSubscriptionUsesRoleForFirehose() {
+        authorizer.authorizeLogsSubscription(ROLE_ARN, FIREHOSE_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("firehose"), eq("PutRecord"), eq(FIREHOSE_ARN), eq(REGION));
+        verify(iamAuthorizer, never()).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.LOGS_SERVICE), eq("firehose"), eq("PutRecord"),
+                eq(FIREHOSE_ARN), eq(REGION));
+    }
+
+    @Test
+    void logsSubscriptionDeniesFirehoseWithoutRoleWhenEnforcementEnabled() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        assertThrows(AwsException.class,
+                () -> authorizer.authorizeLogsSubscription(null, FIREHOSE_ARN, REGION));
+
+        verifyNoInteractions(iamAuthorizer);
+    }
+
+    @Test
+    void logsSubscriptionDeniesKinesisWithoutRoleWhenEnforcementEnabled() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        assertThrows(AwsException.class,
+                () -> authorizer.authorizeLogsSubscription("", KINESIS_ARN, REGION));
+
+        verifyNoInteractions(iamAuthorizer);
+    }
 }

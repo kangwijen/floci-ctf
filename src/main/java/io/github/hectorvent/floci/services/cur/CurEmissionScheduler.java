@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.cur;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.bcmdataexports.BcmDataExportsService;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.bcmdataexports.model.DestinationConfiguration;
 import io.github.hectorvent.floci.services.bcmdataexports.model.Export;
 import io.github.hectorvent.floci.services.bcmdataexports.model.ExportExecution;
@@ -205,7 +206,8 @@ public class CurEmissionScheduler {
                     definition.getS3Bucket(),
                     definition.getS3Prefix(),
                     region,
-                    accountId);
+                    accountId,
+                    InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE);
             if (accountId != null) {
                 curService.markReportStatusForAccount(accountId,
                         definition.getReportName(), region, "SUCCESS");
@@ -240,7 +242,8 @@ public class CurEmissionScheduler {
                     dest.getS3Bucket(),
                     dest.getS3Prefix(),
                     dest.getS3Region() != null ? dest.getS3Region() : region,
-                    accountId);
+                    accountId,
+                    InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE);
             bcmService.completeExecution(accountId, exec, true, null);
             return exec;
         } catch (RuntimeException e) {

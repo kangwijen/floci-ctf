@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.24** + 20 post-release commits merged **2026-06-13**, Quarkus **3.36.0**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.25** merged **2026-06-15**, Quarkus **3.36.0**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -202,7 +202,7 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
-Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and follow-on commits:
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026-06-15):
 
 | Area | Change |
 |---|---|
@@ -228,7 +228,21 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.24** and f
 | Glue | Catalog name normalization, `BatchDeleteTable`, column parameters |
 | Core | `StorageBackedMap` for service state persistence |
 
-**Post-1.5.24 merge (20 commits, 2026-06-13):**
+**1.5.25 merge (2026-06-15):**
+
+| Area | Change |
+|---|---|
+| AWS Batch | REST JSON management API; EventBridge job-queue targets |
+| RDS | Instance provisioning, subnet groups, container lifecycle |
+| STS | Session secret key persisted for RDS/ElastiCache IAM token SigV4 |
+| S3 | Atomic conditional puts; reject `..` in object keys |
+| CloudFormation | EC2 VPC/subnet provisioning; Lambda custom resources |
+| Glue | Deterministic partition order; table statistics deletion |
+| SQS | Max message size 1 MB |
+| AppConfig | Stop hijacking S3 bucket named `configuration` |
+| ECS | Fargate network mode and resource validation |
+
+**Prior post-1.5.24 merge (2026-06-13):**
 
 | Area | Change |
 |---|---|

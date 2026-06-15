@@ -43,7 +43,7 @@ class EventBridgeSchedulerIntegrationTest {
         StorageBackend<String, List<Target>> targetStore = new InMemoryStorage<>();
 
         EventBridgeInvoker invoker = new EventBridgeInvoker(
-                null, null, null, new ObjectMapper(), createConfig(), null,
+                null, null, null, null, new ObjectMapper(), createConfig(), null,
                 mock(InProcessTargetAuthorizer.class));
         scheduler = new RuleScheduler(vertx, createConfig(), new ObjectMapper(), invoker);
 

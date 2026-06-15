@@ -230,6 +230,28 @@ function_input() {
     [ "$missing_column_name" = "missing" ]
     [ "$error_code" = "EntityNotFoundException" ]
 
+    run aws_cmd glue delete-column-statistics-for-table \
+        --database-name "$DB_NAME" \
+        --table-name "$TABLE_NAME" \
+        --column-name id
+    assert_success
+
+    run aws_cmd glue delete-column-statistics-for-table \
+        --database-name "$DB_NAME" \
+        --table-name "$TABLE_NAME" \
+        --column-name id
+    assert_success
+
+    run aws_cmd glue get-column-statistics-for-table \
+        --database-name "$DB_NAME" \
+        --table-name "$TABLE_NAME" \
+        --column-names id
+    assert_success
+    deleted_statistics_count=$(json_get "$output" '.ColumnStatisticsList | length')
+    deleted_error_code=$(json_get "$output" '.Errors[0].Error.ErrorCode')
+    [ "$deleted_statistics_count" = "0" ]
+    [ "$deleted_error_code" = "EntityNotFoundException" ]
+
     run aws_cmd glue create-partition \
         --database-name "$DB_NAME" \
         --table-name "$TABLE_NAME" \
@@ -317,6 +339,12 @@ function_input() {
         --database-name "$DB_NAME" \
         --name "$TABLE_NAME"
     assert_failure
+
+    run aws_cmd glue delete-table \
+        --database-name "$DB_NAME" \
+        --name "$TABLE_NAME"
+    assert_failure
+    [[ "$output" == *"EntityNotFoundException"* ]]
 }
 
 @test "Glue catalog: batch delete table" {

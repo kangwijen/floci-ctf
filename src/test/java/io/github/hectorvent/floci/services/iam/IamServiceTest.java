@@ -428,6 +428,20 @@ class IamServiceTest {
         assertEquals("arn:aws:iam::222222222222:root", identity.arn());
     }
 
+    @Test
+    void getSessionTokenStyleSessionBypassesEnforcementResolution() {
+        iamService.registerSession(
+                "ASIAIOSFODNN7EXAMPLE",
+                "temporary-secret",
+                null,
+                Instant.now().plusSeconds(3600),
+                null
+        );
+
+        assertNull(iamService.resolveCallerContext("ASIAIOSFODNN7EXAMPLE"));
+        assertNull(iamService.resolveCallerPolicies("ASIAIOSFODNN7EXAMPLE"));
+    }
+
     // =========================================================================
     // Instance Profiles
     // =========================================================================

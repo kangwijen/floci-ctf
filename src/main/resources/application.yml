@@ -83,6 +83,8 @@ floci:
         flush-interval-ms: 5000
       opensearch:
         flush-interval-ms: 5000
+      batch:
+        flush-interval-ms: 5000
       rds:
         # Override storage mode for RDS (memory = no Docker volumes; hybrid/persistent = named volume per instance)
         # mode: memory
@@ -156,7 +158,7 @@ floci:
     sqs:
       enabled: true
       default-visibility-timeout: 30
-      max-message-size: 262144
+      max-message-size: 1048576
       clear-fifo-deduplication-cache-on-purge: false
     s3:
       enabled: true
@@ -312,6 +314,10 @@ floci:
       mock: false
     codebuild:
       enabled: true
+      # docker-network: floci-network
+    batch:
+      enabled: true
+      runner-mode: immediate
       # docker-network: floci-network
     codedeploy:
       enabled: true

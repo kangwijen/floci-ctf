@@ -52,12 +52,17 @@ public class FirehoseService {
     }
 
     public String createDeliveryStream(String name, S3Destination s3Config) {
-        return createDeliveryStream(name, s3Config, List.of());
+        return createDeliveryStream(name, null, s3Config, List.of());
     }
 
     public String createDeliveryStream(String name, S3Destination s3Config, List<DeliveryStreamDescription.Tag> tags) {
+        return createDeliveryStream(name, null, s3Config, tags);
+    }
+
+    public String createDeliveryStream(String name, String roleArn, S3Destination s3Config,
+                                       List<DeliveryStreamDescription.Tag> tags) {
         String arn = AwsArnUtils.Arn.of("firehose", regionResolver.getDefaultRegion(), regionResolver.getAccountId(), "deliverystream/" + name).toString();
-        DeliveryStreamDescription description = new DeliveryStreamDescription(name, arn, s3Config);
+        DeliveryStreamDescription description = new DeliveryStreamDescription(name, arn, roleArn, s3Config);
         description.setAccountId(regionResolver.getAccountId());
         description.setTags(tags);
         streamStore.put(name, description);
@@ -188,8 +193,7 @@ public class FirehoseService {
 
             byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
             String region = regionResolver.getDefaultRegion();
-            targetAuthorizer.authorizeServiceS3Put(
-                    InProcessTargetAuthorizer.FIREHOSE_SERVICE, bucket, key, region);
+            targetAuthorizer.authorizeFirehoseS3Put(stream.getRoleArn(), bucket, key, region);
             s3Service.putObject(bucket, key, body, "application/x-ndjson", Map.of());
             recordS3PutObject(region, bucket, key, null);
             LOG.infov("Flushed {0} records from stream {1} to s3://{2}/{3}",

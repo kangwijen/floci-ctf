@@ -16,7 +16,12 @@ import jakarta.inject.Inject;
  *   <li>EventBridge (no role): destination resource policies for {@code events.amazonaws.com}</li>
  *   <li>SNS, S3, SES, Logs, ELB, API Gateway, Cognito, CodeDeploy: destination resource policies</li>
  *   <li>Lambda event source mappings: function execution role on polled sources</li>
- *   <li>CloudTrail, Config, Firehose, EC2 flow logs: service principal {@code s3:PutObject} on bucket</li>
+ *   <li>CloudTrail: service principal {@code s3:GetBucketAcl} + {@code s3:PutObject}</li>
+ *   <li>Config: service principal {@code s3:GetBucketAcl}, {@code s3:ListBucket}, {@code s3:PutObject}</li>
+ *   <li>Firehose S3 flush: delivery stream {@code RoleARN} identity policy on {@code s3:PutObject}</li>
+ *   <li>VPC flow logs: {@code delivery.logs.amazonaws.com} on bucket (same ACL + PutObject pattern as CloudTrail)</li>
+ *   <li>BCM Data Exports: {@code bcm-data-exports.amazonaws.com} {@code s3:PutObject} only</li>
+ *   <li>Legacy CUR: {@code billingreports.amazonaws.com} {@code s3:PutObject} + {@code s3:GetBucketPolicy}</li>
  * </ul>
  */
 @ApplicationScoped
@@ -36,6 +41,7 @@ public class InProcessTargetAuthorizer {
     public static final String FIREHOSE_SERVICE = "firehose.amazonaws.com";
     public static final String EC2_SERVICE = "ec2.amazonaws.com";
     public static final String BCM_DATA_EXPORTS_SERVICE = "bcm-data-exports.amazonaws.com";
+    public static final String BILLING_REPORTS_SERVICE = "billingreports.amazonaws.com";
     public static final String DELIVERY_LOGS_SERVICE = "delivery.logs.amazonaws.com";
 
     private final InProcessIamAuthorizer iamAuthorizer;
@@ -155,11 +161,36 @@ public class InProcessTargetAuthorizer {
             return;
         }
         String bucketArn = AwsArnUtils.Arn.of("s3", "", "", bucketName).toString();
-        iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
         String objectResource = objectKey != null && !objectKey.isBlank()
                 ? AwsArnUtils.Arn.of("s3", "", "", bucketName + "/" + objectKey).toString()
                 : bucketArn + "/*";
+        if (BCM_DATA_EXPORTS_SERVICE.equals(servicePrincipal)) {
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+            return;
+        }
+        if (BILLING_REPORTS_SERVICE.equals(servicePrincipal)) {
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketPolicy", bucketArn, region);
+            return;
+        }
+        if (CONFIG_SERVICE.equals(servicePrincipal)) {
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "ListBucket", bucketArn, region);
+            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+            return;
+        }
+        iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
         iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+    }
+
+    public void authorizeFirehoseS3Put(String roleArn, String bucketName, String objectKey, String region) {
+        if (bucketName == null || bucketName.isBlank()) {
+            return;
+        }
+        String objectResource = objectKey != null && !objectKey.isBlank()
+                ? AwsArnUtils.Arn.of("s3", "", "", bucketName + "/" + objectKey).toString()
+                : AwsArnUtils.Arn.of("s3", "", "", bucketName).toString() + "/*";
+        iamAuthorizer.authorizeWithResource(roleArn, "s3", "PutObject", objectResource, region);
     }
 
     public void authorizeVpcFlowLogsS3Put(String bucketName, String objectKey, String region) {
@@ -212,11 +243,11 @@ public class InProcessTargetAuthorizer {
 
     private void authorizeLogsStreamDestination(String roleArn, String service, String action,
                                                   String destinationArn, String region) {
-        if (roleArn != null && !roleArn.isBlank()) {
-            iamAuthorizer.authorizeWithResource(roleArn, service, action, destinationArn, region);
-        } else {
-            iamAuthorizer.authorizeServicePrincipal(LOGS_SERVICE, service, action, destinationArn, region);
+        if (roleArn == null || roleArn.isBlank()) {
+            denyUnmappedTarget(LOGS_SERVICE, destinationArn);
+            return;
         }
+        iamAuthorizer.authorizeWithResource(roleArn, service, action, destinationArn, region);
     }
 
     public void authorizeElbLambdaTarget(String functionArn, String region) {
@@ -257,6 +288,8 @@ public class InProcessTargetAuthorizer {
             iamAuthorizer.authorizeWithResource(roleArn, "kinesis", "PutRecord", targetArn, region);
         } else if (targetArn.contains(":firehose:")) {
             iamAuthorizer.authorizeWithResource(roleArn, "firehose", "PutRecord", targetArn, region);
+        } else if (targetArn.contains(":batch:") && targetArn.contains(":job-queue/")) {
+            iamAuthorizer.authorizeWithResource(roleArn, "batch", "SubmitJob", targetArn, region);
         } else {
             denyUnmappedTarget(roleArn, targetArn);
         }

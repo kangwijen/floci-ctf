@@ -906,6 +906,15 @@ public class IamService {
     }
 
     /**
+     * Upstream-compatible overload: secret key first for RDS/ElastiCache IAM token validation.
+     */
+    public void registerSession(String sessionAccessKeyId, String secretAccessKey, String roleArn,
+                                java.time.Instant expiration, String sessionPolicyDocument) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                null, null, null, null);
+    }
+
+    /**
      * Stores an assumed-role session with an optional inline session policy document.
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
@@ -1091,6 +1100,9 @@ public class IamService {
                 sessions.delete(accessKeyId);
                 return null; // expired — unknown key → bypass
             }
+            if (session.getRoleArn() == null) {
+                return null; // GetSessionToken-style identity session without mapped caller context
+            }
             List<String> identityPolicies;
             if (isStsFederatedSessionArn(session.getRoleArn())) {
                 identityPolicies = resolveFederatedSessionIdentityPolicies(session);
@@ -1128,6 +1140,9 @@ public class IamService {
     }
 
     private String resolveRoleBoundaryDocument(String roleArn) {
+        if (roleArn == null) {
+            return null;
+        }
         String roleName = roleArn.contains("/") ? roleArn.substring(roleArn.lastIndexOf('/') + 1) : roleArn;
         return roles.get(roleName)
                 .map(IamRole::getPermissionsBoundaryArn)
@@ -1228,6 +1243,9 @@ public class IamService {
     }
 
     private List<String> collectRolePolicies(String roleArn) {
+        if (roleArn == null) {
+            return null;
+        }
         String roleName = roleArn.contains("/") ? roleArn.substring(roleArn.lastIndexOf('/') + 1) : roleArn;
         Optional<IamRole> roleOpt = roles.get(roleName);
         if (roleOpt.isEmpty()) {

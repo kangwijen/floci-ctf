@@ -90,7 +90,8 @@ public class ParquetEmitter {
      */
     public Result emit(String reportName, String destBucket, String destPrefix,
                        List<UsageLine> lines) {
-        return emit(reportName, destBucket, destPrefix, lines, null);
+        return emit(reportName, destBucket, destPrefix, lines, null,
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE);
     }
 
     /**
@@ -102,6 +103,12 @@ public class ParquetEmitter {
      */
     public Result emit(String reportName, String destBucket, String destPrefix,
                        List<UsageLine> lines, String ownerAccountId) {
+        return emit(reportName, destBucket, destPrefix, lines, ownerAccountId,
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE);
+    }
+
+    public Result emit(String reportName, String destBucket, String destPrefix,
+                       List<UsageLine> lines, String ownerAccountId, String deliveryServicePrincipal) {
         if (reportName == null || reportName.isEmpty()) {
             throw new AwsException("ValidationException", "reportName is required.", 400);
         }
@@ -136,9 +143,9 @@ public class ParquetEmitter {
             byte[] payload = serializeNdjson(rows);
             if (targetAuthorizer != null) {
                 targetAuthorizer.authorizeServiceS3Put(
-                        InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, stagingBucket, stagingKey, defaultRegion);
+                        deliveryServicePrincipal, stagingBucket, stagingKey, defaultRegion);
                 targetAuthorizer.authorizeServiceS3Put(
-                        InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, destBucket, destKey, defaultRegion);
+                        deliveryServicePrincipal, destBucket, destKey, defaultRegion);
             }
             s3Service.putObject(stagingBucket, stagingKey, payload,
                     "application/x-ndjson", new HashMap<>());

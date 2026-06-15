@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.services.batch.BatchService;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.cloudtrail.InProcessCloudTrailRecorder;
 import io.github.hectorvent.floci.services.eventbridge.model.InputTransformer;
@@ -27,6 +28,7 @@ public class EventBridgeInvoker {
     private final LambdaService lambdaService;
     private final SqsService sqsService;
     private final SnsService snsService;
+    private final BatchService batchService;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
@@ -36,6 +38,7 @@ public class EventBridgeInvoker {
     public EventBridgeInvoker(LambdaService lambdaService,
                               SqsService sqsService,
                               SnsService snsService,
+                              BatchService batchService,
                               ObjectMapper objectMapper,
                               EmulatorConfig config,
                               InProcessCloudTrailRecorder cloudTrailRecorder,
@@ -43,10 +46,19 @@ public class EventBridgeInvoker {
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
         this.snsService = snsService;
+        this.batchService = batchService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.baseUrl();
         this.cloudTrailRecorder = cloudTrailRecorder;
         this.targetAuthorizer = targetAuthorizer;
+    }
+
+    EventBridgeInvoker(LambdaService lambdaService,
+                       SqsService sqsService,
+                       SnsService snsService,
+                       ObjectMapper objectMapper,
+                       EmulatorConfig config) {
+        this(lambdaService, sqsService, snsService, null, objectMapper, config, null, null);
     }
 
     public void invokeTarget(Target target, String eventJson, String region) {
@@ -55,7 +67,9 @@ public class EventBridgeInvoker {
 
     public void invokeTarget(Target target, String eventJson, String region, String ruleRoleArn) {
         String arn = target.getArn();
-        targetAuthorizer.authorizeEventBridgeTarget(ruleRoleArn, arn, region);
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeEventBridgeTarget(ruleRoleArn, arn, region);
+        }
         String payload;
         if (target.getInput() != null) {
             payload = target.getInput();
@@ -89,6 +103,21 @@ public class EventBridgeInvoker {
                 recordServiceCall(topicRegion, "sns.amazonaws.com", "Publish",
                         "events.amazonaws.com", Map.of("topicArn", arn));
                 LOG.debugv("EventBridge delivered to SNS: {0}", arn);
+            } else if (arn.contains(":batch:") && arn.contains(":job-queue/")) {
+                if (batchService == null || target.getBatchParameters() == null) {
+                    LOG.warnv("EventBridge Batch target missing Batch service or parameters: {0}", arn);
+                    return;
+                }
+                String targetRegion = extractRegionFromArn(arn, region);
+                batchService.submitFromEventBridge(
+                        arn,
+                        target.getBatchParameters().getJobDefinition(),
+                        target.getBatchParameters().getJobName(),
+                        parametersFromBatchPayload(payload),
+                        target.getBatchParameters().getRetryStrategy(),
+                        targetRegion
+                );
+                LOG.debugv("EventBridge delivered to Batch: {0}", arn);
             } else {
                 LOG.warnv("EventBridge: unsupported target ARN type: {0}", arn);
             }
@@ -134,6 +163,26 @@ public class EventBridgeInvoker {
             LOG.warnv("Failed to extract JSONPath {0}: {1}", jsonPath, e.getMessage());
             return null;
         }
+    }
+
+    private Map<String, String> parametersFromBatchPayload(String payload) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        if (payload == null || payload.isBlank()) {
+            return parameters;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(payload);
+            JsonNode parametersNode = node.path("Parameters");
+            if (parametersNode.isObject()) {
+                parametersNode.fields().forEachRemaining(entry -> {
+                    JsonNode value = entry.getValue();
+                    parameters.put(entry.getKey(), value.isTextual() ? value.asText() : value.toString());
+                });
+            }
+        } catch (Exception e) {
+            LOG.debugv("EventBridge Batch payload is not a JSON object with Parameters: {0}", e.getMessage());
+        }
+        return parameters;
     }
 
     private static String extractRegionFromArn(String arn, String defaultRegion) {

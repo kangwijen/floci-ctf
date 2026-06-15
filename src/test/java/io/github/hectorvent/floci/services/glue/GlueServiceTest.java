@@ -387,6 +387,25 @@ class GlueServiceTest {
     }
 
     @Test
+    void getPartitionsReturnsPartitionsSortedByValuesRegardlessOfCreationOrder() {
+        Table table = new Table();
+        table.setName("plain");
+        table.setPartitionKeys(List.of(new Column("year", "string")));
+        glueService.createTable("db1", table);
+        for (String value : List.of("2028", "2026", "2027")) {
+            Partition partition = new Partition();
+            partition.setValues(List.of(value));
+            glueService.createPartition("db1", "plain", partition);
+        }
+
+        // Deterministic ordering: returned in sorted order, not storage-scan order. No re-sort here.
+        assertEquals(List.of(List.of("2026"), List.of("2027"), List.of("2028")),
+                glueService.getPartitions("db1", "plain").stream()
+                        .map(Partition::getValues)
+                        .toList());
+    }
+
+    @Test
     void partitionKeysDoNotCollideForCommaSeparatedValues() {
         Table table = new Table();
         table.setName("plain");
@@ -573,6 +592,15 @@ class GlueServiceTest {
                 () -> glueService.deleteDatabase("missing"));
 
         assertEquals("EntityNotFoundException", ex.getErrorCode());
+    }
+
+    @Test
+    void deleteTableForMissingTableThrows() {
+        AwsException ex = assertThrows(AwsException.class,
+                () -> glueService.deleteTable("db1", "missing_table"));
+
+        assertEquals("EntityNotFoundException", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("db1.missing_table"));
     }
 
     @Test
@@ -802,6 +830,23 @@ class GlueServiceTest {
         assertTrue(fetched.errors().isEmpty());
         assertEquals("id", fetched.columnStatisticsList().get(0).get(GlueService.COLUMN_NAME));
         assertEquals("LONG", ((Map<?, ?>) fetched.columnStatisticsList().get(0).get("StatisticsData")).get("Type"));
+    }
+
+    @Test
+    void columnStatisticsCanBeDeleted() {
+        Table table = new Table();
+        table.setName("plain");
+        glueService.createTable("db1", table);
+        glueService.updateColumnStatisticsForTable("db1", "plain", List.of(columnStatistics("id")));
+
+        glueService.deleteColumnStatisticsForTable("db1", "plain", "id");
+        glueService.deleteColumnStatisticsForTable("db1", "plain", "id");
+
+        GlueService.ColumnStatisticsResult fetched =
+                glueService.getColumnStatisticsForTable("db1", "plain", List.of("id"));
+        assertTrue(fetched.columnStatisticsList().isEmpty());
+        assertEquals(1, fetched.errors().size());
+        assertEquals("EntityNotFoundException", fetched.errors().getFirst().error().errorCode());
     }
 
     @Test

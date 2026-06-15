@@ -14,6 +14,8 @@ public class DeliveryStreamDescription {
     private String accountId;
     @JsonProperty("DeliveryStreamARN")
     private String deliveryStreamARN;
+    @JsonProperty("RoleARN")
+    private String roleArn;
     @JsonProperty("DeliveryStreamStatus")
     private DeliveryStreamStatus deliveryStreamStatus;
     @JsonProperty("CreateTimestamp")
@@ -25,9 +27,10 @@ public class DeliveryStreamDescription {
     private List<Tag> tags = new ArrayList<>();
 
     public DeliveryStreamDescription() {}
-    public DeliveryStreamDescription(String name, String arn, S3Destination s3) {
+    public DeliveryStreamDescription(String name, String arn, String roleArn, S3Destination s3) {
         this.deliveryStreamName = name;
         this.deliveryStreamARN = arn;
+        this.roleArn = roleArn;
         this.deliveryStreamStatus = DeliveryStreamStatus.ACTIVE;
         this.createTimestamp = Instant.now();
         this.destinations = List.of(new Destination(s3));
@@ -40,6 +43,8 @@ public class DeliveryStreamDescription {
     public void setAccountId(String accountId) { this.accountId = accountId; }
     public String getDeliveryStreamARN() { return deliveryStreamARN; }
     public void setDeliveryStreamARN(String deliveryStreamARN) { this.deliveryStreamARN = deliveryStreamARN; }
+    public String getRoleArn() { return roleArn; }
+    public void setRoleArn(String roleArn) { this.roleArn = roleArn; }
     public DeliveryStreamStatus getDeliveryStreamStatus() { return deliveryStreamStatus; }
     public void setDeliveryStreamStatus(DeliveryStreamStatus deliveryStreamStatus) { this.deliveryStreamStatus = deliveryStreamStatus; }
     public Instant getCreateTimestamp() { return createTimestamp; }
