@@ -43,6 +43,35 @@
 | `FLOCI_STORAGE_SERVICES_SNS_MODE` | *(global default)* | Storage mode override for SNS (`memory`, `persistent`, `hybrid`, `wal`) |
 | `FLOCI_STORAGE_SERVICES_SNS_FLUSH_INTERVAL_MS` | `5000` | Flush interval for `hybrid`/`wal` storage modes (milliseconds) |
 
+## CTF fork: SNS to SQS fan-out (closed)
+
+**Status:** Closed on current `floci:local`. End-to-end subscribe, operator publish with explicit resource policies, and SQS delivery under IAM enforcement is covered by `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`.
+
+When IAM enforcement is on, Floci does **not** attach an open default topic policy. Operator provisioning must set explicit resource policies:
+
+1. **Topic policy** allowing operator `sns:Publish` (for example account root or a provision role).
+2. **Queue policy** allowing `sns.amazonaws.com` to `sqs:SendMessage` with `aws:SourceArn` matching the topic ARN.
+3. Player identity policy with `sns:Subscribe` on the topic ARN and `sqs:ReceiveMessage` on the queue ARN (not `sns:Publish`).
+
+```bash
+export AWS_ENDPOINT_URL=http://localhost:4566
+TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:dispatch-topic
+QUEUE_ARN=arn:aws:sqs:us-east-1:000000000000:dispatch-notify-queue
+QUEUE_URL=http://localhost:4566/000000000000/dispatch-notify-queue
+
+# Operator: queue policy for SNS delivery
+aws sqs set-queue-attributes --queue-url "$QUEUE_URL" --attributes Policy="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"$QUEUE_ARN\",\"Condition\":{\"ArnEquals\":{\"aws:SourceArn\":\"$TOPIC_ARN\"}}}]}"
+
+# Operator: topic policy for publish
+aws sns set-topic-attributes --topic-arn "$TOPIC_ARN" --attribute-name Policy --attribute-value \
+  '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"sns:Publish","Resource":"'"$TOPIC_ARN"'"}]}'
+
+# Player: subscribe SQS endpoint, then operator publishes; player receives without sns:Publish
+aws sns subscribe --topic-arn "$TOPIC_ARN" --protocol sqs --notification-endpoint "$QUEUE_URL"
+```
+
+Regression: `SnsSubscribeReceiveIamIntegrationTest` (including `fanOutWithExplicitTopicAndQueueResourcePolicies` for operator topic + queue policies, player `sns:Subscribe`, publish, and queue receive).
+
 ## Examples
 
 ```bash

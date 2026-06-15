@@ -183,7 +183,16 @@ class CloudTrailAuditIntegrationTest {
         given()
                 .header("X-Amz-Target", TARGET_PREFIX + "LookupEvents")
                 .contentType(CONTENT_TYPE)
-                .body("{}")
+                .body("""
+                        {
+                            "LookupAttributes": [
+                                {
+                                    "AttributeKey": "EventName",
+                                    "AttributeValue": "PutObject"
+                                }
+                            ]
+                        }
+                        """)
         .when()
                 .post("/")
         .then()

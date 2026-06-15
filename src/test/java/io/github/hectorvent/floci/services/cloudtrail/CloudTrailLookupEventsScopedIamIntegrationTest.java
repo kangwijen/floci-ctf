@@ -13,20 +13,20 @@ import java.net.URL;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * {@code cloudtrail:StopLogging} scoped to one trail ARN.
+ * {@code cloudtrail:LookupEvents} scoped to {@code arn:aws:cloudtrail:REGION:ACCOUNT:trail/*}
+ * when the JSON body has no trail name.
  */
 @QuarkusTest
 @TestProfile(CtfLabIamEnforcementProfile.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class CloudTrailIamScopedIntegrationTest {
+class CloudTrailLookupEventsScopedIamIntegrationTest {
 
     private static final String CONTENT_TYPE = "application/x-amz-json-1.1";
     private static final String TARGET_PREFIX = CtfLabIamTestSupport.CLOUDTRAIL_TARGET_PREFIX;
     private static final String REGION = "us-east-1";
-    private static final String ALLOWED_TRAIL = "allowed-trail";
-    private static final String DECOY_TRAIL = "decoy-trail";
 
     @TestHTTPResource("/")
     URL endpoint;
@@ -36,46 +36,56 @@ class CloudTrailIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "cloudtrail-stop-player";
+        String user = "cloudtrail-lookup-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootAuth = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "cloudtrail");
-
-        createTrail(rootAuth, ALLOWED_TRAIL, "allowed-trail-logs");
-        startLogging(rootAuth, ALLOWED_TRAIL);
-        createTrail(rootAuth, DECOY_TRAIL, "decoy-trail-logs");
-        startLogging(rootAuth, DECOY_TRAIL);
+        String trailBucket = "lookup-trail-logs";
+        given().header("Authorization", rootAuth).when().put("/" + trailBucket).then().statusCode(200);
+        createTrail(rootAuth, "lookup-trail", trailBucket);
+        startLogging(rootAuth, "lookup-trail");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"cloudtrail:StopLogging",
-               "Resource":"arn:aws:cloudtrail:%s:%s:trail/%s"}
-            ]}""".formatted(REGION, CtfLabIamEnforcementProfile.ACCOUNT, ALLOWED_TRAIL);
-        CtfLabIamTestSupport.putUserPolicy(user, "stop-one-trail", policy);
+              {"Effect":"Allow","Action":"cloudtrail:LookupEvents",
+               "Resource":"arn:aws:cloudtrail:%s:%s:trail/*"}
+            ]}""".formatted(REGION, CtfLabIamEnforcementProfile.ACCOUNT);
+        CtfLabIamTestSupport.putUserPolicy(user, "lookup-trails", policy);
     }
 
     @Test
-    void stopAllowedTrail() {
+    void lookupEventsAllowedWithTrailWildcardResource() {
         given()
                 .header("Authorization", playerCloudTrailAuth())
-                .header("X-Amz-Target", TARGET_PREFIX + "StopLogging")
+                .header("X-Amz-Target", TARGET_PREFIX + "LookupEvents")
                 .contentType(CONTENT_TYPE)
-                .body("{\"Name\":\"" + ALLOWED_TRAIL + "\"}")
+                .body("{\"MaxResults\":10}")
         .when()
                 .post("/")
         .then()
-                .statusCode(200);
+                .statusCode(200)
+                .body("Events", notNullValue());
     }
 
     @Test
-    void stopDecoyTrailDenied() {
+    void lookupEventsDeniedWhenResourceIsSpecificTrailOnly() {
+        String user = "cloudtrail-lookup-denied";
+        CtfLabIamTestSupport.createUser(user);
+        String akid = CtfLabIamTestSupport.createAccessKey(user);
+        String narrowPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"cloudtrail:LookupEvents",
+               "Resource":"arn:aws:cloudtrail:%s:%s:trail/other-trail"}
+            ]}""".formatted(REGION, CtfLabIamEnforcementProfile.ACCOUNT);
+        CtfLabIamTestSupport.putUserPolicy(user, "lookup-one-trail", narrowPolicy);
+
         given()
-                .header("Authorization", playerCloudTrailAuth())
-                .header("X-Amz-Target", TARGET_PREFIX + "StopLogging")
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(akid, "cloudtrail"))
+                .header("X-Amz-Target", TARGET_PREFIX + "LookupEvents")
                 .contentType(CONTENT_TYPE)
-                .body("{\"Name\":\"" + DECOY_TRAIL + "\"}")
+                .body("{}")
         .when()
                 .post("/")
         .then()
@@ -84,14 +94,11 @@ class CloudTrailIamScopedIntegrationTest {
     }
 
     private static void createTrail(String auth, String name, String bucket) {
-        given().header("Authorization", auth).when().put("/" + bucket).then().statusCode(200);
         given()
                 .header("Authorization", auth)
                 .header("X-Amz-Target", TARGET_PREFIX + "CreateTrail")
                 .contentType(CONTENT_TYPE)
-                .body("""
-                        {"Name":"%s","S3BucketName":"%s"}
-                        """.formatted(name, bucket))
+                .body("{\"Name\":\"%s\",\"S3BucketName\":\"%s\"}".formatted(name, bucket))
         .when()
                 .post("/")
         .then()
@@ -103,7 +110,7 @@ class CloudTrailIamScopedIntegrationTest {
                 .header("Authorization", auth)
                 .header("X-Amz-Target", TARGET_PREFIX + "StartLogging")
                 .contentType(CONTENT_TYPE)
-                .body("{\"Name\":\"" + name + "\"}")
+                .body("{\"Name\":\"%s\"}".formatted(name))
         .when()
                 .post("/")
         .then()

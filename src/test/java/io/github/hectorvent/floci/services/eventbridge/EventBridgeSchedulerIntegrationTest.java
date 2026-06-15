@@ -332,6 +332,9 @@ class EventBridgeSchedulerIntegrationTest {
                     public String containerCredentialsLinkLocalHost() { return "169.254.170.2"; }
 
                     @Override
+                    public boolean cloudTrailAllowSourceIpHeader() { return false; }
+
+                    @Override
                     public boolean validateFederatedTokens() { return false; }
 
                     @Override

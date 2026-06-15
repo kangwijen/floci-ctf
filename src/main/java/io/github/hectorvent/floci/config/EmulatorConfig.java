@@ -387,6 +387,14 @@ public interface EmulatorConfig {
         String containerCredentialsLinkLocalHost();
 
         /**
+         * When {@code true}, CloudTrail audit may use the {@code X-Floci-CloudTrail-Source-Ip}
+         * request header for {@code sourceIPAddress} (operator attack scripts). Does not affect
+         * IAM {@code aws:sourceip} evaluation. Env: {@code FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER}.
+         */
+        @WithDefault("false")
+        boolean cloudTrailAllowSourceIpHeader();
+
+        /**
          * When {@code true}, federated OIDC JWTs must be structurally valid, non-expired ({@code exp}),
          * and cryptographically verified when signing keys are configured.
          * Env: {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS}.

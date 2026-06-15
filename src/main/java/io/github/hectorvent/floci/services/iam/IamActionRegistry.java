@@ -427,18 +427,10 @@ public class IamActionRegistry {
                 || !"x-www-form-urlencoded".equalsIgnoreCase(mt.getSubtype())) {
             return null;
         }
-        InputStream in = ctx.getEntityStream();
-        if (in == null) {
-            return null;
+        byte[] body = RequestBodyBuffer.peek(ctx);
+        if (body == null) {
+            body = RequestBodyBuffer.buffer(ctx);
         }
-        byte[] body;
-        try {
-            body = in.readAllBytes();
-        } catch (IOException e) {
-            LOG.debugv(e, "Failed to buffer form body for IAM action resolution");
-            return null;
-        }
-        ctx.setEntityStream(new ByteArrayInputStream(body));
         if (body.length == 0) {
             return null;
         }

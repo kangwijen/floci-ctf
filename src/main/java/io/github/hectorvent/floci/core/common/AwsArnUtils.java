@@ -89,4 +89,28 @@ public final class AwsArnUtils {
         Arn parsed = parse(arn);
         return baseUrl + "/" + parsed.accountId() + "/" + parsed.resource();
     }
+
+    /**
+     * Converts an SQS queue URL to an ARN. Accepts already-ARN values unchanged.
+     */
+    public static String queueUrlToArn(String queueUrlOrArn, String region, String defaultAccount) {
+        if (queueUrlOrArn == null || queueUrlOrArn.isBlank()) {
+            return queueUrlOrArn;
+        }
+        if (queueUrlOrArn.startsWith("arn:aws:sqs:")) {
+            return queueUrlOrArn;
+        }
+        if (!queueUrlOrArn.startsWith("http")) {
+            return Arn.of("sqs", region, defaultAccount, queueUrlOrArn).toString();
+        }
+        int lastSlash = queueUrlOrArn.lastIndexOf('/');
+        if (lastSlash < 0) {
+            return queueUrlOrArn;
+        }
+        String queueName = queueUrlOrArn.substring(lastSlash + 1);
+        String prefix = queueUrlOrArn.substring(0, lastSlash);
+        int accountSlash = prefix.lastIndexOf('/');
+        String account = accountSlash >= 0 ? prefix.substring(accountSlash + 1) : defaultAccount;
+        return Arn.of("sqs", region, account, queueName).toString();
+    }
 }

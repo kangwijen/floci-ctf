@@ -315,7 +315,7 @@ public class GuardDutyService {
             Map<String, Object> accessKeyDetails = new LinkedHashMap<>();
             accessKeyDetails.put("accessKeyId", "AKIA" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase());
             accessKeyDetails.put("principalId", "AIDAI" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase());
-            accessKeyDetails.put("userName", "forensic-sample-user");
+            accessKeyDetails.put("userName", "sample-user");
             accessKeyDetails.put("userType", "IAMUser");
             resource.put("accessKeyDetails", accessKeyDetails);
         } else {
@@ -374,7 +374,7 @@ public class GuardDutyService {
             case "Recon:EC2/PortProbeUnprotectedPort" ->
                     "An unprotected port on EC2 instance i-0sample was probed from a suspicious host.";
             case "UnauthorizedAccess:IAMUser/MaliciousIPCaller.Custom" ->
-                    "API calls were made from a known malicious IP address by IAM user forensic-sample-user.";
+                    "API calls were made from a known malicious IP address by IAM user sample-user.";
             case "Policy:IAMUser/RootCredentialUsage" ->
                     "Root credentials were used to perform an API call in the account.";
             case "CryptoCurrency:EC2/BitcoinTool.B" ->

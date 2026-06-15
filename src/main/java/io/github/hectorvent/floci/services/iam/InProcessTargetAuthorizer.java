@@ -106,6 +106,10 @@ public class InProcessTargetAuthorizer {
     }
 
     public void authorizeSnsDelivery(String endpointArn, String protocol, String region) {
+        authorizeSnsDelivery(endpointArn, protocol, region, null);
+    }
+
+    public void authorizeSnsDelivery(String endpointArn, String protocol, String region, String sourceTopicArn) {
         if (endpointArn == null || endpointArn.isBlank()) {
             return;
         }
@@ -115,8 +119,10 @@ public class InProcessTargetAuthorizer {
             return;
         }
         if ("sqs".equalsIgnoreCase(protocol)) {
+            String queueArn = AwsArnUtils.queueUrlToArn(
+                    endpointArn, region, config.defaultAccountId());
             iamAuthorizer.authorizeServicePrincipal(
-                    SNS_SERVICE, "sqs", "SendMessage", endpointArn, region);
+                    SNS_SERVICE, "sqs", "SendMessage", queueArn, region, sourceTopicArn);
         }
     }
 

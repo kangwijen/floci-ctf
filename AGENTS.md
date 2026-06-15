@@ -122,6 +122,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `eks:CreateNodegroup` | `arn:aws:eks:REGION:ACCOUNT:nodegroup/CLUSTER/*` | `POST /clusters/{name}/node-groups` |
 | `athena:CreateWorkGroup` | `arn:aws:athena:REGION:ACCOUNT:workgroup/name` | `Name` in JSON body on `CreateWorkGroup` |
 | `cloudtrail:StopLogging` | `arn:aws:cloudtrail:REGION:ACCOUNT:trail/name` | `Name` in JSON body |
+| `cloudtrail:LookupEvents` | `arn:aws:cloudtrail:REGION:ACCOUNT:trail/*` when body has no trail name; named trail when `Name` / `TrailARN` present | JSON body (`LookupEvents` has no per-trail filter; IAM scopes the API) |
+| `iam:GetPolicyVersion` | `arn:aws:iam::ACCOUNT:policy/name` | `PolicyArn` in form body |
+| `iam:CreatePolicyVersion` | `arn:aws:iam::ACCOUNT:policy/name` | `PolicyArn` in form body |
 | `guardduty:GetFindings` | `arn:aws:guardduty:REGION:ACCOUNT:detector/id` | `DetectorId` in JSON body |
 | `config:PutConfigRule` | `arn:aws:config:REGION:ACCOUNT:config-rule/name` | `ConfigRule.ConfigRuleName` in JSON body |
 | `rds-data:ExecuteStatement` | `arn:aws:rds:REGION:ACCOUNT:cluster/name` | `resourceArn` in JSON body (REST routes) |
@@ -191,6 +194,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE=hybrid`, `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`.
 
+**Instance-keyed grading:** Forensics labs grade live `lookup-events` output with provision-time `answers.json` fields (`eventTime`, `accessKeyId`, `VersionId`). Authoring detail: [docs/services/cloudtrail.md#live-forensics-authoring](./docs/services/cloudtrail.md#live-forensics-authoring).
+
 | Area | Primary files / docs |
 |------|----------------------|
 | CloudTrail trail lifecycle | `CloudTrailService`, `CloudTrailJsonHandler`, [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
@@ -210,7 +215,7 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 **Forensic regression (unit/integration):**
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
 ```
 
 **Forensic compatibility (running instance):**
@@ -220,6 +225,22 @@ cd compatibility-tests && just test-forensic-java
 ```
 
 Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default) and operator or IAM credentials in `.env`.
+
+**Forensic gaps closed on `floci:local`:**
+
+| Gap | Status | Regression / doc |
+|-----|--------|------------------|
+| `cloudtrail:LookupEvents` IAM scoping | Closed | `CloudTrailLookupEventsScopedIamIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#ctf-fork-notes) |
+| `cloudtrail:StopLogging` audit + history | Closed | `CloudTrailTamperingAuditIntegrationTest` |
+| `sourceIPAddress` authoring hooks | Closed | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-For`; alternate `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER`; [Live forensics authoring](./docs/services/cloudtrail.md#live-forensics-authoring) |
+| SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) | Closed | `CloudTrailSqsAuditIntegrationTest` |
+| `lookup-events` pagination and `eventTime` format | Closed | `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
+| Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live forensics authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
+| SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
+| `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |
+| KMS `SecretBinary` envelope | Closed | `SecretsManagerKmsEnvelopeIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
+
+**Still open (do not grade player steps on these):** presigned GET, presigned POST, `GetSessionToken` session-policy intersection. Operator event injection API for CloudTrail is not implemented (future).
 
 ---
 

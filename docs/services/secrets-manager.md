@@ -40,6 +40,25 @@ When IAM enforcement is enabled:
 - Resource policies merge with identity policies via `IamAuthorizationService` (same pattern as S3 bucket policies).
 - Secrets created without a customer-managed KMS key use a placeholder ARN suffix consistent with AWS envelope semantics; KMS decrypt for `GetSecretValue` follows [KMS grant and key policy rules](kms.md#ctf-fork) when a CMK is attached.
 
+### KMS-wrapped `SecretBinary`
+
+**Status:** Closed on current `floci:local`. When a secret is encrypted with a customer-managed KMS key, `GetSecretValue` may return `SecretBinary` (base64) instead of `SecretString`. The blob is a Floci KMS envelope (`kms:v2:...` prefix in the decoded plaintext metadata path). Decrypt with the secret CMK:
+
+```bash
+export AWS_ENDPOINT_URL=http://localhost:4566
+
+# Fetch envelope (requires secretsmanager:GetSecretValue on the secret ARN)
+BINARY=$(aws secretsmanager get-secret-value --secret-id app/encrypted-flag \
+  --query SecretBinary --output text)
+
+# Write ciphertext for KMS CLI (Floci accepts the base64 SecretBinary directly)
+aws kms decrypt --key-id "$KMS_KEY_ID" \
+  --ciphertext-blob fileb://<(echo "$BINARY" | base64 -d) \
+  --query Plaintext --output text | base64 -d
+```
+
+`kms:Decrypt` IAM enforcement scopes to the CMK ARN from `KeyId` or from the `kms:v2:` blob. Regression: `SecretsManagerKmsEnvelopeIntegrationTest`.
+
 ## Examples
 
 ```bash

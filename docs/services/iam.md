@@ -311,6 +311,13 @@ Optional CTF controls (see [environment variables](../configuration/environment-
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per-provider HS256 secrets (for example `accounts_google.com`) |
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind Lambda/CodeBuild/ECS credential HTTP servers to `127.0.0.1` |
+| `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | Honor `X-Floci-CloudTrail-Source-Ip` for CloudTrail `sourceIPAddress` only |
+
+### Managed policy version timing
+
+**`iam:GetPolicyVersion`:** Scopes to `arn:aws:iam::ACCOUNT:policy/NAME` from `PolicyArn`. Callers can read a pending policy document before publishing.
+
+**`iam:CreatePolicyVersion`:** With `SetAsDefault=true`, the new document applies on the **next** HTTP API call from that principal. Same-request `GetSecretValue` or `kms:Decrypt` after `CreatePolicyVersion` in one process still evaluates the previous default until the following round trip. Regression: `CreatePolicyVersionGrantsSecretReadIntegrationTest`.
 
 The repository `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation by default. Export operator credentials on the host before starting Compose:
 

@@ -113,6 +113,8 @@ floci:
     # AWS link-local credential URIs (http://169.254.170.2/v2/credentials/{token}); binds servers to 0.0.0.0
     container-credentials-use-link-local-uri: true
     container-credentials-link-local-host: 169.254.170.2
+    # Operator-only: stamp sourceIPAddress on CloudTrail audit events (does not affect IAM aws:sourceip)
+    # cloud-trail-allow-source-ip-header: false  # FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER
     # Optional JWT/SAML validation for AssumeRoleWithWebIdentity / SAML
     validate-federated-tokens: false
     # federated-jwt-hmac-secret:           # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET

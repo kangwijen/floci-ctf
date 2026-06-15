@@ -39,4 +39,13 @@ public final class RequestBodyBuffer {
             return empty;
         }
     }
+
+    /**
+     * Returns a previously buffered body without reading or resetting the entity stream.
+     * Safe to call from response filters after {@link RequestBodyBufferFilter} ran.
+     */
+    public static byte[] peek(ContainerRequestContext ctx) {
+        Object cached = ctx.getProperty(PROPERTY);
+        return cached instanceof byte[] bytes ? bytes : null;
+    }
 }

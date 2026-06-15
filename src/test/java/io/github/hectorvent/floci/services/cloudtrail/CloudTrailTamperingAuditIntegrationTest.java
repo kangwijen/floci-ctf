@@ -104,4 +104,96 @@ class CloudTrailTamperingAuditIntegrationTest {
                 .body("Events[0].EventName", equalTo("StopLogging"))
                 .body("Events[0].EventSource", equalTo("cloudtrail.amazonaws.com"));
     }
+
+    @Test
+    void decoyEventsSurviveStopLoggingAndRestartLogging() {
+        String trailBucket = "cloudtrail-tamper-history-bucket";
+        String auditedBucket = "cloudtrail-tamper-audited-bucket";
+        String trailName = "tamper-history-trail";
+        String s3Auth =
+                "AWS4-HMAC-SHA256 Credential=AKIATEST00000001/20260227/us-east-1/s3/aws4_request";
+
+        given().when().put("/" + trailBucket).then().statusCode(200);
+        given().when().put("/" + auditedBucket).then().statusCode(200);
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "CreateTrail")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {"Name": "%s", "S3BucketName": "%s"}
+                        """.formatted(trailName, trailBucket))
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200);
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "StartLogging")
+                .contentType(CONTENT_TYPE)
+                .body("{\"Name\": \"%s\"}".formatted(trailName))
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", s3Auth)
+                .body("decoy-before-stop")
+        .when()
+                .put("/" + auditedBucket + "/decoy-object.txt")
+        .then()
+                .statusCode(200);
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "StopLogging")
+                .contentType(CONTENT_TYPE)
+                .body("{\"Name\": \"%s\"}".formatted(trailName))
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200);
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "LookupEvents")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {
+                            "LookupAttributes": [
+                                {"AttributeKey": "EventName", "AttributeValue": "PutObject"}
+                            ]
+                        }
+                        """)
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200)
+                .body("Events", hasSize(1))
+                .body("Events[0].EventName", equalTo("PutObject"));
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "StartLogging")
+                .contentType(CONTENT_TYPE)
+                .body("{\"Name\": \"%s\"}".formatted(trailName))
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200);
+
+        given()
+                .header("X-Amz-Target", TARGET_PREFIX + "LookupEvents")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {
+                            "LookupAttributes": [
+                                {"AttributeKey": "EventName", "AttributeValue": "StopLogging"}
+                            ]
+                        }
+                        """)
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200)
+                .body("Events", hasSize(1))
+                .body("Events[0].EventName", equalTo("StopLogging"));
+    }
 }

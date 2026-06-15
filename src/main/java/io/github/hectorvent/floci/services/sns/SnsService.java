@@ -1289,7 +1289,7 @@ public class SnsService {
                         region = extractRegionFromArn(topicArn);
                     }
                     if (targetAuthorizer != null) {
-                        targetAuthorizer.authorizeSnsDelivery(sub.getEndpoint(), "sqs", region);
+                        targetAuthorizer.authorizeSnsDelivery(sub.getEndpoint(), "sqs", region, topicArn);
                     }
                     String queueUrl = sqsArnToUrl(sub.getEndpoint());
                     boolean rawDelivery = "true".equalsIgnoreCase(sub.getAttributes().get("RawMessageDelivery"));

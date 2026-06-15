@@ -629,6 +629,13 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/explicit", arn);
     }
 
+    @Test
+    void cloudTrailLookupEventsWithoutNameUsesTrailWildcard() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"MaxResults\":10}");
+        String arn = builder.build("cloudtrail", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/*", arn);
+    }
+
     // ── GuardDuty ─────────────────────────────────────────────────────────────
 
     @Test

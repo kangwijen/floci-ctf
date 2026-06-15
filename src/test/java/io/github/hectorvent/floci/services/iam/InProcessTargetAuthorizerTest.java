@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -219,7 +220,7 @@ class InProcessTargetAuthorizerTest {
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.SNS_SERVICE), eq("sqs"), eq("SendMessage"),
-                eq(SQS_ARN), eq(REGION));
+                eq(SQS_ARN), eq(REGION), isNull());
     }
 
     @Test

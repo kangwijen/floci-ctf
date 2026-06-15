@@ -1,22 +1,31 @@
 package io.github.hectorvent.floci.services.cloudtrail;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AccountResolver;
+import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import io.github.hectorvent.floci.core.common.RequestContext;
 import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerResponseContext;
+import jakarta.ws.rs.core.MediaType;
 
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -33,9 +42,15 @@ public class CloudTrailEventRecorder {
     private static final DateTimeFormatter EVENT_TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
 
+    private static final String SQS_MESSAGE_BODY_REDACTED = "HIDDEN_DUE_TO_SECURITY_REASONS";
+
+    private static final Set<String> SQS_DATA_EVENT_NAMES = Set.of(
+            "SendMessage", "ReceiveMessage", "DeleteMessage", "ChangeMessageVisibility");
+
     private final ObjectMapper mapper;
     private final AccountResolver accountResolver;
     private final IamService iamService;
+    private final ResourceArnBuilder arnBuilder;
     private final EmulatorConfig config;
     private final Instance<RequestContext> requestContext;
 
@@ -43,11 +58,13 @@ public class CloudTrailEventRecorder {
     public CloudTrailEventRecorder(ObjectMapper mapper,
                                    AccountResolver accountResolver,
                                    IamService iamService,
+                                   ResourceArnBuilder arnBuilder,
                                    EmulatorConfig config,
                                    Instance<RequestContext> requestContext) {
         this.mapper = mapper;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
+        this.arnBuilder = arnBuilder;
         this.config = config;
         this.requestContext = requestContext;
     }
@@ -68,7 +85,7 @@ public class CloudTrailEventRecorder {
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("eventVersion", EVENT_VERSION);
-        event.put("userIdentity", buildUserIdentity(request, accountId));
+        event.put("userIdentity", buildUserIdentity(request, accountId, now));
         event.put("eventTime", EVENT_TIME.format(now));
         event.put("eventSource", eventSource);
         event.put("eventName", eventName);
@@ -77,14 +94,23 @@ public class CloudTrailEventRecorder {
         if (userAgent != null && !userAgent.isBlank()) {
             event.put("userAgent", userAgent);
         }
-        event.put("requestParameters", buildRequestParameters(request, credentialScope));
+        Map<String, Object> requestParameters = buildRequestParameters(request, credentialScope);
+        sanitizeRequestParameters(requestParameters, eventName);
+        event.put("requestParameters", requestParameters);
         event.put("responseElements", null);
         event.put("requestID", requestId);
         event.put("eventID", eventId);
         event.put("readOnly", isReadOnly(eventName));
         event.put("eventType", "AwsApiCall");
-        event.put("managementEvent", true);
+        boolean dataEvent = isDataEvent(eventSource, eventName, null);
+        event.put("managementEvent", !dataEvent);
+        event.put("eventCategory", dataEvent ? "Data" : "Management");
         event.put("recipientAccountId", accountId);
+        List<Map<String, Object>> resources = buildResources(
+                request, credentialScope, region, accountId, eventName);
+        if (resources != null && !resources.isEmpty()) {
+            event.put("resources", resources);
+        }
 
         int status = response.getStatus();
         if (status >= 400) {
@@ -96,7 +122,8 @@ public class CloudTrailEventRecorder {
                 event.put("errorMessage", error.message());
             }
         } else if (status >= 200 && status < 300) {
-            event.put("responseElements", buildSuccessResponseElements(request, credentialScope, eventName));
+            event.put("responseElements",
+                    buildSuccessResponseElements(request, response, credentialScope, eventName));
         }
 
         return event;
@@ -242,10 +269,14 @@ public class CloudTrailEventRecorder {
         if (eventName == null || eventName.isBlank()) {
             return false;
         }
+        if ("AssumeRole".equals(eventName) || "ReceiveMessage".equals(eventName)) {
+            return true;
+        }
         return eventName.startsWith("Get")
                 || eventName.startsWith("List")
                 || eventName.startsWith("Describe")
-                || eventName.startsWith("Head");
+                || eventName.startsWith("Head")
+                || eventName.startsWith("Lookup");
     }
 
     private static final Set<String> S3_DATA_EVENT_NAMES = Set.of(
@@ -262,6 +293,9 @@ public class CloudTrailEventRecorder {
         }
         if (eventSource != null && eventSource.startsWith("s3.")) {
             return S3_DATA_EVENT_NAMES.contains(eventName);
+        }
+        if (eventSource != null && eventSource.startsWith("sqs.")) {
+            return SQS_DATA_EVENT_NAMES.contains(eventName);
         }
         return false;
     }
@@ -362,7 +396,7 @@ public class CloudTrailEventRecorder {
         return name.replace('.', '-');
     }
 
-    private Map<String, Object> buildUserIdentity(ContainerRequestContext request, String accountId) {
+    private Map<String, Object> buildUserIdentity(ContainerRequestContext request, String accountId, Instant now) {
         String auth = request.getHeaderString("Authorization");
         String akid = accountResolver.extractAccessKeyId(auth);
         if (akid == null) {
@@ -381,8 +415,10 @@ public class CloudTrailEventRecorder {
             } else if (caller.arn().contains(":user/")) {
                 userIdentity.put("type", "IAMUser");
                 userIdentity.put("userName", caller.arn().substring(caller.arn().lastIndexOf('/') + 1));
+                userIdentity.put("sessionContext", buildIamUserSessionContext(now));
             } else if (caller.arn().contains(":assumed-role/")) {
                 userIdentity.put("type", "AssumedRole");
+                userIdentity.putAll(buildHttpAssumedRoleSessionContext(caller.arn(), caller.account(), now));
             } else {
                 userIdentity.put("type", "IAMUser");
             }
@@ -438,20 +474,301 @@ public class CloudTrailEventRecorder {
         }
 
         String target = request.getHeaderString("X-Amz-Target");
-        if (target != null) {
-            params.put("x-amz-target", target);
+        Map<String, String> form = parseFormParams(request);
+        addFormParam(params, form, "QueueUrl", "queueUrl");
+        addFormParam(params, form, "QueueName", "queueName");
+        addFormParam(params, form, "MessageBody", "messageBody");
+        addFormParam(params, form, "RoleArn", "roleArn");
+        addFormParam(params, form, "RoleSessionName", "roleSessionName");
+        addFormParam(params, form, "SecretId", "secretId");
+        addFormParam(params, form, "TableName", "tableName");
+        addFormParam(params, form, "StackName", "stackName");
+        addFormParam(params, form, "Name", "name");
+        addFormParam(params, form, "UserName", "userName");
+        addFormParam(params, form, "TopicArn", "topicArn");
+        addFormParam(params, form, "Action", "action");
+        if (!params.containsKey("secretId")) {
+            String secretId = readJsonStringField(request, "SecretId");
+            if (secretId != null && !secretId.isBlank()) {
+                params.put("secretId", secretId);
+            }
+        }
+        if (!params.containsKey("name")) {
+            String name = readJsonStringField(request, "Name");
+            if (name != null && !name.isBlank()) {
+                params.put("name", name);
+            }
+        }
+        if (target != null && target.contains("secretsmanager.ListSecrets")) {
+            Integer maxResults = readJsonIntField(request, "MaxResults");
+            if (maxResults != null) {
+                params.put("maxResults", maxResults);
+            }
+        }
+        return params.isEmpty() ? null : params;
+    }
+
+    private static void sanitizeRequestParameters(Map<String, Object> params, String eventName) {
+        if (params == null || eventName == null) {
+            return;
+        }
+        if ("SendMessage".equals(eventName) && params.containsKey("messageBody")) {
+            params.put("messageBody", SQS_MESSAGE_BODY_REDACTED);
+        }
+    }
+
+    private List<Map<String, Object>> buildResources(ContainerRequestContext request,
+                                                     String credentialScope,
+                                                     String region,
+                                                     String accountId,
+                                                     String eventName) {
+        if (credentialScope == null || credentialScope.isBlank()) {
+            return null;
+        }
+        String arn;
+        try {
+            arn = arnBuilder.build(credentialScope, request, region, accountId);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+        if (arn == null || arn.isBlank() || "*".equals(arn)) {
+            return null;
+        }
+        List<Map<String, Object>> resources = new ArrayList<>();
+        String type = cloudTrailResourceType(credentialScope, eventName, arn);
+        if (type != null) {
+            resources.add(resourceEntry(arn, type, accountId));
+        }
+        if ("AWS::S3::Object".equals(type)) {
+            String bucketArn = bucketArnFromObjectArn(arn);
+            if (bucketArn != null) {
+                resources.add(resourceEntry(bucketArn, "AWS::S3::Bucket", accountId));
+            }
+        }
+        return resources.isEmpty() ? null : resources;
+    }
+
+    private static Map<String, Object> resourceEntry(String arn, String type, String accountId) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("ARN", arn);
+        entry.put("type", type);
+        entry.put("accountId", accountId);
+        return entry;
+    }
+
+    private static String bucketArnFromObjectArn(String objectArn) {
+        if (objectArn == null || !objectArn.startsWith("arn:aws:s3:::")) {
+            return null;
+        }
+        String path = objectArn.substring("arn:aws:s3:::".length());
+        int slash = path.indexOf('/');
+        if (slash <= 0) {
+            return null;
+        }
+        return "arn:aws:s3:::" + path.substring(0, slash);
+    }
+
+    static String cloudTrailResourceType(String credentialScope, String eventName, String arn) {
+        if (arn == null || arn.isBlank() || "*".equals(arn)) {
+            return null;
+        }
+        return switch (credentialScope) {
+            case "s3" -> {
+                String resource = arn.startsWith("arn:aws:s3:::")
+                        ? arn.substring("arn:aws:s3:::".length()) : arn;
+                yield resource.contains("/") ? "AWS::S3::Object" : "AWS::S3::Bucket";
+            }
+            case "sqs" -> "AWS::SQS::Queue";
+            case "sns" -> "AWS::SNS::Topic";
+            case "secretsmanager" -> "AWS::SecretsManager::Secret";
+            case "cloudtrail" -> "AWS::CloudTrail::Trail";
+            case "iam" -> iamResourceType(arn);
+            case "sts" -> arn.contains(":role/") ? "AWS::IAM::Role" : iamResourceType(arn);
+            default -> null;
+        };
+    }
+
+    private static String iamResourceType(String arn) {
+        if (arn.contains(":user/")) {
+            return "AWS::IAM::User";
+        }
+        if (arn.contains(":role/")) {
+            return "AWS::IAM::Role";
+        }
+        if (arn.contains(":policy/")) {
+            return "AWS::IAM::Policy";
+        }
+        if (arn.contains(":group/")) {
+            return "AWS::IAM::Group";
+        }
+        return null;
+    }
+
+    private Integer readJsonIntField(ContainerRequestContext request, String fieldName) {
+        MediaType mediaType = request.getMediaType();
+        if (mediaType == null || !"x-amz-json-1.1".equals(mediaType.getSubtype())) {
+            return null;
+        }
+        byte[] body = RequestBodyBuffer.peek(request);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = mapper.readTree(body);
+            JsonNode field = node.get(fieldName);
+            if (field != null && field.isNumber()) {
+                return field.asInt();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String readJsonStringField(ContainerRequestContext request, String fieldName) {
+        MediaType mediaType = request.getMediaType();
+        if (mediaType == null || !"x-amz-json-1.1".equals(mediaType.getSubtype())) {
+            return null;
+        }
+        byte[] body = RequestBodyBuffer.peek(request);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = mapper.readTree(body);
+            JsonNode field = node.get(fieldName);
+            if (field != null && field.isTextual()) {
+                return field.asText();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static void addFormParam(Map<String, Object> params, Map<String, String> form,
+                                     String formKey, String trailKey) {
+        if (form == null || form.isEmpty()) {
+            return;
+        }
+        String value = form.get(formKey);
+        if (value != null && !value.isBlank()) {
+            params.put(trailKey, value);
+        }
+    }
+
+    private static Map<String, String> parseFormParams(ContainerRequestContext request) {
+        MediaType mediaType = request.getMediaType();
+        if (mediaType == null || !MediaType.APPLICATION_FORM_URLENCODED_TYPE.isCompatible(mediaType)) {
+            return Map.of();
+        }
+        byte[] body = RequestBodyBuffer.peek(request);
+        if (body == null) {
+            body = RequestBodyBuffer.buffer(request);
+        }
+        if (body == null || body.length == 0) {
+            return Map.of();
+        }
+        Charset charset = resolveCharset(mediaType);
+        String raw = new String(body, charset);
+        Map<String, String> params = new LinkedHashMap<>();
+        for (String pair : raw.split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            String key = eq >= 0 ? decodeForm(pair.substring(0, eq)) : decodeForm(pair);
+            String value = eq >= 0 ? decodeForm(pair.substring(eq + 1)) : "";
+            params.put(key, value);
         }
         return params;
     }
 
+    private static String decodeForm(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    private static Charset resolveCharset(MediaType mediaType) {
+        String name = mediaType.getParameters().get("charset");
+        if (name == null || name.isBlank()) {
+            return StandardCharsets.UTF_8;
+        }
+        try {
+            return Charset.forName(name);
+        } catch (RuntimeException e) {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    private static Map<String, Object> buildIamUserSessionContext(Instant now) {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("mfaAuthenticated", "false");
+        attributes.put("creationDate", EVENT_TIME.format(now));
+        return Map.of("attributes", attributes);
+    }
+
+    private static Map<String, Object> buildHttpAssumedRoleSessionContext(String arn, String accountId, Instant now) {
+        String roleName = "role";
+        String sessionName = "session";
+        int marker = arn.indexOf(":assumed-role/");
+        if (marker >= 0) {
+            String tail = arn.substring(marker + ":assumed-role/".length());
+            int slash = tail.indexOf('/');
+            if (slash > 0) {
+                roleName = tail.substring(0, slash);
+                sessionName = tail.substring(slash + 1);
+            } else if (!tail.isBlank()) {
+                roleName = tail;
+            }
+        }
+        String roleArn = "arn:aws:iam::" + accountId + ":role/" + roleName;
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("creationDate", EVENT_TIME.format(now));
+        attributes.put("mfaAuthenticated", "false");
+        Map<String, Object> sessionIssuer = new LinkedHashMap<>();
+        sessionIssuer.put("type", "Role");
+        sessionIssuer.put("principalId", "AROA" + accountId + roleName);
+        sessionIssuer.put("arn", roleArn);
+        sessionIssuer.put("accountId", accountId);
+        sessionIssuer.put("userName", roleName);
+        Map<String, Object> sessionContext = new LinkedHashMap<>();
+        sessionContext.put("sessionIssuer", sessionIssuer);
+        sessionContext.put("attributes", attributes);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("sessionContext", sessionContext);
+        return out;
+    }
+
     private Map<String, Object> buildSuccessResponseElements(ContainerRequestContext request,
+                                                             ContainerResponseContext response,
                                                              String credentialScope,
                                                              String eventName) {
-        if (!"s3".equals(credentialScope)) {
-            return null;
+        if ("s3".equals(credentialScope)) {
+            return buildS3ResponseElements(request, response, eventName);
+        }
+        if ("sts".equals(credentialScope) && eventName != null && eventName.startsWith("AssumeRole")) {
+            return parseStsAssumeRoleResponse(response);
+        }
+        if ("iam".equals(credentialScope) && "CreateAccessKey".equals(eventName)) {
+            return parseIamCreateAccessKeyResponse(response);
+        }
+        if ("sqs".equals(credentialScope) && "SendMessage".equals(eventName)) {
+            return parseSqsSendMessageResponse(response);
+        }
+        return null;
+    }
+
+    private Map<String, Object> buildS3ResponseElements(ContainerRequestContext request,
+                                                        ContainerResponseContext response,
+                                                        String eventName) {
+        Map<String, Object> elements = new LinkedHashMap<>();
+        Object versionId = response.getHeaders().getFirst("x-amz-version-id");
+        if (versionId != null) {
+            elements.put("x-amz-version-id", versionId.toString());
+        }
+        Object deleteMarker = response.getHeaders().getFirst("x-amz-delete-marker");
+        if (deleteMarker != null) {
+            elements.put("x-amz-delete-marker", deleteMarker.toString());
         }
         if ("CreateBucket".equals(eventName)) {
-            Map<String, Object> elements = new LinkedHashMap<>();
             String path = request.getUriInfo().getPath();
             if (path != null && !path.isBlank()) {
                 String bucket = path.startsWith("/") ? path.substring(1) : path;
@@ -463,9 +780,95 @@ public class CloudTrailEventRecorder {
                     elements.put("bucketName", bucket);
                 }
             }
-            return elements.isEmpty() ? null : elements;
         }
-        return null;
+        return elements.isEmpty() ? null : elements;
+    }
+
+    private static Map<String, Object> parseStsAssumeRoleResponse(ContainerResponseContext response) {
+        String body = responseBody(response);
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        String accessKeyId = xmlTagValue(body, "AccessKeyId");
+        String expiration = xmlTagValue(body, "Expiration");
+        String assumedRoleArn = xmlTagValue(body, "Arn");
+        String assumedRoleId = xmlTagValue(body, "AssumedRoleId");
+        if (accessKeyId == null && assumedRoleArn == null) {
+            return null;
+        }
+        Map<String, Object> elements = new LinkedHashMap<>();
+        if (accessKeyId != null || expiration != null) {
+            Map<String, Object> credentials = new LinkedHashMap<>();
+            if (accessKeyId != null) {
+                credentials.put("accessKeyId", accessKeyId);
+            }
+            if (expiration != null) {
+                credentials.put("expiration", expiration);
+            }
+            elements.put("credentials", credentials);
+        }
+        if (assumedRoleArn != null || assumedRoleId != null) {
+            Map<String, Object> assumedRoleUser = new LinkedHashMap<>();
+            if (assumedRoleArn != null) {
+                assumedRoleUser.put("arn", assumedRoleArn);
+            }
+            if (assumedRoleId != null) {
+                assumedRoleUser.put("assumedRoleId", assumedRoleId);
+            }
+            elements.put("assumedRoleUser", assumedRoleUser);
+        }
+        return elements.isEmpty() ? null : elements;
+    }
+
+    private static Map<String, Object> parseIamCreateAccessKeyResponse(ContainerResponseContext response) {
+        String body = responseBody(response);
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        String accessKeyId = xmlTagValue(body, "AccessKeyId");
+        String userName = xmlTagValue(body, "UserName");
+        String status = xmlTagValue(body, "Status");
+        String createDate = xmlTagValue(body, "CreateDate");
+        if (accessKeyId == null) {
+            return null;
+        }
+        Map<String, Object> accessKey = new LinkedHashMap<>();
+        accessKey.put("accessKeyId", accessKeyId);
+        if (userName != null) {
+            accessKey.put("userName", userName);
+        }
+        if (status != null) {
+            accessKey.put("status", status);
+        }
+        if (createDate != null) {
+            accessKey.put("createDate", createDate);
+        }
+        return Map.of("accessKey", accessKey);
+    }
+
+    private static Map<String, Object> parseSqsSendMessageResponse(ContainerResponseContext response) {
+        String body = responseBody(response);
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        String messageId = xmlTagValue(body, "MessageId");
+        String md5 = xmlTagValue(body, "MD5OfMessageBody");
+        if (messageId == null && md5 == null) {
+            return null;
+        }
+        Map<String, Object> elements = new LinkedHashMap<>();
+        if (messageId != null) {
+            elements.put("messageId", messageId);
+        }
+        if (md5 != null) {
+            elements.put("mD5OfMessageBody", md5);
+        }
+        return elements;
+    }
+
+    private static String responseBody(ContainerResponseContext response) {
+        Object entity = response.getEntity();
+        return entity instanceof String text ? text : null;
     }
 
     private String resolveRegion(ContainerRequestContext request) {
@@ -509,6 +912,12 @@ public class CloudTrailEventRecorder {
     }
 
     private String resolveSourceIp(ContainerRequestContext request) {
+        if (config.ctf().cloudTrailAllowSourceIpHeader()) {
+            String stamped = request.getHeaderString("X-Floci-CloudTrail-Source-Ip");
+            if (stamped != null && !stamped.isBlank()) {
+                return stamped.trim();
+            }
+        }
         if (config.auth().trustForwardedHeaders()) {
             String forwarded = request.getHeaderString("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
