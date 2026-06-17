@@ -17,7 +17,7 @@ Floci is a fast, free, and open-source local AWS service emulator built for deve
 
 ## Supported Services
 
-Floci emulates 55 AWS services. See the [Services Overview](services/index.md) for per-service operation counts, endpoints, and full protocol details.
+Floci emulates 58 AWS services. See the [Services Overview](services/index.md) for per-service operation counts, endpoints, and full protocol details.
 
 | Service | Protocol |
 |---|---|
@@ -43,6 +43,7 @@ Floci emulates 55 AWS services. See the [Services Overview](services/index.md) f
 | RDS (PostgreSQL / MySQL) | Query + wire proxy |
 | RDS Data API | REST JSON |
 | Neptune (graph DB / Gremlin) | Query + WebSocket proxy |
+| DocumentDB (MongoDB-compatible) | Query + MongoDB wire |
 | MSK (Kafka / Redpanda) | REST JSON + Kafka |
 | Athena | JSON 1.1 |
 | Glue Data Catalog + Schema Registry | JSON 1.1 |
@@ -123,7 +124,7 @@ Floci emulates 55 AWS services. See the [Services Overview](services/index.md) f
     aws s3 mb s3://my-bucket
     ```
 
-All 54 AWS services are immediately available at `http://localhost:4566`.
+All 58 AWS services are immediately available at `http://localhost:4566`.
 
 [Get started →](getting-started/quick-start.md){ .md-button .md-button--primary }
 [View services →](services/index.md){ .md-button }

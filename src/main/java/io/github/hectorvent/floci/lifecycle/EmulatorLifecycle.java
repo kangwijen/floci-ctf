@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.services.ec2.Ec2MetadataServer;
 import io.github.hectorvent.floci.services.codebuild.container.CodeBuildContainerCredentialsServer;
 import io.github.hectorvent.floci.services.ecs.container.EcsContainerCredentialsServer;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
+import io.github.hectorvent.floci.services.floci.ui.FlociUiManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheContainerManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheMemcachedContainerManager;
 import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheProxyManager;
@@ -72,6 +73,7 @@ public class EmulatorLifecycle {
     private final LambdaContainerCredentialsServer lambdaContainerCredentialsServer;
     private final CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer;
     private final EcrRegistryManager ecrRegistryManager;
+    private final FlociUiManager flociUiManager;
     private final InitLifecycleState initLifecycleState;
 
     @Inject
@@ -93,6 +95,7 @@ public class EmulatorLifecycle {
                              LambdaContainerCredentialsServer lambdaContainerCredentialsServer,
                              CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer,
                              EcrRegistryManager ecrRegistryManager,
+                             FlociUiManager flociUiManager,
                              InitLifecycleState initLifecycleState) {
         this.storageFactory = storageFactory;
         this.serviceRegistry = serviceRegistry;
@@ -113,6 +116,7 @@ public class EmulatorLifecycle {
         this.lambdaContainerCredentialsServer = lambdaContainerCredentialsServer;
         this.codeBuildContainerCredentialsServer = codeBuildContainerCredentialsServer;
         this.ecrRegistryManager = ecrRegistryManager;
+        this.flociUiManager = flociUiManager;
         this.initLifecycleState = initLifecycleState;
     }
 
@@ -260,6 +264,7 @@ public class EmulatorLifecycle {
         elastiCacheMemcachedContainerManager.stopAll();
         rdsContainerManager.stopAll();
         ecrRegistryManager.shutdown();
+        flociUiManager.shutdown();
         storageFactory.shutdownAll();
 
         LOG.info("=== AWS Local Emulator Stopped ===");

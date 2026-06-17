@@ -3,7 +3,7 @@
 **Protocol:** JSON 1.1 (`X-Amz-Target: com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.*`)
 **Endpoint:** `POST http://localhost:4566/`
 
-Floci implements CloudTrail trail lifecycle, `LookupEvents`, and optional HTTP audit recording when `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`. For the canonical supported-operation count across all services, see [Services Overview](index.md). CloudTrail is not yet listed in that matrix.
+Floci implements CloudTrail trail lifecycle, `LookupEvents`, and optional HTTP audit recording when `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`. Trails and their event selectors persist in Floci storage. For the canonical supported-operation count across all services, see [Services Overview](index.md).
 
 ## Supported Actions
 

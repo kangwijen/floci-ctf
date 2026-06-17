@@ -15,6 +15,8 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -38,6 +40,9 @@ public class StsQueryHandler {
     private final RegionResolver regionResolver;
     private final AccountResolver accountResolver;
     private final EmulatorConfig config;
+
+    @Context
+    HttpHeaders headers;
 
     @Inject
     public StsQueryHandler(IamService iamService, RegionResolver regionResolver,

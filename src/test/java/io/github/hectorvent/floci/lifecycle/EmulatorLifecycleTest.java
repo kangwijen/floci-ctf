@@ -72,6 +72,7 @@ class EmulatorLifecycleTest {
     @Mock private LambdaContainerCredentialsServer lambdaContainerCredentialsServer;
     @Mock private CodeBuildContainerCredentialsServer codeBuildContainerCredentialsServer;
     @Mock private EcrRegistryManager ecrRegistryManager;
+    @Mock private io.github.hectorvent.floci.services.floci.ui.FlociUiManager flociUiManager;
     @Mock private InitLifecycleState initLifecycleState;
     @Mock private EmulatorConfig.TlsConfig tlsConfig;
 
@@ -101,7 +102,7 @@ class EmulatorLifecycleTest {
                 initializationHooksRunner, sqsPoller, kinesisPoller, dynamodbStreamsPoller,
                 pipesService, ec2MetadataServer, ecsContainerCredentialsServer,
                 lambdaContainerCredentialsServer, codeBuildContainerCredentialsServer,
-                ecrRegistryManager, initLifecycleState);
+                ecrRegistryManager, flociUiManager, initLifecycleState);
     }
 
     private void stubStorageConfig() {

@@ -94,6 +94,7 @@ public class S3Controller {
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
     private final IamService iamService;
     private final EmulatorConfig emulatorConfig;
+    private final io.github.hectorvent.floci.services.floci.ui.UiPages uiPages;
 
     @Inject
     public S3Controller(S3Service s3Service, S3SelectService s3SelectService,
@@ -101,7 +102,8 @@ public class S3Controller {
                         RegionResolver regionResolver,
                         io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
                         IamService iamService,
-                        EmulatorConfig emulatorConfig) {
+                        EmulatorConfig emulatorConfig,
+                        io.github.hectorvent.floci.services.floci.ui.UiPages uiPages) {
         this.s3Service = s3Service;
         this.s3SelectService = s3SelectService;
         this.accessLogService = accessLogService;
@@ -109,15 +111,23 @@ public class S3Controller {
         this.currentVertxRequest = currentVertxRequest;
         this.iamService = iamService;
         this.emulatorConfig = emulatorConfig;
+        this.uiPages = uiPages;
     }
 
     // --- Bucket operations ---
 
     @GET
-    @Produces(MediaType.APPLICATION_XML)
-    public Response listBuckets(@HeaderParam("X-Amz-Target") String target) {
+    @Produces({MediaType.APPLICATION_XML, MediaType.TEXT_HTML})
+    public Response listBuckets(@HeaderParam("X-Amz-Target") String target,
+                                @HeaderParam("Accept") String accept) {
         if (target != null) {
             return null;
+        }
+        // A browser hitting the root endpoint (Accept: text/html) gets the Floci
+        // landing page; SDK/CLI callers (no Accept, */*, or an XML/JSON Accept) fall
+        // through to the normal S3 ListBuckets behavior untouched.
+        if (accept != null && accept.contains(MediaType.TEXT_HTML)) {
+            return Response.ok(uiPages.landingHtml(), MediaType.TEXT_HTML).build();
         }
         try {
             List<Bucket> buckets = s3Service.listBuckets();
@@ -136,7 +146,7 @@ public class S3Controller {
                    .end("Bucket");
             }
             xml.end("Buckets").end("ListAllMyBucketsResult");
-            return Response.ok(xml.build()).build();
+            return Response.ok(xml.build()).type(MediaType.APPLICATION_XML).build();
         } catch (AwsException e) {
             return xmlErrorResponse(e);
         }

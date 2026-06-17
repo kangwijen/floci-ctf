@@ -172,6 +172,7 @@ public interface EmulatorConfig {
         AppConfigDataStorageConfig appconfigdata();
         ElastiCacheStorageConfig elasticache();
         RdsStorageConfig rds();
+        Ec2StorageConfig ec2();
         NeptuneStorageConfig neptune();
         BackupStorageConfig backup();
         CloudFrontStorageConfig cloudfront();
@@ -272,6 +273,10 @@ public interface EmulatorConfig {
     }
 
     interface RdsStorageConfig {
+        Optional<String> mode();
+    }
+
+    interface Ec2StorageConfig {
         Optional<String> mode();
     }
 
@@ -473,6 +478,7 @@ public interface EmulatorConfig {
         AutoScalingServiceConfig autoscaling();
         BackupServiceConfig backup();
         NeptuneServiceConfig neptune();
+        DocDbServiceConfig docdb();
         Route53ServiceConfig route53();
         TransferServiceConfig transfer();
         TextractServiceConfig textract();
@@ -489,6 +495,7 @@ public interface EmulatorConfig {
         CloudFrontServiceConfig cloudfront();
         AppSyncServiceConfig appsync();
         BatchServiceConfig batch();
+        UiServiceConfig ui();
     }
 
     interface CloudTrailServiceConfig {
@@ -723,6 +730,19 @@ public interface EmulatorConfig {
         int proxyMaxPort();
 
         @WithDefault("tinkerpop/gremlin-server:3.7.3")
+        String defaultImage();
+
+        Optional<String> dockerNetwork();
+    }
+
+    interface DocDbServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("false")
+        boolean mock();
+
+        @WithDefault("mongo:7.0")
         String defaultImage();
 
         Optional<String> dockerNetwork();
@@ -1035,6 +1055,26 @@ public interface EmulatorConfig {
          */
         @WithDefault("synchronous")
         String emitMode();
+    }
+
+    interface UiServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("floci/floci-ui:latest")
+        String image();
+
+        @WithDefault("floci-ui")
+        String containerName();
+
+        /** Single fixed host port the UI is published on (single-instance service). */
+        @WithDefault("4500")
+        int port();
+
+        @WithDefault("false")
+        boolean keepRunningOnShutdown();
+
+        Optional<String> dockerNetwork();
     }
 
     interface EcrServiceConfig {
