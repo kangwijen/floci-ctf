@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.25 (merged 2026-06-15) |
+| Upstream release | 1.5.25 + 26 commits (merged 2026-06-09) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -70,7 +70,7 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/player1, not :r
 
 | Topic | Upstream | This fork |
 |-------|----------|-----------|
-| Default creds | `test`/`test` baked in | None in `docker/Dockerfile` |
+| Default creds | `test`/`test` baked in | None in `docker/Dockerfile`; upstream `floci`/`floci` deployer not seeded when IAM enforcement is on |
 | IAM enforcement | Off by default | On in `docker-compose.yml` |
 | SigV4 | Off by default | On with Compose profile |
 | Strict mode | N/A | Denies missing auth, unmapped actions, bad presign |
@@ -270,7 +270,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **1.5.25** (2026-06-15): AWS Batch, RDS provisioning, STS session secret persistence for RDS/ElastiCache IAM tokens, S3 conditional put atomicity, CloudFormation EC2 VPC/subnet provisioning, Glue partition ordering, SQS 1MB max message, AppConfig route fix. CTF hardening preserved; `InProcessTargetAuthorizer` hardened per AWS docs (Config `ListBucket`, Firehose stream `RoleARN`, BCM/CUR principals, Logs `roleArn` required for Kinesis/Firehose, EventBridge Batch `SubmitJob`).
+**Latest merge:** upstream **main** (26 commits, 2026-06-09): DocumentDB, EC2 persistence (#1297), native compat CI, Cognito client config parity, KMS EnableKey, SSM Run Command on EC2, CloudFormation ASG/CW/Logs/EKS/RDS/EC2/Kinesis/Firehose, UI landing page, IAM deployer preflight (#1250). CTF hardening preserved: `StsQueryHandler` caller identity, `S3Controller` SigV4 presign IAM, `ParquetEmitter` in-process IAM, EC2 flow logs + persisted VPC state, `seedDefaultDeployerPrincipal` skipped when `floci.services.iam.enforcement-enabled=true`, Compose IAM/SigV4/CloudTrail audit, `ctf-compat-java` CI job retained alongside upstream native compat.
 
 ```bash
 git fetch upstream main
