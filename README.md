@@ -31,8 +31,8 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Strict IAM mode | Off by default | On: denies unregistered keys and unknown action mappings |
 | SigV4 on API calls | Off by default | On: validates `Authorization` signatures |
 | Operator bypass | N/A | `FLOCI_AUTH_ROOT_*` pair bypasses enforcement for provisioning |
-| S3 pre-signed URLs | Default HMAC secret | SigV4 query auth; signed with IAM access keys or operator root pair |
-| Docker image defaults | `test`/`test` baked in | No default credentials in `docker/Dockerfile` |
+| S3 pre-signed URLs | Default HMAC secret or 12-digit account id in credential | SigV4 query auth; **generated** URLs signed with operator root AKIA; **inbound** presigned requests resolve account from `X-Amz-Credential` |
+| Docker image defaults | `test`/`test` baked in; optional `floci`/`floci` deployer | No default credentials in `docker/Dockerfile`; deployer principal not seeded when IAM enforcement is on |
 | Payload hashing | N/A | SigV4 validator hashes request bodies when `x-amz-content-sha256` is absent |
 | `sts:GetCallerIdentity` / `GetSessionToken` | Evaluated like any action | Policy-exempt (AWS parity): no Allow required; SigV4 and registered keys still apply |
 | `sts:GetCallerIdentity` response | Often returns account `:root` | Returns the **calling principal** (IAM user, assumed role, federated user, operator root, or 12-digit account id) |
@@ -45,8 +45,11 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Docker `HEALTHCHECK` | `/_floci/health` | `GET /health` (works when internal routes are hidden) |
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
+| Secrets Manager + KMS | Nested or double-wrapped `SecretBinary` possible | Single-layer envelopes: CMK encrypts plaintext once; pre-existing `kms:v2:` inputs stored without re-wrap; one `kms:Decrypt` yields application plaintext |
+| CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` recorded for Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
+| SQS `ListQueues` IAM deny | May surface as `ServiceNotAvailableException` | HTTP 403 `AccessDenied` (Query XML or JSON `AccessDeniedException`) when identity policy denies `sqs:ListQueues` |
 
-**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `PreSignedUrlFilter` (SigV4 presign), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
+**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 
 After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENTS.md](./AGENTS.md#upstream-sync).
 
@@ -300,7 +303,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | ELB v2 | In-process | ALB, NLB, target groups, listeners, routing rules, Lambda targets, tags |
 | CodeBuild | In-process with real Docker | Real buildspec execution, CloudWatch logs, S3 artifacts |
 | CodeDeploy | In-process with Lambda traffic shifting | Deployment groups, configs, lifecycle hooks, auto-rollback |
-| Auto Scaling | In-process with reconciler | Launch configs, ASGs, desired capacity reconciliation, lifecycle hooks |
+| Auto Scaling | In-process with reconciler | Launch configs, ASGs, desired capacity reconciliation, instance refresh, mixed-instances policy, lifecycle hooks |
 | AWS Backup | In-process | Vaults, backup plans, selections, simulated job lifecycle, recovery points |
 | AWS Config | In-process | Config rules, configuration recorders, delivery channels, conformance packs, tagging |
 | CloudTrail | In-process | Trail lifecycle, event selectors, logging status; management API only |
@@ -377,7 +380,7 @@ For more detail, see the [Storage Configuration documentation](https://floci.io/
 
 ## Multi-Account Isolation
 
-Floci supports per-account resource isolation with no extra setup. If `AWS_ACCESS_KEY_ID` is exactly 12 digits, Floci uses it as the account ID. Resources created by one account are invisible to another.
+Floci supports per-account resource isolation with no extra setup. If `AWS_ACCESS_KEY_ID` is exactly 12 digits, Floci uses it as the account ID. Inbound S3 presigned URLs can also carry a 12-digit account id in `X-Amz-Credential` (`AccountContextFilter`). Resources created by one account are invisible to another. CTF presigned URL **generation** still uses the operator root access key id for SigV4 signing.
 
 ## Forensic lab
 
@@ -397,7 +400,7 @@ Operator setup for a typical evidence chain:
 
 Inter-service audit (when audit is enabled and a trail is logging): Step Functions and API Gateway in-process SDK calls use the execution role plus `invokedBy` (`states.amazonaws.com`, `apigateway.amazonaws.com`). Internal delivery (Firehose to S3, SNS to SQS, CloudWatch Logs subscriptions, S3 access logs) uses `userIdentity.type=AWSService`. See [CloudTrail inter-service events](./docs/services/cloudtrail.md#inter-service-events-in-process-audit).
 
-Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`).
+Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`). SQS audit events include `requestParameters.queueUrl` for Query and JSON 1.0 APIs so `LookupEvents` can correlate queue-scoped player activity.
 
 5. Optional: configure [AWS Config](./docs/services/config.md) delivery channels for configuration snapshots in S3.
 
@@ -406,7 +409,7 @@ Enable S3 access logging for data-plane evidence ([S3 access logging](./docs/ser
 Forensic regression (with CTF core tests):
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
 ```
 
 Compatibility probes against a running instance ([compatibility-tests/README.md](./compatibility-tests/README.md)):
@@ -440,10 +443,12 @@ client = boto3.client(
 
 ## Focused regression tests
 
-**Core CTF hardening:**
+Canonical lists: [AGENTS.md CTF regression](./AGENTS.md#ctf-regression-tests).
+
+**Core CTF hardening (quick smoke):**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,ContainerEnvHardeningTest,EcsContainerCredentialsServerTest,LambdaContainerCredentialsServerTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,PolicyPrincipalMatcherTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,ApiGatewaySqsIntegrationTest
 ```
 
 On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` before tests that spawn containers.
@@ -535,18 +540,18 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 | Cognito | SRP `PASSWORD_VERIFIER` challenge includes `USERNAME` |
 | S3 | SDK ranged-get coverage (upstream test) |
 
-**CTF fork:** IAM enforcement applies to HTTP (`IamEnforcementFilter`) and full in-process delivery (`InProcessIamAuthorizer` for SFN/APIGW SDK integrations; `InProcessTargetAuthorizer` for Pipes, Scheduler, EventBridge replay, SNS/S3/SES notifications, Lambda ESM, Logs subscriptions, ELB/API Gateway/Cognito/CodeDeploy Lambda invoke, and CloudTrail/Config/Firehose/EC2 S3 delivery). `ResourceArnBuilder` scopes virtually all player-facing data-plane services; `pricing`, `ce` query APIs, and `ec2messages` intentionally stay `*` per AWS SAR. EMR `JobFlowIds[]` and tagging `ResourceARNList[]` evaluate every listed ARN. See [in-process IAM](./docs/services/iam.md#in-process-iam-non-http) and [AGENTS.md](./AGENTS.md#enforcement-surfaces).
+**CTF fork:** IAM enforcement applies to HTTP (`IamEnforcementFilter`) and full in-process delivery (`InProcessIamAuthorizer` for SFN/APIGW SDK integrations; `InProcessTargetAuthorizer` for Pipes, Scheduler, EventBridge replay, SNS/S3/SES notifications, Lambda ESM, Logs subscriptions, ELB/API Gateway/Cognito/CodeDeploy Lambda invoke, and CloudTrail/Config/Firehose/EC2 S3 delivery). API Gateway SQS query-protocol integrations (1.5.26) route through `AwsServiceRouter.invokeQuery`; JSON integrations still pass execution role credentials. `ResourceArnBuilder` scopes virtually all player-facing data-plane services; `pricing`, `ce` query APIs, and `ec2messages` intentionally stay `*` per AWS SAR. EMR `JobFlowIds[]` and tagging `ResourceARNList[]` evaluate every listed ARN. See [in-process IAM](./docs/services/iam.md#in-process-iam-non-http) and [AGENTS.md](./AGENTS.md#enforcement-surfaces).
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.26** (merged 2026-06-09). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
 
-**High-risk merge files:** `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `docker-compose.yml`, `docker/Dockerfile`.
+**High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 
 **Post-merge regression:**
 
 ```bash
-./mvnw test -Dtest=SigV4RequestValidatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,ContainerEnvHardeningTest
+./mvnw test -Dtest=SigV4RequestValidatorTest,IamEnforcementIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,StsAssumeRoleTrustIntegrationTest,ContainerEnvHardeningTest,ApiGatewaySqsIntegrationTest
 ```
 
 ## Upstream

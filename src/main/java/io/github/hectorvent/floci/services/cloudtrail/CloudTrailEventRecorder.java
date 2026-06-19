@@ -505,6 +505,12 @@ public class CloudTrailEventRecorder {
                 params.put("maxResults", maxResults);
             }
         }
+        if ("sqs".equals(credentialScope) && !params.containsKey("queueUrl")) {
+            String queueUrl = readJsonStringField(request, "QueueUrl");
+            if (queueUrl != null && !queueUrl.isBlank()) {
+                params.put("queueUrl", queueUrl);
+            }
+        }
         return params.isEmpty() ? null : params;
     }
 
@@ -604,9 +610,16 @@ public class CloudTrailEventRecorder {
         return null;
     }
 
+    private static boolean isAwsJsonMediaType(MediaType mediaType) {
+        if (mediaType == null) {
+            return false;
+        }
+        String subtype = mediaType.getSubtype();
+        return "x-amz-json-1.1".equals(subtype) || "x-amz-json-1.0".equals(subtype);
+    }
+
     private Integer readJsonIntField(ContainerRequestContext request, String fieldName) {
-        MediaType mediaType = request.getMediaType();
-        if (mediaType == null || !"x-amz-json-1.1".equals(mediaType.getSubtype())) {
+        if (!isAwsJsonMediaType(request.getMediaType())) {
             return null;
         }
         byte[] body = RequestBodyBuffer.peek(request);
@@ -625,8 +638,7 @@ public class CloudTrailEventRecorder {
     }
 
     private String readJsonStringField(ContainerRequestContext request, String fieldName) {
-        MediaType mediaType = request.getMediaType();
-        if (mediaType == null || !"x-amz-json-1.1".equals(mediaType.getSubtype())) {
+        if (!isAwsJsonMediaType(request.getMediaType())) {
             return null;
         }
         byte[] body = RequestBodyBuffer.peek(request);

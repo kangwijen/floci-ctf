@@ -167,4 +167,149 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
 
         assertEquals("flag{kms-key-policy}", new String(Base64.getDecoder().decode(plaintextB64)));
     }
+
+    @Test
+    void scopedPlayerCreatesAndDecryptsKmsSecretOnce() throws Exception {
+        String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+
+        String user = "ctf-kms-sm-scoped";
+        CtfLabIamTestSupport.createUser(user);
+        String playerAkid = CtfLabIamTestSupport.createAccessKey(user);
+
+        String keyId = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        String secretName = "ctf/kms-scoped-envelope";
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow",
+               "Action":["secretsmanager:CreateSecret","secretsmanager:GetSecretValue"],
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:%s-*"},
+              {"Effect":"Allow","Action":"kms:Decrypt",
+               "Resource":"arn:aws:kms:us-east-1:%s:key/%s"}
+            ]}""".formatted(
+                CtfLabIamEnforcementProfile.ACCOUNT, secretName,
+                CtfLabIamEnforcementProfile.ACCOUNT, keyId);
+        CtfLabIamTestSupport.putUserPolicy(user, "kms-sm-scoped", policy);
+
+        String playerSmAuth = CtfLabIamTestSupport.scopedAuth(playerAkid, "secretsmanager");
+        String playerKmsAuth = CtfLabIamTestSupport.scopedAuth(playerAkid, "kms");
+        String expectedPlaintext = "scoped-kms-plaintext-01";
+
+        ObjectNode create = objectMapper.createObjectNode();
+        create.put("Name", secretName);
+        create.put("SecretString", expectedPlaintext);
+        create.put("KmsKeyId", keyId);
+        given()
+                .header("Authorization", playerSmAuth)
+                .header("X-Amz-Target", "secretsmanager.CreateSecret")
+                .contentType("application/x-amz-json-1.1")
+                .body(create.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        String secretBinaryB64 = given()
+                .header("Authorization", playerSmAuth)
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().put("SecretId", secretName).toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", nullValue())
+                .body("SecretBinary", notNullValue())
+                .extract().jsonPath().getString("SecretBinary");
+
+        ObjectNode decryptReq = objectMapper.createObjectNode();
+        decryptReq.put("CiphertextBlob", secretBinaryB64);
+
+        String plaintextB64 = given()
+                .header("Authorization", playerKmsAuth)
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(decryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        String decrypted = new String(Base64.getDecoder().decode(plaintextB64));
+        assertEquals(expectedPlaintext, decrypted);
+        assertFalse(decrypted.startsWith("kms:v2:"));
+    }
+
+    @Test
+    void createSecretWithPreWrappedEnvelopeDoesNotDoubleWrap() throws Exception {
+        String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String rootSmAuth = rootKmsAuth.replace("/kms/", "/secretsmanager/");
+
+        String keyId = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        String expectedPlaintext = "nested-kms-plaintext-02";
+        ObjectNode encryptReq = objectMapper.createObjectNode();
+        encryptReq.put("KeyId", keyId);
+        encryptReq.put("Plaintext", Base64.getEncoder().encodeToString(expectedPlaintext.getBytes()));
+
+        String envelopeB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Encrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(encryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("CiphertextBlob");
+
+        String secretName = "ctf/kms-nested-test";
+        ObjectNode create = objectMapper.createObjectNode();
+        create.put("Name", secretName);
+        create.put("SecretString", envelopeB64);
+        create.put("KmsKeyId", keyId);
+        given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.CreateSecret")
+                .contentType("application/x-amz-json-1.1")
+                .body(create.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        String secretBinaryB64 = given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().put("SecretId", secretName).toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", nullValue())
+                .body("SecretBinary", equalTo(envelopeB64))
+                .extract().jsonPath().getString("SecretBinary");
+
+        ObjectNode decryptReq = objectMapper.createObjectNode();
+        decryptReq.put("CiphertextBlob", secretBinaryB64);
+
+        String plaintextB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(decryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        String decrypted = new String(Base64.getDecoder().decode(plaintextB64));
+        assertEquals(expectedPlaintext, decrypted);
+        assertFalse(decrypted.startsWith("kms:v2:"));
+    }
 }

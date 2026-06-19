@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.26 (merged 2026-06-09) |
+| Upstream release | 1.5.26 (released 2026-06-19) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -25,9 +25,9 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 4. Ship docs and tests with behavior changes (`README.md`, this file, `docs/services/iam.md` when IAM changes).
 5. Prioritize core CTF surface: IAM, STS, S3, SQS, SNS, DynamoDB, Lambda, KMS, Secrets Manager.
 
-**Fork-only HTTP auth (`core.common`):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode`, `ContainerEnvHardening`, `OperatorCredentialEnv`.
+**Fork-only HTTP auth (`core.common`):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `AccountResolver`, `AccountContextFilter`.
 
-**Related fork deltas:** `PreSignedUrlFilter`, `ResourcePolicyResolver`, `PolicyPrincipalMatcher`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `StsQueryHandler`, `SecretsManagerKmsSupport`, `EksTokenAuthenticator`.
+**Related fork deltas:** `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA, not upstream account-id signing), `ResourcePolicyResolver`, `PolicyPrincipalMatcher`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `StsQueryHandler`, `SecretsManagerKmsSupport`, `EksTokenAuthenticator`, `InProcessTargetAuthorizer`.
 
 ---
 
@@ -70,7 +70,7 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/player1, not :r
 
 | Topic | Upstream | This fork |
 |-------|----------|-----------|
-| Default creds | `test`/`test` baked in | None in `docker/Dockerfile`; upstream `floci`/`floci` deployer not seeded when IAM enforcement is on |
+| Default creds | `test`/`test` baked in; optional `floci`/`floci` deployer | None in `docker/Dockerfile`; `floci`/`floci` deployer not seeded when IAM enforcement is on (`seed-deployer-principal` gated) |
 | IAM enforcement | Off by default | On in `docker-compose.yml` |
 | SigV4 | Off by default | On with Compose profile |
 | Strict mode | N/A | Denies missing auth, unmapped actions, bad presign |
@@ -78,6 +78,7 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/player1, not :r
 | ASIA session token | Optional header | `x-amz-security-token` stored and validated for temporary creds when SigV4 is on |
 | `aws:sourceip` | Client `X-Forwarded-For` | Default ignores forwarded headers; set `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` behind a real proxy |
 | `GetCallerIdentity` | Often account `:root` | Calling principal ARN for IAM users |
+| Presigned URL signing | `X-Amz-Credential` may use 12-digit account id as access key id | Generator signs with operator root AKIA + SigV4; `AccountContextFilter` still resolves account from inbound presigned `X-Amz-Credential` |
 | Container env | User can set `AWS_*` | `ContainerEnvHardening` strips credential keys |
 
 ### Health and internal endpoints
@@ -112,7 +113,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `dynamodb:PartiQL*` | Same table ARN | `Statement` SQL (`FROM`/`INTO`/`UPDATE` table) on `ExecuteStatement` |
 | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:REGION:ACCOUNT:secret:name-*` | `SecretId` |
 | `kms:Decrypt` | `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` | `KeyId` or Floci `kms:v2:` blob in `CiphertextBlob` |
-| `sqs:ReceiveMessage` | `arn:aws:sqs:REGION:ACCOUNT:queue` | `QueueUrl` |
+| `sqs:ReceiveMessage` | `arn:aws:sqs:REGION:ACCOUNT:queue` | `QueueUrl` (Query form or JSON 1.0 body) |
+| `sqs:ListQueues` | `*` (list API per AWS) | Query `Action=ListQueues` or JSON 1.0 `AmazonSQS.ListQueues`; IAM deny returns `AccessDenied` (not `ServiceNotAvailable`) |
 | `sns:Subscribe` | `arn:aws:sns:REGION:ACCOUNT:topic` | `TopicArn` |
 | `ssm:GetParameter` | `arn:aws:ssm:REGION:ACCOUNT:parameter/path` | `Name` |
 | `cloudformation:DescribeStacks` | `arn:aws:cloudformation:REGION:ACCOUNT:stack/NAME/*` | `StackName` |
@@ -151,7 +153,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `textract:GetDocumentTextDetection` | `arn:aws:textract:REGION:ACCOUNT:job/id` | `JobId` (JSON); sync detect APIs use `*` per AWS |
 | `tagging:TagResources` | caller `ResourceARNList[]` ARNs | Floci evaluates each listed ARN (multi-ARN deny like EMR); AWS SAR uses `*` |
 
-**AWS-intentional `*` (no per-resource ARN in IAM):** `pricing` / `api.pricing`, `ce` query APIs, `ec2messages` (use condition keys on instance ARN). List-only APIs (`List*`, `DescribeReportDefinitions`, `ListExports`) use service wildcards where AWS does.
+**AWS-intentional `*` (no per-resource ARN in IAM):** `pricing` / `api.pricing`, `ce` query APIs, `ec2messages` (use condition keys on instance ARN). List-only APIs (`List*`, `DescribeReportDefinitions`, `ListExports`) use service wildcards where AWS does, including `sqs:ListQueues`.
+
+**Secrets Manager + KMS (single-layer envelopes):** When a CMK is attached, plaintext is encrypted once into base64 `SecretBinary` (`kms:v2:` wire format). Inputs that are already KMS ciphertext (raw UTF-8 or base64-wrapped `kms:v2:` / `kms:` blobs) are stored without re-wrapping. `kms:Decrypt` unwraps nested legacy envelopes (depth cap) so one call yields application plaintext. See [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary).
 
 **EMR `JobFlowIds[]` multi-cluster evaluation:** `TerminateJobFlows` and similar calls with multiple `JobFlowIds[]` entries build one cluster ARN per ID (`ResourceArnBuilder.buildAllEmrClusterResources`). `IamEnforcementFilter` evaluates identity policy against every derived ARN; explicit Deny on any cluster denies the request.
 
@@ -168,14 +172,16 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Area | Primary files |
 |------|---------------|
 | HTTP IAM + SigV4 | `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths` |
+| Account context | `AccountResolver`, `AccountContextFilter`, `RegionResolver` (presigned `X-Amz-Credential`, 12-digit AKID, STS session keys) |
 | Identity policies | `IamPolicyEvaluator`, `IamActionRegistry`, `IamService`, `ResourceArnBuilder` |
 | Resource policies | `ResourcePolicyResolver`, `PolicyPrincipalMatcher` |
 | STS / federated trust | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `FederatedTokenParser`, `PolicyPrincipalMatcher` |
 | S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator.validatePresignedUrl` |
+| API Gateway integrations | `ApiGatewayExecuteController`, `AwsServiceRouter` (JSON credentials for IAM; query-protocol SQS path-style from upstream 1.5.26) |
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
 | KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
 | In-process IAM | `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
-| In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder.buildInProcessEvent`, wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
+| In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder` (SQS `queueUrl` from Query form and JSON 1.0/1.1 bodies), wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
 | Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
@@ -185,6 +191,15 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | WAFv2 | `WafV2Handler`, `WafV2Service`, `services/wafv2/model/*` |
 
 **Do not assume:** `IamAuthorizationService`, `StsCallerGuard` exist as separate classes (HTTP enforcement is in `IamEnforcementFilter`).
+
+**Known gaps (prioritize next):**
+
+- Presigned POST, SigV4a, SSE query params in S3 presign
+- Federated JWT/SAML full crypto validation (structural parse only unless `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`)
+- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
+- Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
+- In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
+- Operator event injection API for CloudTrail is not implemented
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
@@ -233,12 +248,13 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `cloudtrail:LookupEvents` IAM scoping | Closed | `CloudTrailLookupEventsScopedIamIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#ctf-fork-notes) |
 | `cloudtrail:StopLogging` audit + history | Closed | `CloudTrailTamperingAuditIntegrationTest` |
 | `sourceIPAddress` authoring hooks | Closed | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-For`; alternate `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER`; [Live forensics authoring](./docs/services/cloudtrail.md#live-forensics-authoring) |
-| SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) | Closed | `CloudTrailSqsAuditIntegrationTest` |
+| SQS `ListQueues` IAM deny shape | Closed | `SqsListQueuesIamIntegrationTest`; IAM runs before service-disabled short-circuit |
+| SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) with `requestParameters.queueUrl` | Closed | Query and JSON 1.0 protocols; `CloudTrailSqsAuditIntegrationTest` |
 | `lookup-events` pagination and `eventTime` format | Closed | `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
 | Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live forensics authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
 | `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |
-| KMS `SecretBinary` envelope | Closed | `SecretsManagerKmsEnvelopeIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
+| KMS single-layer `SecretBinary` envelope | Closed | No double-wrap; one `kms:Decrypt` yields plaintext; `SecretsManagerKmsEnvelopeIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
 
 **Still open (do not grade player steps on these):** presigned GET, presigned POST, `GetSessionToken` session-policy intersection. Operator event injection API for CloudTrail is not implemented (future).
 
@@ -270,20 +286,25 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **1.5.26** (24 commits, 2026-06-09): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances (#1291), API Gateway SQS query integrations (#1385), Secrets Manager pagination, KMS RSA DigestInfo fix, Auto Scaling reconciliation. CTF hardening preserved: SigV4 presign generator (root AKIA), strict IAM + deployer seed gated by enforcement, flow logs + spot persistence, Cognito Lambda IAM via `InProcessTargetAuthorizer`, APIGW integration credentials on JSON path.
+**Latest merge:** upstream **1.5.26** (24 commits, merged 2026-06-09; released 2026-06-19): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances and embedded DNS (#1291, #1390), API Gateway SQS query integrations (#1385), CloudFormation provisioning expansion, Auto Scaling reconciliation/instance refresh, DocumentDB, SSM patch baselines and Run Command in EC2 containers. **CTF preserved:** SigV4 presign generator (operator root AKIA), `seedDeployerPrincipal` off when enforcement on, strict IAM, flow logs + spot persistence, Cognito auth flows via `InProcessTargetAuthorizer`, APIGW JSON integration credentials.
 
 ```bash
 git fetch upstream main
 git merge upstream/main
 ```
 
-Re-apply CTF behavior on conflicts:
+Re-apply CTF behavior on conflicts (high risk after 1.5.26):
 
-- Auth filters, `ContainerEnvHardening`, `OperatorCredentialEnv`
+- Auth/account: `AccountResolver`, `AccountContextFilter`, auth filters, `ContainerEnvHardening`, `OperatorCredentialEnv`
+- S3 presign: `PreSignedUrlGenerator` (keep SigV4 + root AKIA; do not take upstream account-id signing)
 - IAM/STS: `StsQueryHandler`, `IamService`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `PolicyPrincipalMatcher`, `IamActionRegistry`
+- APIGW: `ApiGatewayExecuteController`, `AwsServiceRouter` (keep JSON `integration.credentials` + CloudTrail audit)
+- Cognito: `CognitoService` (keep `InProcessTargetAuthorizer` on delivery paths)
+- EC2: `Ec2Service`, `Ec2QueryHandler`, `Ec2MetadataServer` (flow logs + persisted spot requests)
 - `SnsService` (`iamEnforcementEnabled` gate on default topic policy)
 - `SecretsManagerKmsSupport`, `EcsContainerManager` (`ContainerEnvHardening` in `buildEnvVars`)
 - `docker-compose.yml`, `docker/Dockerfile`, `application.yml` (`floci.ctf` block)
+- Tests: `PreSignedUrlIntegrationTest` (assert root AKIA in credential, not 12-digit account id)
 
 After merge: run CTF regression below; update `README.md` and this file; verify `git diff upstream/main HEAD -- docker-compose.yml docker/Dockerfile src/main/java/io/github/hectorvent/floci/core/common/ src/main/java/io/github/hectorvent/floci/services/sns/SnsService.java`.
 
@@ -294,13 +315,13 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,ApiGatewaySqsIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **E2E against running instance:**

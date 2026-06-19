@@ -6,6 +6,7 @@ import jakarta.inject.Inject;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Optional;
 
 /**
  * Encrypts secret payloads with a CMK so {@code GetSecretValue} returns a
@@ -37,5 +38,66 @@ public class SecretsManagerKmsSupport {
             return null;
         }
         return encryptSecretPayloadBase64(kmsKeyId, secretString.getBytes(StandardCharsets.UTF_8), region);
+    }
+
+    /**
+     * Detects an already-encrypted Floci KMS blob in create/put inputs (raw UTF-8
+     * {@code SecretString} or base64-wrapped {@code SecretString}/{@code SecretBinary}).
+     */
+    public Optional<byte[]> detectExistingEnvelope(String secretString, String secretBinary) {
+        if (secretString != null && !secretString.isEmpty()) {
+            byte[] utf8 = secretString.getBytes(StandardCharsets.UTF_8);
+            if (looksLikeKmsEnvelope(utf8)) {
+                return Optional.of(utf8);
+            }
+            Optional<byte[]> decoded = decodeBase64Envelope(secretString);
+            if (decoded.isPresent()) {
+                return decoded;
+            }
+        }
+        if (secretBinary != null && !secretBinary.isEmpty()) {
+            return decodeBase64Envelope(secretBinary);
+        }
+        return Optional.empty();
+    }
+
+    public String envelopeSecretBinaryBase64(byte[] envelopeBytes) {
+        return Base64.getEncoder().encodeToString(envelopeBytes);
+    }
+
+    public boolean isPreWrappedEnvelopeBase64(String base64) {
+        return decodeBase64Envelope(base64).isPresent();
+    }
+
+    public boolean isPreWrappedEnvelope(byte[] bytes) {
+        return looksLikeKmsEnvelope(bytes);
+    }
+
+    private static Optional<byte[]> decodeBase64Envelope(String base64) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(base64);
+            if (looksLikeKmsEnvelope(decoded)) {
+                return Optional.of(decoded);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // not valid base64
+        }
+        return Optional.empty();
+    }
+
+    private static boolean looksLikeKmsEnvelope(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return false;
+        }
+        String data = new String(bytes, StandardCharsets.UTF_8);
+        if (data.startsWith("kms:v2:")) {
+            String[] parts = data.substring("kms:v2:".length()).split(":", 4);
+            return parts.length >= 4;
+        }
+        if (data.startsWith("kms:")) {
+            String[] parts = data.substring("kms:".length()).split(":", 2);
+            return parts.length == 2;
+        }
+        return false;
     }
 }

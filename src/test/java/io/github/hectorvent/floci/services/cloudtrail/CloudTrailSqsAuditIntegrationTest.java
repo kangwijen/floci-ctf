@@ -19,14 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SQS Query API calls record {@code queueUrl}, {@code eventTime}, and {@code sourceIPAddress}
- * in CloudTrail audit events for lookup.
+ * SQS Query and JSON 1.0 API calls record {@code requestParameters.queueUrl},
+ * {@code eventTime}, and {@code sourceIPAddress} in CloudTrail audit events for lookup.
  */
 @QuarkusTest
 @TestProfile(CloudTrailForwardedHeadersAuditProfile.class)
 class CloudTrailSqsAuditIntegrationTest {
 
     private static final String CONTENT_TYPE = "application/x-amz-json-1.1";
+    private static final String SQS_JSON_CONTENT_TYPE = "application/x-amz-json-1.0";
     private static final String CLOUDTRAIL_TARGET =
             "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.";
     private static final String SQS_AUTH =
@@ -114,6 +115,50 @@ class CloudTrailSqsAuditIntegrationTest {
         assertEquals("HIDDEN_DUE_TO_SECURITY_REASONS",
                 sendEvent.path("requestParameters").path("messageBody").asText());
         assertNotNull(sendEvent.path("responseElements").path("messageId").asText(null));
+    }
+
+    @Test
+    void sqsJson10SendAndReceiveRecordQueueUrl() throws Exception {
+        String trailBucket = "sqs-json10-audit-trail-bucket";
+        String trailName = "sqs-json10-audit-trail";
+        String queueName = "sqs-json10-audit-queue";
+
+        provisionLoggingTrail(trailBucket, trailName);
+
+        String queueUrl = given()
+                .contentType(SQS_JSON_CONTENT_TYPE)
+                .header("X-Amz-Target", "AmazonSQS.CreateQueue")
+                .header("Authorization", SQS_AUTH)
+                .body("{\"QueueName\":\"" + queueName + "\"}")
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("QueueUrl");
+
+        given()
+                .contentType(SQS_JSON_CONTENT_TYPE)
+                .header("X-Amz-Target", "AmazonSQS.SendMessage")
+                .header("Authorization", SQS_AUTH)
+                .header("X-Forwarded-For", "203.0.113.20")
+                .body("{\"QueueUrl\":\"" + queueUrl + "\",\"MessageBody\":\"json10-payload\"}")
+                .when().post("/")
+                .then().statusCode(200);
+
+        given()
+                .contentType(SQS_JSON_CONTENT_TYPE)
+                .header("X-Amz-Target", "AmazonSQS.ReceiveMessage")
+                .header("Authorization", SQS_AUTH)
+                .header("X-Forwarded-For", "10.40.12.20")
+                .body("{\"QueueUrl\":\"" + queueUrl + "\"}")
+                .when().post("/")
+                .then().statusCode(200);
+
+        JsonNode sendEvent = lookupSingleEvent("SendMessage");
+        assertEquals(queueUrl, sendEvent.path("requestParameters").path("queueUrl").asText());
+        assertEquals("203.0.113.20", sendEvent.path("sourceIPAddress").asText());
+
+        JsonNode receiveEvent = lookupSingleEvent("ReceiveMessage");
+        assertEquals(queueUrl, receiveEvent.path("requestParameters").path("queueUrl").asText());
+        assertEquals("10.40.12.20", receiveEvent.path("sourceIPAddress").asText());
     }
 
     @Test

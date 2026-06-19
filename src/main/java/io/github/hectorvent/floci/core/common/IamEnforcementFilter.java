@@ -529,10 +529,35 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if ("s3".equals(credentialScope)) {
             return s3XmlAccessDenied(message);
         }
-        if (isFormEncoded(requestMediaType)) {
+        if (isFormEncoded(requestMediaType) || isQueryProtocolScope(credentialScope, requestMediaType)) {
             return queryXmlAccessDenied(message);
         }
         return jsonAccessDenied(message);
+    }
+
+    /**
+     * Query-protocol services (SQS, SNS, IAM, STS, ...) respond with XML {@code ErrorResponse}
+     * even when the client omits {@code Content-Type} on the form-encoded POST.
+     */
+    private static boolean isQueryProtocolScope(String credentialScope, MediaType requestMediaType) {
+        if (credentialScope == null || isAwsJsonContentType(requestMediaType)) {
+            return false;
+        }
+        return switch (credentialScope) {
+            case "sqs", "sns", "iam", "sts", "ec2", "rds", "elasticache", "cloudformation",
+                 "email", "ses", "monitoring", "autoscaling", "elasticloadbalancing", "neptune",
+                 "docdb" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isAwsJsonContentType(MediaType mt) {
+        if (mt == null || !"application".equalsIgnoreCase(mt.getType())) {
+            return false;
+        }
+        String subtype = mt.getSubtype();
+        return subtype != null
+                && (subtype.startsWith("x-amz-json-") || "json".equalsIgnoreCase(subtype));
     }
 
     private static boolean isFormEncoded(MediaType mt) {

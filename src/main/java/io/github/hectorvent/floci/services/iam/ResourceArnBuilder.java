@@ -262,6 +262,7 @@ public class ResourceArnBuilder {
     private String buildSecretsManagerArnFromJson(JsonNode node, String region, String accountId) {
         String secretId = firstNonBlank(
                 jsonText(node, "SecretId"),
+                jsonText(node, "Name"),
                 jsonText(node, "ARN"),
                 jsonFirstArrayElement(node, "SecretIdList"));
         if (secretId == null || secretId.isBlank()) {
@@ -783,6 +784,7 @@ public class ResourceArnBuilder {
     private String buildSecretsManagerArn(ContainerRequestContext ctx, String region, String accountId) {
         String secretId = firstNonBlank(
                 readJsonStringField(ctx, "SecretId"),
+                readJsonStringField(ctx, "Name"),
                 readJsonArnField(ctx, "ARN"),
                 readJsonFirstArrayElement(ctx, "SecretIdList"));
         if (secretId == null || secretId.isBlank()) {

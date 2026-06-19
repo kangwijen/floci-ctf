@@ -42,22 +42,29 @@ When IAM enforcement is enabled:
 
 ### KMS-wrapped `SecretBinary`
 
-**Status:** Closed on current `floci:local`. When a secret is encrypted with a customer-managed KMS key, `GetSecretValue` may return `SecretBinary` (base64) instead of `SecretString`. The blob is a Floci KMS envelope (`kms:v2:...` prefix in the decoded plaintext metadata path). Decrypt with the secret CMK:
+**Status:** Closed on current `floci:local`. When a secret uses a customer-managed KMS key, `GetSecretValue` returns `SecretBinary` (base64) instead of `SecretString`. The value is a Floci KMS `CiphertextBlob` (`kms:v2:` wire format after base64 decode). One `kms:Decrypt` on that blob yields the application plaintext; there is no nested envelope to unwrap.
+
+**Storage rules (CTF fork):**
+
+- Plaintext supplied via `SecretString` or `SecretBinary` on create/update is encrypted once with the secret CMK and stored as base64 `SecretBinary`.
+- Payloads that are already KMS ciphertext (decoded bytes begin with `kms:v2:`) are stored as-is; Floci does not re-wrap them.
+
+Players need `secretsmanager:GetSecretValue` on the secret ARN, then `kms:Decrypt` on the CMK (from `--key-id` or the key id embedded in the blob). `kms:Decrypt` IAM enforcement scopes to `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` from `KeyId` or from the `kms:v2:` blob. Regression: `SecretsManagerKmsEnvelopeIntegrationTest`.
 
 ```bash
 export AWS_ENDPOINT_URL=http://localhost:4566
 
-# Fetch envelope (requires secretsmanager:GetSecretValue on the secret ARN)
-BINARY=$(aws secretsmanager get-secret-value --secret-id app/encrypted-flag \
-  --query SecretBinary --output text)
+# Fetch ciphertext (requires secretsmanager:GetSecretValue on the secret ARN)
+BINARY=$(aws secretsmanager get-secret-value --secret-id my-app/cmk-secret \
+  --query SecretBinary --output text \
+  --endpoint-url "$AWS_ENDPOINT_URL")
 
-# Write ciphertext for KMS CLI (Floci accepts the base64 SecretBinary directly)
-aws kms decrypt --key-id "$KMS_KEY_ID" \
-  --ciphertext-blob fileb://<(echo "$BINARY" | base64 -d) \
-  --query Plaintext --output text | base64 -d
+# Single decrypt -> application plaintext (SecretBinary is valid CiphertextBlob base64)
+aws kms decrypt --key-id "$CMK_KEY_ID" \
+  --ciphertext-blob "$BINARY" \
+  --query Plaintext --output text \
+  --endpoint-url "$AWS_ENDPOINT_URL" | base64 -d
 ```
-
-`kms:Decrypt` IAM enforcement scopes to the CMK ARN from `KeyId` or from the `kms:v2:` blob. Regression: `SecretsManagerKmsEnvelopeIntegrationTest`.
 
 ## Examples
 

@@ -16,8 +16,16 @@ import jakarta.ws.rs.ext.Provider;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Rejects requests to services disabled in {@code floci.services.*.enabled} configuration.
+ *
+ * <p>Runs after {@link IamEnforcementFilter} so authenticated callers without permission
+ * receive {@code AccessDenied} (403) from IAM rather than {@code ServiceNotAvailable} (400)
+ * when a service is disabled in config but the action is still IAM-scoped (e.g.
+ * {@code sqs:ListQueues}).
+ */
 @Provider
-@Priority(Priorities.AUTHENTICATION - 200)
+@Priority(Priorities.AUTHENTICATION + 25)
 public class ServiceEnabledFilter implements ContainerRequestFilter {
 
     private static final ObjectMapper CBOR_MAPPER = new ObjectMapper(new CBORFactory());

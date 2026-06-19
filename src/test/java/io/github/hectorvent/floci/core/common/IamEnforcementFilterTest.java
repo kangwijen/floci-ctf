@@ -126,6 +126,27 @@ class IamEnforcementFilterTest {
     }
 
     @Test
+    void sqsQueryScopeGetsXmlWhenContentTypeMissing() {
+        Response r = IamEnforcementFilter.accessDeniedResponse(
+                "sqs:ListQueues", "sqs", null);
+
+        assertEquals(403, r.getStatus());
+        assertEquals(MediaType.APPLICATION_XML_TYPE, r.getMediaType());
+        String body = entityString(r);
+        assertTrue(body.contains("<Code>AccessDenied</Code>"), body);
+        assertTrue(body.contains("sqs:ListQueues"), body);
+    }
+
+    @Test
+    void sqsJsonContentTypeGetsJsonErrorResponse() {
+        Response r = IamEnforcementFilter.accessDeniedResponse(
+                "sqs:ListQueues", "sqs", MediaType.valueOf("application/x-amz-json-1.0"));
+
+        assertEquals(MediaType.APPLICATION_JSON_TYPE, r.getMediaType());
+        assertTrue(entityString(r).contains("\"__type\":\"AccessDeniedException\""));
+    }
+
+    @Test
     void jsonErrorEscapesQuotesInMessage() {
         Response r = IamEnforcementFilter.accessDeniedResponse(
                 "iam:Action\"WithQuotes", "iam", MediaType.APPLICATION_JSON_TYPE);

@@ -576,6 +576,14 @@ public class SecretsManagerService {
 
     private void applyKmsEnvelope(String kmsKeyId, String region, SecretVersion version,
                                   String secretString, String secretBinary) {
+        if (kmsSupport != null && kmsKeyId != null && !kmsKeyId.isBlank()) {
+            Optional<byte[]> existing = kmsSupport.detectExistingEnvelope(secretString, secretBinary);
+            if (existing.isPresent()) {
+                version.setSecretString(null);
+                version.setSecretBinary(kmsSupport.envelopeSecretBinaryBase64(existing.get()));
+                return;
+            }
+        }
         version.setSecretString(secretString);
         version.setSecretBinary(secretBinary);
         if (kmsSupport == null || kmsKeyId == null || kmsKeyId.isBlank()) {

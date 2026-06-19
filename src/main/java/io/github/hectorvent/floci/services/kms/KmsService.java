@@ -754,7 +754,14 @@ public class KmsService {
      * Single-pass decrypt + source-key-ARN resolution. {@link #decrypt} and
      * {@link #decryptToKeyArn} remain independent primitives — neither delegates here.
      */
+    private static final int MAX_NESTED_DECRYPT_DEPTH = 8;
+
     public DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext, String region) {
+        return decryptAndResolveKey(ciphertext, encryptionContext, region, MAX_NESTED_DECRYPT_DEPTH);
+    }
+
+    private DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext,
+                                               String region, int depthRemaining) {
         ParsedBlob parsed = parseBlob(ciphertext);
         if (!parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
@@ -766,7 +773,20 @@ public class KmsService {
         } catch (AwsException e) {
             keyArn = null;
         }
+        if (depthRemaining > 0 && looksLikeKmsEnvelope(plaintext)) {
+            DecryptResult inner = decryptAndResolveKey(plaintext, encryptionContext, region, depthRemaining - 1);
+            return new DecryptResult(inner.plaintext(), keyArn != null ? keyArn : inner.keyArn());
+        }
         return new DecryptResult(plaintext, keyArn);
+    }
+
+    private static boolean looksLikeKmsEnvelope(byte[] bytes) {
+        try {
+            parseBlob(bytes);
+            return true;
+        } catch (AwsException e) {
+            return false;
+        }
     }
 
     public record DecryptResult(byte[] plaintext, String keyArn) {}
