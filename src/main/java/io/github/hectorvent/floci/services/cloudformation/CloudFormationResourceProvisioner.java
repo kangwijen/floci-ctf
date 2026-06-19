@@ -776,12 +776,14 @@ public class CloudFormationResourceProvisioner {
         }
 
         var asg = autoScalingService.createAutoScalingGroup(region, name,
-                blankToNull(launchConfigName), blankToNull(launchTemplateName), blankToNull(launchTemplateVersion),
+                blankToNull(launchConfigName), null, blankToNull(launchTemplateName), blankToNull(launchTemplateVersion),
+                null,
                 parseIntProp(props, "MinSize", engine, 0),
                 parseIntProp(props, "MaxSize", engine, 0),
                 parseIntProp(props, "DesiredCapacity", engine, 0),
                 parseIntProp(props, "Cooldown", engine, 0),
                 resolveStringList(props, "AvailabilityZones", engine),
+                resolveStringList(props, "VPCZoneIdentifier", engine),
                 resolveStringList(props, "TargetGroupARNs", engine),
                 resolveStringList(props, "LoadBalancerNames", engine),
                 resolveOptional(props, "HealthCheckType", engine),

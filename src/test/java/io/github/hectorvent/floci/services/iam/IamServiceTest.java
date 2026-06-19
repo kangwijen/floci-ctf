@@ -27,15 +27,27 @@ class IamServiceTest {
 
     @BeforeEach
     void setUp() {
-        iamService = new IamService(
+        iamService = iamService(false);
+    }
+
+    private static IamService iamService(boolean seedDeployerPrincipal) {
+        return iamService(seedDeployerPrincipal, new InMemoryStorage<>());
+    }
+
+    private static IamService iamService(boolean seedDeployerPrincipal, InMemoryStorage<String, AccessKey> accessKeys) {
+        return new IamService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
+                accessKeys,
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
-                new InMemoryStorage<>(),
-                new RegionResolver("us-east-1", "000000000000")
+                new RegionResolver("us-east-1", "000000000000"),
+                new AssumeRoleTrustPolicyEvaluator(
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                seedDeployerPrincipal
         );
     }
 
@@ -543,7 +555,16 @@ class IamServiceTest {
     }
 
     @Test
-    void seedDefaultsCreatesDefaultDeployerPrincipal() {
+    void seedDefaultsDoesNotCreateDefaultDeployerPrincipalByDefault() {
+        iamService.seedDefaults();
+
+        assertThrows(AwsException.class, () -> iamService.getUser("floci-deployer"));
+        assertTrue(iamService.resolveCallerArn("floci").isEmpty());
+    }
+
+    @Test
+    void seedDefaultsCreatesConfiguredDefaultDeployerPrincipal() {
+        iamService = iamService(true);
         iamService.seedDefaults();
 
         IamUser user = iamService.getUser("floci-deployer");
@@ -563,6 +584,21 @@ class IamServiceTest {
 
         assertEquals("InvalidInput", ex.getErrorCode());
         assertEquals("PolicySourceArn must identify an IAM user or role.", ex.getMessage());
+    }
+
+    @Test
+    void seedDefaultsDoesNotReplaceExistingDeployerAccessKey() {
+        InMemoryStorage<String, AccessKey> accessKeys = new InMemoryStorage<>();
+        iamService = iamService(true, accessKeys);
+        iamService.createUser("existing", "/");
+        accessKeys.put("floci", new AccessKey("floci", "existing-secret", "existing"));
+
+        iamService.seedDefaults();
+
+        assertEquals(
+                "arn:aws:iam::000000000000:user/existing",
+                iamService.resolveCallerArn("floci").orElseThrow());
+        assertEquals("existing-secret", iamService.findSecretKey("floci").orElseThrow());
     }
 
     @Test

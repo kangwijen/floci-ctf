@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.25 + 26 commits (merged 2026-06-09) |
+| Upstream release | 1.5.26 (merged 2026-06-09) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -270,7 +270,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **main** (26 commits, 2026-06-09): DocumentDB, EC2 persistence (#1297), native compat CI, Cognito client config parity, KMS EnableKey, SSM Run Command on EC2, CloudFormation ASG/CW/Logs/EKS/RDS/EC2/Kinesis/Firehose, UI landing page, IAM deployer preflight (#1250). CTF hardening preserved: `StsQueryHandler` caller identity, `S3Controller` SigV4 presign IAM, `ParquetEmitter` in-process IAM, EC2 flow logs + persisted VPC state, `seedDefaultDeployerPrincipal` skipped when `floci.services.iam.enforcement-enabled=true`, Compose IAM/SigV4/CloudTrail audit, `ctf-compat-java` CI job retained alongside upstream native compat.
+**Latest merge:** upstream **1.5.26** (24 commits, 2026-06-09): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances (#1291), API Gateway SQS query integrations (#1385), Secrets Manager pagination, KMS RSA DigestInfo fix, Auto Scaling reconciliation. CTF hardening preserved: SigV4 presign generator (root AKIA), strict IAM + deployer seed gated by enforcement, flow logs + spot persistence, Cognito Lambda IAM via `InProcessTargetAuthorizer`, APIGW integration credentials on JSON path.
 
 ```bash
 git fetch upstream main

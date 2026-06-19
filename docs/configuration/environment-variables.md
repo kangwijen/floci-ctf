@@ -233,6 +233,7 @@ See [Initialization Hooks](./initialization-hooks.md) for lifecycle phases and s
 | `FLOCI_SERVICES_IAM_ENABLED` | `true` | Enable the IAM service |
 | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | When `true`, enforce IAM policies on API calls. See [CTF hardening](#ctf-hardening) for the fork Compose default |
 | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | When `true` with enforcement enabled, deny unregistered access keys and unknown IAM action mappings instead of allowing them through. See [CTF hardening](#ctf-hardening) |
+| `FLOCI_SERVICES_IAM_SEED_DEPLOYER_PRINCIPAL` | `false` | Create a local `floci-deployer` IAM user with `AdministratorAccess` and static `floci`/`floci` credentials (ignored when IAM enforcement is enabled in this fork) |
 
 ### KMS
 

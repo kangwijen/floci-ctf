@@ -52,7 +52,7 @@ public interface EmulatorConfig {
     @WithDefault("000000000000")
     String defaultAccountId();
 
-    @WithDefault("512")
+    @WithDefault("2048")
     int maxRequestSize();
 
     @WithDefault("public.ecr.aws")
@@ -653,6 +653,9 @@ public interface EmulatorConfig {
          */
         @WithDefault("false")
         boolean strictEnforcementEnabled();
+
+        @WithDefault("false")
+        boolean seedDeployerPrincipal();
     }
 
     interface MskServiceConfig {

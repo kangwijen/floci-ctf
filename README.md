@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.25**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.26**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -463,6 +463,20 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localstack/init` and `/_localstack/health` endpoints are still served. Once the emulator is up, the log also ends with a LocalStack-style `Ready.` line, so tooling that watches the log for it, such as the default wait strategy of Testcontainers' `LocalStackContainer`, works unchanged. Set `LOCALSTACK_PARITY=false` to opt out of automatic translation.
 
 ## Upstream highlights
+
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.26** (2026-06-19):
+
+| Area | Change |
+|---|---|
+| CloudFormation | EC2, RDS, EKS, CloudWatch Logs/alarms, Auto Scaling, Kinesis/Firehose provisioning; `Fn::GetAZs`, `Fn::Cidr` |
+| Auto Scaling | Group reconciliation, instance refresh, mixed-instances policy parity |
+| EC2 | Spot Instance requests; embedded DNS; persisted state for CFN references |
+| Cognito | Password recovery flow; user pool client validation |
+| API Gateway | SQS query-protocol (path-style) integrations |
+| Auth/S3 | Account context from presigned `X-Amz-Credential` (fork keeps SigV4 signing with operator root AKIA) |
+| Lambda | SQS ESM DLQ redrive; runtime invocation ack body |
+| SSM | Patch baselines; run commands in EC2 containers |
+| DocumentDB | New service emulation |
 
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026-06-15):
 

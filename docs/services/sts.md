@@ -51,3 +51,5 @@ When IAM enforcement is enabled:
 | `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |
 
 STS control-plane calls still require SigV4 from a registered principal or the operator root pair.
+
+When `FLOCI_SERVICES_IAM_SEED_DEPLOYER_PRINCIPAL=true` and IAM enforcement is off, requests signed with the seeded `floci` access key return `arn:aws:iam::000000000000:user/floci-deployer`. With IAM enforcement enabled (Compose default), the deployer principal is not seeded.

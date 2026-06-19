@@ -54,13 +54,15 @@ public class IamService {
     private final RegionResolver regionResolver;
     private final AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator;
     private final AtomicInteger sessionLookupCount = new AtomicInteger();
-    private boolean seedDefaultDeployer = true;
+    private final boolean seedDeployerPrincipal;
 
     @Inject
     public IamService(StorageFactory storageFactory,
                       EmulatorConfig config,
                       RegionResolver regionResolver,
                       AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator) {
+        boolean seedDeployer = config.services().iam().seedDeployerPrincipal()
+                && !config.services().iam().enforcementEnabled();
         this(
             storageFactory.create("iam", "iam-users.json", new TypeReference<>() {}),
             storageFactory.create("iam", "iam-groups.json", new TypeReference<>() {}),
@@ -70,9 +72,9 @@ public class IamService {
             storageFactory.create("iam", "iam-instance-profiles.json", new TypeReference<>() {}),
             storageFactory.create("iam", "iam-sessions.json", new TypeReference<>() {}),
             regionResolver,
-            trustPolicyEvaluator
+            trustPolicyEvaluator,
+            seedDeployer
         );
-        this.seedDefaultDeployer = !config.services().iam().enforcementEnabled();
     }
 
     IamService(StorageBackend<String, IamUser> users,
@@ -86,7 +88,8 @@ public class IamService {
         this(users, groups, roles, policies, accessKeys, instanceProfiles, sessions, regionResolver,
                 new AssumeRoleTrustPolicyEvaluator(
                         new com.fasterxml.jackson.databind.ObjectMapper(),
-                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())));
+                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                false);
     }
 
     IamService(StorageBackend<String, IamUser> users,
@@ -97,7 +100,8 @@ public class IamService {
                StorageBackend<String, InstanceProfile> instanceProfiles,
                StorageBackend<String, SessionCredential> sessions,
                RegionResolver regionResolver,
-               AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator) {
+               AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator,
+               boolean seedDeployerPrincipal) {
         this.users = users;
         this.groups = groups;
         this.roles = roles;
@@ -107,12 +111,13 @@ public class IamService {
         this.sessions = sessions;
         this.regionResolver = regionResolver;
         this.trustPolicyEvaluator = trustPolicyEvaluator;
+        this.seedDeployerPrincipal = seedDeployerPrincipal;
     }
 
     @PostConstruct
     void seedDefaults() {
         seedAwsManagedPolicies();
-        if (seedDefaultDeployer) {
+        if (seedDeployerPrincipal) {
             seedDefaultDeployerPrincipal();
         }
     }
