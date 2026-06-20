@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 @ApplicationScoped
 public class CloudTrailEventStore {
@@ -27,6 +28,7 @@ public class CloudTrailEventStore {
             "EventName", "Username", "ResourceName", "EventSource", "ReadOnly");
 
     private final StorageBackend<String, CloudTrailEvent> eventStore;
+    private final AtomicLong sequenceCounter = new AtomicLong();
 
     @Inject
     public CloudTrailEventStore(StorageFactory storageFactory) {
@@ -44,6 +46,7 @@ public class CloudTrailEventStore {
 
     void clear() {
         eventStore.clear();
+        sequenceCounter.set(0);
     }
 
     public void indexRecordedEvent(String region,
@@ -55,6 +58,7 @@ public class CloudTrailEventStore {
         indexed.setEventName(recorder.eventName(event));
         indexed.setEventSource(recorder.eventSource(event));
         indexed.setEventTime(recorder.eventTime(event));
+        indexed.setSequence(sequenceCounter.incrementAndGet());
         indexed.setUsername(recorder.username(event));
         indexed.setReadOnly(recorder.readOnly(event));
         indexed.setFullEventJson(recorder.toJson(event));
@@ -111,8 +115,10 @@ public class CloudTrailEventStore {
         List<CloudTrailEvent> matched = eventStore.scan(key -> key.startsWith(region + ":")).stream()
                 .filter(event -> matchesTimeRange(event, startTime, endTime))
                 .filter(event -> matchesLookupAttributes(event, lookupAttributes))
-                .sorted(Comparator.comparing(CloudTrailEvent::getEventTime,
-                        Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .sorted(Comparator
+                        .comparing(CloudTrailEvent::getEventTime,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(CloudTrailEvent::getSequence, Comparator.reverseOrder()))
                 .toList();
 
         if (offset < 0 || offset > matched.size()) {

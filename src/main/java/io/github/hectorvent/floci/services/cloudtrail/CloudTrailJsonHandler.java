@@ -5,8 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailAdvancedEventSelector;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailAdvancedFieldSelector;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailDataResource;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEvent;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventResource;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventSelector;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -39,6 +43,7 @@ public class CloudTrailJsonHandler {
             case "DeleteTrail" -> deleteTrail(request, region);
             case "GetTrailStatus" -> getTrailStatus(request, region);
             case "PutEventSelectors" -> putEventSelectors(request, region);
+            case "GetEventSelectors" -> getEventSelectors(request, region);
             case "LookupEvents" -> lookupEvents(request, region);
             default -> throw new AwsException("UnsupportedOperation",
                     "Operation " + action + " is not supported.", 400);
@@ -103,8 +108,26 @@ public class CloudTrailJsonHandler {
     }
 
     private Response putEventSelectors(JsonNode request, String region) {
-        service.putEventSelectors(region, request.path("TrailName").asText(null));
+        service.putEventSelectors(region, request.path("TrailName").asText(null), request);
         return Response.ok(mapper.createObjectNode()).build();
+    }
+
+    private Response getEventSelectors(JsonNode request, String region) {
+        CloudTrailService.GetEventSelectorsResult result = service.getEventSelectors(
+                region, request.path("TrailName").asText(null));
+        ObjectNode response = mapper.createObjectNode();
+        response.put("TrailARN", result.trailArn());
+        ArrayNode eventSelectors = response.putArray("EventSelectors");
+        for (CloudTrailEventSelector selector : result.eventSelectors()) {
+            eventSelectors.add(eventSelectorNode(selector));
+        }
+        if (result.advancedEventSelectors() != null) {
+            ArrayNode advancedEventSelectors = response.putArray("AdvancedEventSelectors");
+            for (CloudTrailAdvancedEventSelector selector : result.advancedEventSelectors()) {
+                advancedEventSelectors.add(advancedEventSelectorNode(selector));
+            }
+        }
+        return Response.ok(response).build();
     }
 
     private Response lookupEvents(JsonNode request, String region) {
@@ -153,6 +176,58 @@ public class CloudTrailJsonHandler {
                 }
                 if (resource.getResourceType() != null) {
                     resourceNode.put("ResourceType", resource.getResourceType());
+                }
+            }
+        }
+        return node;
+    }
+
+    private ObjectNode eventSelectorNode(CloudTrailEventSelector selector) {
+        ObjectNode node = mapper.createObjectNode();
+        if (selector.getReadWriteType() != null) {
+            node.put("ReadWriteType", selector.getReadWriteType());
+        }
+        node.put("IncludeManagementEvents", selector.isIncludeManagementEvents());
+        ArrayNode dataResources = node.putArray("DataResources");
+        if (selector.getDataResources() != null) {
+            for (CloudTrailDataResource dataResource : selector.getDataResources()) {
+                ObjectNode dataResourceNode = dataResources.addObject();
+                if (dataResource.getType() != null) {
+                    dataResourceNode.put("Type", dataResource.getType());
+                }
+                ArrayNode values = dataResourceNode.putArray("Values");
+                if (dataResource.getValues() != null) {
+                    dataResource.getValues().forEach(values::add);
+                }
+            }
+        }
+        if (selector.getExcludeManagementEventSources() != null
+                && !selector.getExcludeManagementEventSources().isEmpty()) {
+            ArrayNode excludedSources = node.putArray("ExcludeManagementEventSources");
+            selector.getExcludeManagementEventSources().forEach(excludedSources::add);
+        }
+        return node;
+    }
+
+    private ObjectNode advancedEventSelectorNode(CloudTrailAdvancedEventSelector selector) {
+        ObjectNode node = mapper.createObjectNode();
+        if (selector.getName() != null) {
+            node.put("Name", selector.getName());
+        }
+        ArrayNode fieldSelectors = node.putArray("FieldSelectors");
+        if (selector.getFieldSelectors() != null) {
+            for (CloudTrailAdvancedFieldSelector fieldSelector : selector.getFieldSelectors()) {
+                ObjectNode fieldSelectorNode = fieldSelectors.addObject();
+                if (fieldSelector.getField() != null) {
+                    fieldSelectorNode.put("Field", fieldSelector.getField());
+                }
+                if (fieldSelector.getEquals() != null && !fieldSelector.getEquals().isEmpty()) {
+                    ArrayNode equals = fieldSelectorNode.putArray("Equals");
+                    fieldSelector.getEquals().forEach(equals::add);
+                }
+                if (fieldSelector.getNotEquals() != null && !fieldSelector.getNotEquals().isEmpty()) {
+                    ArrayNode notEquals = fieldSelectorNode.putArray("NotEquals");
+                    fieldSelector.getNotEquals().forEach(notEquals::add);
                 }
             }
         }

@@ -60,6 +60,25 @@ class CloudTrailEventStoreTest {
     }
 
     @Test
+    void lookupSortsSameEventTimeBySequenceDescending() {
+        Instant sameTime = Instant.parse("2024-06-01T10:00:00.123Z");
+        store.store(event("First", "user", "s3.amazonaws.com", false, sameTime,
+                "arn:aws:s3:::bucket/key-1", 1));
+        store.store(event("Second", "user", "s3.amazonaws.com", false, sameTime,
+                "arn:aws:s3:::bucket/key-2", 2));
+        store.store(event("Third", "user", "s3.amazonaws.com", false, sameTime,
+                "arn:aws:s3:::bucket/key-3", 3));
+
+        CloudTrailEventStore.LookupEventsResult result = store.lookup(
+                "us-east-1", null, null, List.of(), 50, null);
+
+        assertEquals(3, result.events().size());
+        assertEquals("Third", result.events().get(0).getEventName());
+        assertEquals("Second", result.events().get(1).getEventName());
+        assertEquals("First", result.events().get(2).getEventName());
+    }
+
+    @Test
     void lookupRejectsInvalidMaxResults() {
         assertThrows(io.github.hectorvent.floci.core.common.AwsException.class,
                 () -> store.lookup("us-east-1", null, null, List.of(), 51, null));
@@ -71,6 +90,16 @@ class CloudTrailEventStoreTest {
                                          boolean readOnly,
                                          Instant time,
                                          String resourceArn) {
+        return event(name, username, source, readOnly, time, resourceArn, 0);
+    }
+
+    private static CloudTrailEvent event(String name,
+                                         String username,
+                                         String source,
+                                         boolean readOnly,
+                                         Instant time,
+                                         String resourceArn,
+                                         long sequence) {
         CloudTrailEvent event = new CloudTrailEvent();
         event.setEventId(name + "-id");
         event.setRegion("us-east-1");
@@ -79,6 +108,7 @@ class CloudTrailEventStoreTest {
         event.setEventSource(source);
         event.setReadOnly(readOnly);
         event.setEventTime(time);
+        event.setSequence(sequence);
         event.setResourceArn(resourceArn);
         event.setResources(List.of(new CloudTrailEventResource(resourceArn, "AWS::S3::Object")));
         event.setFullEventJson("{\"eventName\":\"" + name + "\"}");

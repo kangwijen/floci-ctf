@@ -169,7 +169,11 @@ public class CloudTrailDeliveryService {
         try {
             byte[] payload = gzipJsonArray(events);
             targetAuthorizer.authorizeServiceS3Put(
-                    InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE, trail.getS3BucketName(), objectKey, region);
+                    InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE,
+                    trail.getS3BucketName(),
+                    objectKey,
+                    region,
+                    trail.getTrailArn());
             s3Service.putObject(trail.getS3BucketName(), objectKey, payload, "application/json", Map.of());
             LOG.debugv("Delivered {0} CloudTrail events to s3://{1}/{2}",
                     events.size(), trail.getS3BucketName(), objectKey);

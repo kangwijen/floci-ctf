@@ -46,7 +46,7 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
 | Secrets Manager + KMS | Nested or double-wrapped `SecretBinary` possible | Single-layer envelopes: CMK encrypts plaintext once; pre-existing `kms:v2:` inputs stored without re-wrap; one `kms:Decrypt` yields application plaintext |
-| CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` recorded for Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
+| CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` and `messageBody` on Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
 | SQS `ListQueues` IAM deny | May surface as `ServiceNotAvailableException` | HTTP 403 `AccessDenied` (Query XML or JSON `AccessDeniedException`) when identity policy denies `sqs:ListQueues` |
 
 **Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenAuthenticator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
@@ -307,7 +307,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Auto Scaling | In-process with reconciler | Launch configs, ASGs, desired capacity reconciliation, instance refresh, mixed-instances policy, lifecycle hooks |
 | AWS Backup | In-process | Vaults, backup plans, selections, simulated job lifecycle, recovery points |
 | AWS Config | In-process | Config rules, configuration recorders, delivery channels, conformance packs, tagging |
-| CloudTrail | In-process | Trail lifecycle, event selectors, logging status; management API only |
+| CloudTrail | In-process | Trail lifecycle, event selectors (`GetEventSelectors` defaults), logging status; management API only |
 | WAF v2 | In-process | Web ACLs, IP sets, regex pattern sets, rule groups, logging configs, resource associations, tagging (REGIONAL and CLOUDFRONT scopes) |
 | Route53 | In-process | Hosted zones, SOA and NS records, resource record sets, change tracking, tagging |
 | Cloud Map | In-process | HTTP and DNS namespaces, services, instance registration, discovery queries, operations, tagging |
@@ -404,7 +404,7 @@ Operator setup for a typical evidence chain:
 
 Inter-service audit (when audit is enabled and a trail is logging): Step Functions and API Gateway in-process SDK calls use the execution role plus `invokedBy` (`states.amazonaws.com`, `apigateway.amazonaws.com`). Internal delivery (Firehose to S3, SNS to SQS, CloudWatch Logs subscriptions, S3 access logs) uses `userIdentity.type=AWSService`. See [CloudTrail inter-service events](./docs/services/cloudtrail.md#inter-service-events-in-process-audit).
 
-Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`). SQS audit events include `requestParameters.queueUrl` for Query and JSON 1.0 APIs so `LookupEvents` can correlate queue-scoped player activity.
+Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`). SQS audit events include `requestParameters.queueUrl` and `messageBody` on `SendMessage` (Query and JSON 1.0) so `LookupEvents` can correlate queue-scoped player activity. Trail S3 delivery evaluates bucket policy `aws:SourceArn` conditions for `cloudtrail.amazonaws.com`.
 
 5. Optional: configure [AWS Config](./docs/services/config.md) delivery channels for configuration snapshots in S3.
 

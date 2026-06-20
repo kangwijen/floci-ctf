@@ -11,14 +11,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CloudTrailEventRecorderTest {
 
     @Test
-    void formatEventTime_usesUtcWithoutFractionalSeconds() {
+    void formatEventTime_usesUtcWithMilliseconds() {
         Instant instant = Instant.parse("2026-06-15T12:34:56.789Z");
 
         String formatted = CloudTrailEventRecorder.formatEventTime(instant);
 
-        assertEquals("2026-06-15T12:34:56Z", formatted);
-        assertTrue(formatted.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z"));
-        assertFalse(formatted.contains("."));
+        assertEquals("2026-06-15T12:34:56.789Z", formatted);
+        assertTrue(formatted.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
     }
 
     @Test

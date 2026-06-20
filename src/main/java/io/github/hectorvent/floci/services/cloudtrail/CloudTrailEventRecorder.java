@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,9 +42,15 @@ public class CloudTrailEventRecorder {
     private static final Pattern SERVICE_PATTERN =
             Pattern.compile("Credential=\\S+/\\d{8}/[^/]+/([^/]+)/");
     private static final DateTimeFormatter EVENT_TIME =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
-
-    private static final String SQS_MESSAGE_BODY_REDACTED = "HIDDEN_DUE_TO_SECURITY_REASONS";
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter EVENT_TIME_PARSE = new DateTimeFormatterBuilder()
+            .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+            .optionalStart()
+            .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+            .optionalEnd()
+            .appendLiteral('Z')
+            .toFormatter()
+            .withZone(ZoneOffset.UTC);
 
     private static final Set<String> SQS_DATA_EVENT_NAMES = Set.of(
             "SendMessage", "ReceiveMessage", "DeleteMessage", "ChangeMessageVisibility");
@@ -94,9 +102,7 @@ public class CloudTrailEventRecorder {
         if (userAgent != null && !userAgent.isBlank()) {
             event.put("userAgent", userAgent);
         }
-        Map<String, Object> requestParameters = buildRequestParameters(request, credentialScope);
-        sanitizeRequestParameters(requestParameters, eventName);
-        event.put("requestParameters", requestParameters);
+        event.put("requestParameters", buildRequestParameters(request, credentialScope));
         event.put("responseElements", null);
         event.put("requestID", requestId);
         event.put("eventID", eventId);
@@ -190,7 +196,7 @@ public class CloudTrailEventRecorder {
         if (time == null) {
             return Instant.now();
         }
-        return Instant.from(EVENT_TIME.parse(time.toString()));
+        return Instant.from(EVENT_TIME_PARSE.parse(time.toString()));
     }
 
     public boolean readOnly(Map<String, Object> event) {
@@ -511,16 +517,13 @@ public class CloudTrailEventRecorder {
                 params.put("queueUrl", queueUrl);
             }
         }
+        if ("sqs".equals(credentialScope) && !params.containsKey("messageBody")) {
+            String messageBody = readJsonStringField(request, "MessageBody");
+            if (messageBody != null && !messageBody.isBlank()) {
+                params.put("messageBody", messageBody);
+            }
+        }
         return params.isEmpty() ? null : params;
-    }
-
-    private static void sanitizeRequestParameters(Map<String, Object> params, String eventName) {
-        if (params == null || eventName == null) {
-            return;
-        }
-        if ("SendMessage".equals(eventName) && params.containsKey("messageBody")) {
-            params.put("messageBody", SQS_MESSAGE_BODY_REDACTED);
-        }
     }
 
     private List<Map<String, Object>> buildResources(ContainerRequestContext request,

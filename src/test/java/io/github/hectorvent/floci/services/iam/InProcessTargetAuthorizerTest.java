@@ -379,7 +379,26 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION));
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull());
+    }
+
+    @Test
+    void serviceS3PutPassesSourceArnToPutObjectOnly() {
+        String trailArn = "arn:aws:cloudtrail:" + REGION + ":" + ACCOUNT + ":trail/ctf-audit-trail";
+
+        authorizer.authorizeServiceS3Put(
+                InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE,
+                "ctf-delivery-bucket",
+                "AWSLogs/key.json",
+                REGION,
+                trailArn);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("GetBucketAcl"),
+                eq(BUCKET_ARN), eq(REGION));
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), eq(trailArn));
     }
 
     @Test
@@ -402,7 +421,7 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION));
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull());
     }
 
     @Test
@@ -412,7 +431,7 @@ class InProcessTargetAuthorizerTest {
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/billing/out.parquet"), eq(REGION));
+                eq("arn:aws:s3:::ctf-delivery-bucket/billing/out.parquet"), eq(REGION), isNull());
         verify(iamAuthorizer, never()).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("GetBucketAcl"),
                 eq(BUCKET_ARN), eq(REGION));
@@ -425,7 +444,7 @@ class InProcessTargetAuthorizerTest {
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/cur/out.parquet"), eq(REGION));
+                eq("arn:aws:s3:::ctf-delivery-bucket/cur/out.parquet"), eq(REGION), isNull());
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("GetBucketPolicy"),
                 eq(BUCKET_ARN), eq(REGION));

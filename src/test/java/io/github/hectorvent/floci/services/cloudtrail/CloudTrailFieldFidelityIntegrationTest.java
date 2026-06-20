@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.cloudtrail;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import io.github.hectorvent.floci.testsupport.CloudTrailForwardedHeadersAuditProfile;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
 import io.quarkus.test.junit.QuarkusTest;
@@ -15,6 +16,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * CloudTrail audit events preserve AWS-shaped request parameters for S3, STS, and Secrets Manager.
@@ -124,6 +126,52 @@ class CloudTrailFieldFidelityIntegrationTest {
         assertEquals(secretName, secretEvent.path("requestParameters").path("secretId").asText());
         assertEquals("Management", secretEvent.path("eventCategory").asText());
         assertEquals("AWS::SecretsManager::Secret", secretEvent.path("resources").get(0).path("type").asText());
+    }
+
+    @Test
+    void burstApiCallsPreserveCallOrderInLookupEvents() throws Exception {
+        String trailBucket = "burst-order-trail-bucket";
+        String trailName = "burst-order-trail";
+        String dataBucket = "burst-order-bucket";
+        String objectKey = "burst-object.txt";
+
+        provisionLoggingTrail(trailBucket, trailName);
+
+        given().when().put("/" + dataBucket).then().statusCode(200);
+        given()
+                .header("Authorization", S3_AUTH)
+                .body("burst payload")
+                .when().put("/" + dataBucket + "/" + objectKey)
+                .then().statusCode(200);
+        given()
+                .header("Authorization", S3_AUTH)
+                .when().delete("/" + dataBucket + "/" + objectKey)
+                .then().statusCode(204);
+
+        ArrayNode events = (ArrayNode) objectMapper.readTree(given()
+                .header("X-Amz-Target", CLOUDTRAIL_TARGET + "LookupEvents")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {
+                            "LookupAttributes": [
+                                {"AttributeKey": "ResourceName", "AttributeValue": "arn:aws:s3:::%s"}
+                            ],
+                            "MaxResults": 10
+                        }
+                        """.formatted(dataBucket))
+                .when().post("/")
+                .then()
+                .statusCode(200)
+                .extract().asString()).path("Events");
+
+        assertEquals(3, events.size());
+        assertEquals("DeleteObject", events.get(0).path("EventName").asText());
+        assertEquals("PutObject", events.get(1).path("EventName").asText());
+        assertEquals("CreateBucket", events.get(2).path("EventName").asText());
+
+        JsonNode newest = objectMapper.readTree(events.get(0).path("CloudTrailEvent").asText());
+        assertTrue(newest.path("eventTime").asText()
+                .matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
     }
 
     private void provisionLoggingTrail(String trailBucket, String trailName) {

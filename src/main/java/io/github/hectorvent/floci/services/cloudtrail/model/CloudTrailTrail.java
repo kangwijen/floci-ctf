@@ -6,6 +6,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RegisterForReflection
@@ -23,6 +24,8 @@ public class CloudTrailTrail {
     private Instant created;
     private Instant updated;
     private Map<String, String> tags;
+    private List<CloudTrailEventSelector> eventSelectors;
+    private List<CloudTrailAdvancedEventSelector> advancedEventSelectors;
 
     public CloudTrailTrail() {
         this.tags = new HashMap<>();
@@ -114,5 +117,21 @@ public class CloudTrailTrail {
 
     public void setTags(Map<String, String> tags) {
         this.tags = tags == null ? new HashMap<>() : new HashMap<>(tags);
+    }
+
+    public List<CloudTrailEventSelector> getEventSelectors() {
+        return eventSelectors;
+    }
+
+    public void setEventSelectors(List<CloudTrailEventSelector> eventSelectors) {
+        this.eventSelectors = eventSelectors;
+    }
+
+    public List<CloudTrailAdvancedEventSelector> getAdvancedEventSelectors() {
+        return advancedEventSelectors;
+    }
+
+    public void setAdvancedEventSelectors(List<CloudTrailAdvancedEventSelector> advancedEventSelectors) {
+        this.advancedEventSelectors = advancedEventSelectors;
     }
 }

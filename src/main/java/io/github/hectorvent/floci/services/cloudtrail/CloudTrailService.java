@@ -1,10 +1,15 @@
 package io.github.hectorvent.floci.services.cloudtrail;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailAdvancedEventSelector;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailAdvancedFieldSelector;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailDataResource;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventSelector;
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
 import io.github.hectorvent.floci.services.guardduty.GuardDutyCloudTrailHook;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -133,8 +138,120 @@ public class CloudTrailService {
         trailStore.delete(key(trail.getHomeRegion(), trail.getName()));
     }
 
-    public void putEventSelectors(String region, String nameOrArn) {
-        requireTrail(region, nameOrArn);
+    public void putEventSelectors(String region, String nameOrArn, JsonNode request) {
+        CloudTrailTrail trail = requireTrail(region, nameOrArn);
+        JsonNode advancedNode = request == null ? null : request.get("AdvancedEventSelectors");
+        JsonNode eventSelectorsNode = request == null ? null : request.get("EventSelectors");
+        if (advancedNode != null && advancedNode.isArray()) {
+            trail.setAdvancedEventSelectors(parseAdvancedEventSelectors(advancedNode));
+            trail.setEventSelectors(null);
+        } else if (eventSelectorsNode != null && eventSelectorsNode.isArray()) {
+            trail.setEventSelectors(parseEventSelectors(eventSelectorsNode));
+            trail.setAdvancedEventSelectors(null);
+        }
+        trail.setUpdated(Instant.now());
+        trailStore.put(key(trail.getHomeRegion(), trail.getName()), trail);
+    }
+
+    public GetEventSelectorsResult getEventSelectors(String region, String nameOrArn) {
+        CloudTrailTrail trail = requireTrail(region, nameOrArn);
+        if (trail.getAdvancedEventSelectors() != null) {
+            return new GetEventSelectorsResult(
+                    trail.getTrailArn(),
+                    List.of(),
+                    trail.getAdvancedEventSelectors());
+        }
+        if (trail.getEventSelectors() != null) {
+            return new GetEventSelectorsResult(
+                    trail.getTrailArn(),
+                    trail.getEventSelectors(),
+                    null);
+        }
+        return new GetEventSelectorsResult(
+                trail.getTrailArn(),
+                List.of(defaultEventSelector()),
+                null);
+    }
+
+    public record GetEventSelectorsResult(
+            String trailArn,
+            List<CloudTrailEventSelector> eventSelectors,
+            List<CloudTrailAdvancedEventSelector> advancedEventSelectors) {
+    }
+
+    private static CloudTrailEventSelector defaultEventSelector() {
+        CloudTrailEventSelector selector = new CloudTrailEventSelector();
+        selector.setReadWriteType("All");
+        selector.setIncludeManagementEvents(true);
+        selector.setDataResources(List.of());
+        selector.setExcludeManagementEventSources(List.of());
+        return selector;
+    }
+
+    private static List<CloudTrailEventSelector> parseEventSelectors(JsonNode eventSelectorsNode) {
+        List<CloudTrailEventSelector> selectors = new ArrayList<>();
+        for (JsonNode selectorNode : eventSelectorsNode) {
+            CloudTrailEventSelector selector = new CloudTrailEventSelector();
+            if (selectorNode.has("ReadWriteType")) {
+                selector.setReadWriteType(selectorNode.path("ReadWriteType").asText(null));
+            }
+            if (selectorNode.has("IncludeManagementEvents")) {
+                selector.setIncludeManagementEvents(selectorNode.path("IncludeManagementEvents").asBoolean());
+            }
+            selector.setDataResources(parseDataResources(selectorNode.path("DataResources")));
+            selector.setExcludeManagementEventSources(stringList(selectorNode.path("ExcludeManagementEventSources")));
+            selectors.add(selector);
+        }
+        return selectors;
+    }
+
+    private static List<CloudTrailDataResource> parseDataResources(JsonNode dataResourcesNode) {
+        if (dataResourcesNode == null || !dataResourcesNode.isArray()) {
+            return List.of();
+        }
+        List<CloudTrailDataResource> dataResources = new ArrayList<>();
+        for (JsonNode dataResourceNode : dataResourcesNode) {
+            CloudTrailDataResource dataResource = new CloudTrailDataResource();
+            dataResource.setType(dataResourceNode.path("Type").asText(null));
+            dataResource.setValues(stringList(dataResourceNode.path("Values")));
+            dataResources.add(dataResource);
+        }
+        return dataResources;
+    }
+
+    private static List<CloudTrailAdvancedEventSelector> parseAdvancedEventSelectors(JsonNode advancedNode) {
+        List<CloudTrailAdvancedEventSelector> selectors = new ArrayList<>();
+        for (JsonNode selectorNode : advancedNode) {
+            CloudTrailAdvancedEventSelector selector = new CloudTrailAdvancedEventSelector();
+            selector.setName(selectorNode.path("Name").asText(null));
+            selector.setFieldSelectors(parseFieldSelectors(selectorNode.path("FieldSelectors")));
+            selectors.add(selector);
+        }
+        return selectors;
+    }
+
+    private static List<CloudTrailAdvancedFieldSelector> parseFieldSelectors(JsonNode fieldSelectorsNode) {
+        if (fieldSelectorsNode == null || !fieldSelectorsNode.isArray()) {
+            return List.of();
+        }
+        List<CloudTrailAdvancedFieldSelector> fieldSelectors = new ArrayList<>();
+        for (JsonNode fieldSelectorNode : fieldSelectorsNode) {
+            CloudTrailAdvancedFieldSelector fieldSelector = new CloudTrailAdvancedFieldSelector();
+            fieldSelector.setField(fieldSelectorNode.path("Field").asText(null));
+            fieldSelector.setEquals(stringList(fieldSelectorNode.path("Equals")));
+            fieldSelector.setNotEquals(stringList(fieldSelectorNode.path("NotEquals")));
+            fieldSelectors.add(fieldSelector);
+        }
+        return fieldSelectors;
+    }
+
+    private static List<String> stringList(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        node.forEach(value -> values.add(value.asText()));
+        return values;
     }
 
     public CloudTrailEventStore.LookupEventsResult lookupEvents(String region,

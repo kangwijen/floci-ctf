@@ -159,10 +159,15 @@ public class InProcessTargetAuthorizer {
     }
 
     public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String region) {
-        authorizeServiceS3Put(servicePrincipal, bucketName, null, region);
+        authorizeServiceS3Put(servicePrincipal, bucketName, null, region, null);
     }
 
     public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey, String region) {
+        authorizeServiceS3Put(servicePrincipal, bucketName, objectKey, region, null);
+    }
+
+    public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey,
+                                      String region, String sourceArn) {
         if (bucketName == null || bucketName.isBlank()) {
             return;
         }
@@ -171,22 +176,27 @@ public class InProcessTargetAuthorizer {
                 ? AwsArnUtils.Arn.of("s3", "", "", bucketName + "/" + objectKey).toString()
                 : bucketArn + "/*";
         if (BCM_DATA_EXPORTS_SERVICE.equals(servicePrincipal)) {
-            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
             return;
         }
         if (BILLING_REPORTS_SERVICE.equals(servicePrincipal)) {
-            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
-            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketPolicy", bucketArn, region);
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "s3", "GetBucketPolicy", bucketArn, region);
             return;
         }
         if (CONFIG_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "ListBucket", bucketArn, region);
-            iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
             return;
         }
         iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
-        iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "PutObject", objectResource, region);
+        iamAuthorizer.authorizeServicePrincipal(
+                servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
     }
 
     public void authorizeFirehoseS3Put(String roleArn, String bucketName, String objectKey, String region) {

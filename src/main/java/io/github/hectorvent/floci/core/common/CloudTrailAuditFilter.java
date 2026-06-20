@@ -31,7 +31,7 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
 
     /** Read-only CloudTrail APIs skipped to avoid lookup/describe noise. */
     private static final Set<String> CLOUDTRAIL_AUDIT_SKIP = Set.of(
-            "LookupEvents", "DescribeTrails", "GetTrailStatus");
+            "LookupEvents", "DescribeTrails", "GetTrailStatus", "GetEventSelectors");
 
     private final EmulatorConfig config;
     private final CloudTrailService cloudTrailService;

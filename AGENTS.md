@@ -230,7 +230,7 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 **Forensic regression (unit/integration):**
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,CloudTrailS3DeliveryIntegrationTest,CloudTrailFieldFidelityIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
 ```
 
 **Forensic compatibility (running instance):**
@@ -250,7 +250,10 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `sourceIPAddress` authoring hooks | Closed | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-For`; alternate `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER`; [Live forensics authoring](./docs/services/cloudtrail.md#live-forensics-authoring) |
 | SQS `ListQueues` IAM deny shape | Closed | `SqsListQueuesIamIntegrationTest`; IAM runs before service-disabled short-circuit |
 | SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) with `requestParameters.queueUrl` | Closed | Query and JSON 1.0 protocols; `CloudTrailSqsAuditIntegrationTest` |
-| `lookup-events` pagination and `eventTime` format | Closed | `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
+| SQS `SendMessage` audit `requestParameters.messageBody` | Closed | Actual payload recorded (not redacted); `CloudTrailSqsAuditIntegrationTest` |
+| Trail S3 delivery `aws:SourceArn` bucket policy | Closed | `cloudtrail.amazonaws.com` `s3:PutObject` honors trail ARN conditions; `CloudTrailS3DeliveryIntegrationTest` |
+| `GetEventSelectors` with defaults | Closed | `CloudTrailIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#trail-lifecycle) |
+| `lookup-events` pagination, `eventTime` precision, same-second order | Closed | Millisecond `eventTime`; insertion order within same second; `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
 | Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live forensics authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
 | `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |

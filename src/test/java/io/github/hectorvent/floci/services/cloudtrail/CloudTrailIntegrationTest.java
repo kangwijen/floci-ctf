@@ -62,6 +62,24 @@ class CloudTrailIntegrationTest {
                 .body("S3BucketName", equalTo("sample-audit-bucket"));
 
         given()
+                .header("X-Amz-Target", TARGET_PREFIX + "GetEventSelectors")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {
+                            "TrailName": "sample-audit"
+                        }
+                        """)
+        .when()
+                .post("/")
+        .then()
+                .statusCode(200)
+                .body("TrailARN", startsWith("arn:aws:cloudtrail:"))
+                .body("EventSelectors", hasSize(1))
+                .body("EventSelectors[0].ReadWriteType", equalTo("All"))
+                .body("EventSelectors[0].IncludeManagementEvents", equalTo(true))
+                .body("EventSelectors[0].DataResources", hasSize(0));
+
+        given()
                 .header("X-Amz-Target", TARGET_PREFIX + "PutEventSelectors")
                 .contentType(CONTENT_TYPE)
                 .body("""

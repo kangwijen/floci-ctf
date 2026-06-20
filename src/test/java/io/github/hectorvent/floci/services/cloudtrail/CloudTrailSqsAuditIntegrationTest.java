@@ -98,7 +98,8 @@ class CloudTrailSqsAuditIntegrationTest {
         assertEquals("198.51.100.99", purgeEvent.path("sourceIPAddress").asText());
         assertEquals("Management", purgeEvent.path("eventCategory").asText());
         assertEquals(true, purgeEvent.path("managementEvent").asBoolean());
-        assertTrue(purgeEvent.path("eventTime").asText().matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z"));
+        assertTrue(purgeEvent.path("eventTime").asText()
+                .matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
         assertEquals("AWS::SQS::Queue", purgeEvent.path("resources").get(0).path("type").asText());
 
         JsonNode receiveEvent = lookupSingleEvent("ReceiveMessage");
@@ -112,7 +113,7 @@ class CloudTrailSqsAuditIntegrationTest {
         assertEquals(queueUrl, sendEvent.path("requestParameters").path("queueUrl").asText());
         assertEquals("203.0.113.10", sendEvent.path("sourceIPAddress").asText());
         assertEquals("Data", sendEvent.path("eventCategory").asText());
-        assertEquals("HIDDEN_DUE_TO_SECURITY_REASONS",
+        assertEquals("inject-payload",
                 sendEvent.path("requestParameters").path("messageBody").asText());
         assertNotNull(sendEvent.path("responseElements").path("messageId").asText(null));
     }
@@ -155,6 +156,8 @@ class CloudTrailSqsAuditIntegrationTest {
         JsonNode sendEvent = lookupSingleEvent("SendMessage");
         assertEquals(queueUrl, sendEvent.path("requestParameters").path("queueUrl").asText());
         assertEquals("203.0.113.20", sendEvent.path("sourceIPAddress").asText());
+        assertEquals("json10-payload",
+                sendEvent.path("requestParameters").path("messageBody").asText());
 
         JsonNode receiveEvent = lookupSingleEvent("ReceiveMessage");
         assertEquals(queueUrl, receiveEvent.path("requestParameters").path("queueUrl").asText());
