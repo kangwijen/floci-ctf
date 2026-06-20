@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Upstream release | 1.5.26 (released 2026-06-19) |
+| Latest upstream merge | 18 commits post 1.5.26 (2026-06-21) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -266,7 +266,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 |---------|-------------------------------|
 | HTTP `:4566` | Yes (`SigV4ValidationFilter` + `IamEnforcementFilter`) |
 | S3 presigned query URLs | Yes (`PreSignedUrlFilter` SigV4; IAM or root credential secrets only) |
-| RDS / ElastiCache Redis TCP | Partial (token SigV4, not full IAM per query) |
+| RDS / ElastiCache / MemoryDB Redis TCP | Partial (token SigV4, not full IAM per query) |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
 | SFN / APIGW AWS integrations in-process | Yes when enforcement on (`InProcessIamAuthorizer` on JSON-body calls); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
 | Pipes / Scheduler in-process | Yes (`InProcessTargetAuthorizer`: pipe/schedule `roleArn` on source poll with extended SQS/Kinesis/DynamoDB Streams actions, target delivery, SQS `DeleteMessage` on ack) |
@@ -286,21 +286,29 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **1.5.26** (24 commits, merged 2026-06-09; released 2026-06-19): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances and embedded DNS (#1291, #1390), API Gateway SQS query integrations (#1385), CloudFormation provisioning expansion, Auto Scaling reconciliation/instance refresh, DocumentDB, SSM patch baselines and Run Command in EC2 containers. **CTF preserved:** SigV4 presign generator (operator root AKIA), `seedDeployerPrincipal` off when enforcement on, strict IAM, flow logs + spot persistence, Cognito auth flows via `InProcessTargetAuthorizer`, APIGW JSON integration credentials.
+**Latest merge:** upstream **main** (18 commits post **1.5.26**, merged 2026-06-21; pom still **1.5.26**): MemoryDB service (Valkey containers), Neptune openCypher via Neo4j backend (`NEPTUNE_DB_TYPE`), SES v2 dedicated IP pools and configuration-set option groups, API Gateway v2 cascade delete, CloudFormation SAM Globals merge and implicit API from Api events, DynamoDB TableId/TableClass/OnDemandThroughput/deletion protection/scan limits/filter expression fixes, ACM certificate persistence after restart, Athena partition keys in table metadata, DocDB/Neptune container shutdown on emulator stop, EC2 empty `stateReason` omitted in DescribeInstances. **CTF preserved:** SigV4 presign generator (operator root AKIA), `seedDeployerPrincipal` off when enforcement on, strict IAM, flow logs + spot persistence, Cognito auth flows via `InProcessTargetAuthorizer`, APIGW JSON integration credentials.
+
+**Previous merge:** upstream **1.5.26** (24 commits, merged 2026-06-09; released 2026-06-19): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances and embedded DNS (#1291, #1390), API Gateway SQS query integrations (#1385), CloudFormation provisioning expansion, Auto Scaling reconciliation/instance refresh, DocumentDB, SSM patch baselines and Run Command in EC2 containers.
 
 ```bash
 git fetch upstream main
 git merge upstream/main
 ```
 
-Re-apply CTF behavior on conflicts (high risk after 1.5.26):
+Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merge):
 
 - Auth/account: `AccountResolver`, `AccountContextFilter`, auth filters, `ContainerEnvHardening`, `OperatorCredentialEnv`
 - S3 presign: `PreSignedUrlGenerator` (keep SigV4 + root AKIA; do not take upstream account-id signing)
 - IAM/STS: `StsQueryHandler`, `IamService`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `PolicyPrincipalMatcher`, `IamActionRegistry`
 - APIGW: `ApiGatewayExecuteController`, `AwsServiceRouter` (keep JSON `integration.credentials` + CloudTrail audit)
 - Cognito: `CognitoService` (keep `InProcessTargetAuthorizer` on delivery paths)
-- EC2: `Ec2Service`, `Ec2QueryHandler`, `Ec2MetadataServer` (flow logs + persisted spot requests)
+- EC2: `Ec2Service`, `Ec2QueryHandler`, `Ec2MetadataServer` (flow logs + persisted spot requests; empty `stateReason` omission)
+- APIGW v2: `ApiGatewayV2Service` (cascade delete)
+- CloudFormation: `SamTransformProcessor`, `CloudFormationResourceProvisioner` (SAM Globals, implicit Api)
+- DynamoDB: `DynamoDbService`, `ExpressionEvaluator` (TableId, scan limits, filter fixes)
+- MemoryDB / Neptune / DocDB: `MemoryDbService`, `NeptuneService`, `NeptuneContainerManager`, `EmulatorLifecycle` (container shutdown)
+- SES: `SesService`, `SesController` (v2 dedicated IP pools, configuration-set options)
+- ACM / Athena: certificate persistence, partition keys in table metadata
 - `SnsService` (`iamEnforcementEnabled` gate on default topic policy)
 - `SecretsManagerKmsSupport`, `EcsContainerManager` (`ContainerEnvHardening` in `buildEnvVars`)
 - `docker-compose.yml`, `docker/Dockerfile`, `application.yml` (`floci.ctf` block)
@@ -354,7 +362,7 @@ On Windows with Docker Desktop, set `DOCKER_HOST` so Maven can reach Docker befo
 Floci is a Java-based local AWS emulator on Quarkus. Goal: full AWS SDK and CLI compatibility through real AWS wire protocols.
 
 - Port: 4566
-- Stack: Java 25, Quarkus 3.36.0, JUnit 5, RestAssured, Jackson, Docker for Lambda/RDS/ElastiCache
+- Stack: Java 25, Quarkus 3.36.0, JUnit 5, RestAssured, Jackson, Docker for Lambda/RDS/ElastiCache/MemoryDB/Neptune/DocumentDB
 
 ---
 
@@ -390,7 +398,7 @@ Critical rules: no custom endpoint shapes; no convenience wire-format changes; n
 | JSON 1.1 | SSM, KMS, Secrets Manager, ... | POST + `X-Amz-Target` | JSON | `AwsJson11Controller` |
 | REST JSON | Lambda, API Gateway, SES V2 | REST paths | JSON | JAX-RS |
 | REST XML | S3 | REST paths | XML | JAX-RS |
-| TCP | ElastiCache, RDS | raw | native | proxies |
+| TCP | ElastiCache, MemoryDB, RDS, Neptune, DocumentDB | raw | native | proxies |
 
 Use `XmlBuilder` / `XmlParser` (not regex). JSON errors follow AWS shapes.
 

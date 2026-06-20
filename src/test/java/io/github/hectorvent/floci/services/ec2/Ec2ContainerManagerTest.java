@@ -197,20 +197,34 @@ class Ec2ContainerManagerTest {
     }
 
     @Test
-    void localAwsEnvironmentProvidesCliCredentialsAndFlociEndpoint() {
+    void buildEnvVarsProvidesImdsEndpointWithoutBakedInCredentials() {
         assertEquals(
                 java.util.List.of(
                         "AWS_EC2_METADATA_SERVICE_ENDPOINT=http://floci:9169",
                         "AWS_ENDPOINT_URL=http://floci:4566",
                         "AWS_DEFAULT_REGION=us-west-2",
-                        "AWS_REGION=us-west-2",
-                        "AWS_ACCESS_KEY_ID=test",
-                        "AWS_SECRET_ACCESS_KEY=test",
-                        "AWS_SESSION_TOKEN=test-session-token"),
-                Ec2ContainerManager.localAwsEnvironment(
+                        "AWS_REGION=us-west-2"),
+                Ec2ContainerManager.buildEnvVars(
                         "us-west-2",
                         "http://floci:4566",
-                        "http://floci:9169"));
+                        "http://floci:9169",
+                        java.util.Map.of()));
+    }
+
+    @Test
+    void buildEnvVarsStripsUserSuppliedCredentialKeys() {
+        java.util.List<String> env = Ec2ContainerManager.buildEnvVars(
+                "us-west-2",
+                "http://floci:4566",
+                "http://floci:9169",
+                java.util.Map.of(
+                        "CHALLENGE_FLAG", "ctf-flag",
+                        "AWS_ACCESS_KEY_ID", "AKIAHIJACKED",
+                        "AWS_SECRET_ACCESS_KEY", "stolen"));
+
+        assertTrue(env.contains("CHALLENGE_FLAG=ctf-flag"));
+        assertTrue(env.stream().noneMatch(v -> v.startsWith("AWS_ACCESS_KEY_ID=")));
+        assertTrue(env.stream().noneMatch(v -> v.startsWith("AWS_SECRET_ACCESS_KEY=")));
     }
 
     @Test

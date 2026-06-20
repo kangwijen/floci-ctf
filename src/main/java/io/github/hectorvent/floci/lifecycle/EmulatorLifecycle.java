@@ -13,12 +13,17 @@ import io.github.hectorvent.floci.services.floci.ui.FlociUiManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheContainerManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheMemcachedContainerManager;
 import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheProxyManager;
+import io.github.hectorvent.floci.services.docdb.container.DocDbContainerManager;
 import io.github.hectorvent.floci.services.lambda.DynamoDbStreamsEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.KinesisEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.SqsEventSourcePoller;
 import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
+import io.github.hectorvent.floci.services.neptune.container.NeptuneContainerManager;
+import io.github.hectorvent.floci.services.neptune.proxy.NeptuneProxyManager;
 import io.github.hectorvent.floci.services.pipes.PipesService;
 import io.github.hectorvent.floci.services.rds.RdsService;
+import io.github.hectorvent.floci.services.memorydb.container.MemoryDbContainerManager;
+import io.github.hectorvent.floci.services.memorydb.proxy.MemoryDbProxyManager;
 import io.github.hectorvent.floci.services.rds.container.RdsContainerManager;
 import io.github.hectorvent.floci.services.rds.proxy.RdsProxyManager;
 import io.quarkus.runtime.Quarkus;
@@ -62,6 +67,11 @@ public class EmulatorLifecycle {
     private final ElastiCacheProxyManager elastiCacheProxyManager;
     private final RdsContainerManager rdsContainerManager;
     private final RdsProxyManager rdsProxyManager;
+    private final MemoryDbContainerManager memoryDbContainerManager;
+    private final MemoryDbProxyManager memoryDbProxyManager;
+    private final DocDbContainerManager docDbContainerManager;
+    private final NeptuneContainerManager neptuneContainerManager;
+    private final NeptuneProxyManager neptuneProxyManager;
     private final RdsService rdsService;
     private final InitializationHooksRunner initializationHooksRunner;
     private final SqsEventSourcePoller sqsPoller;
@@ -84,6 +94,11 @@ public class EmulatorLifecycle {
                              ElastiCacheProxyManager elastiCacheProxyManager,
                              RdsContainerManager rdsContainerManager,
                              RdsProxyManager rdsProxyManager,
+                             MemoryDbContainerManager memoryDbContainerManager,
+                             MemoryDbProxyManager memoryDbProxyManager,
+                             DocDbContainerManager docDbContainerManager,
+                             NeptuneContainerManager neptuneContainerManager,
+                             NeptuneProxyManager neptuneProxyManager,
                              RdsService rdsService,
                              InitializationHooksRunner initializationHooksRunner,
                              SqsEventSourcePoller sqsPoller,
@@ -105,6 +120,11 @@ public class EmulatorLifecycle {
         this.elastiCacheProxyManager = elastiCacheProxyManager;
         this.rdsContainerManager = rdsContainerManager;
         this.rdsProxyManager = rdsProxyManager;
+        this.memoryDbContainerManager = memoryDbContainerManager;
+        this.memoryDbProxyManager = memoryDbProxyManager;
+        this.docDbContainerManager = docDbContainerManager;
+        this.neptuneContainerManager = neptuneContainerManager;
+        this.neptuneProxyManager = neptuneProxyManager;
         this.rdsService = rdsService;
         this.initializationHooksRunner = initializationHooksRunner;
         this.sqsPoller = sqsPoller;
@@ -260,9 +280,14 @@ public class EmulatorLifecycle {
         }
         elastiCacheProxyManager.stopAll();
         rdsProxyManager.stopAll();
+        memoryDbProxyManager.stopAll();
+        neptuneProxyManager.stopAll();
         elastiCacheContainerManager.stopAll();
         elastiCacheMemcachedContainerManager.stopAll();
         rdsContainerManager.stopAll();
+        memoryDbContainerManager.stopAll();
+        docDbContainerManager.stopAll();
+        neptuneContainerManager.stopAll();
         ecrRegistryManager.shutdown();
         flociUiManager.shutdown();
         storageFactory.shutdownAll();

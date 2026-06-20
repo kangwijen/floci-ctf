@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.26**) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.26**, +18 commits merged 2026-06-21) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -188,8 +188,8 @@ LocalStack's community edition [sunset in March 2026](https://blog.localstack.cl
 | License | MIT | Restricted |
 | API Gateway v2 / HTTP API | Yes | No |
 | Cognito | Yes | No |
-| RDS, ElastiCache, MSK | Real Docker | No |
-| Neptune (graph DB + Gremlin WebSocket) | Real Docker | No |
+| RDS, ElastiCache, MemoryDB, MSK | Real Docker | No |
+| Neptune (Gremlin and openCypher) | Real Docker | No |
 | DocumentDB (MongoDB-compatible) | Real Docker | No |
 | ECS, EC2, EKS | Real Docker | No |
 | CodeBuild | Real Docker execution | No |
@@ -215,7 +215,7 @@ flowchart LR
         end
 
         subgraph Containers ["Container Services"]
-            C["Lambda\nElastiCache\nRDS\nNeptune\nECS\nEC2\nMSK\nEKS\nOpenSearch\nCodeBuild"]
+            C["Lambda\nElastiCache\nMemoryDB\nRDS\nNeptune\nDocumentDB\nECS\nEC2\nMSK\nEKS\nOpenSearch\nCodeBuild"]
             D["Athena -> floci-duck\nDuckDB sidecar"]
         end
 
@@ -242,7 +242,7 @@ Floci supports local emulation for application services, data services, eventing
 | Containers and compute | ECS, EC2, EKS, CodeBuild, CodeDeploy, Auto Scaling, ELB v2 |
 | Data and analytics | Athena, Glue, EMR, Firehose, OpenSearch, Textract, Transcribe |
 | Security and governance | WAF v2, CloudTrail |
-| Databases | RDS, RDS Data API, Neptune, DocumentDB |
+| Databases | RDS, RDS Data API, Neptune, DocumentDB, MemoryDB |
 | Messaging and transfer | SES, SES v2, Kinesis, Transfer Family |
 | Cost and billing | Pricing, Cost Explorer, Cost and Usage Reports, BCM Data Exports |
 | Backup and config | AWS Backup, AWS Config, AppConfig, AppConfigData, CloudFormation |
@@ -259,11 +259,11 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | SQS | In-process | Standard and FIFO queues, DLQ, visibility timeout, batch operations, tagging |
 | SNS | In-process | Topics, subscriptions, SQS, Lambda and HTTP delivery, tagging |
 | S3 | In-process | Versioning, multipart upload, pre-signed URLs, Object Lock, event notifications |
-| DynamoDB | In-process | GSI, LSI, Query, Scan, TTL, transactions, batch operations |
+| DynamoDB | In-process | GSI, LSI, Query, Scan, TTL, transactions, batch operations, TableId, TableClass, OnDemandThroughput, deletion protection |
 | DynamoDB Streams | In-process | Shard iterators, records, Lambda event source mapping trigger |
 | Lambda | Real Docker | Runtime environment, execution model, warm container pool, aliases, Function URLs |
 | API Gateway REST | In-process | Resources, methods, stages, Lambda proxy, MOCK integrations, AWS integrations |
-| API Gateway v2 | In-process | HTTP APIs, routes, integrations, JWT authorizers, stages |
+| API Gateway v2 | In-process | HTTP APIs, routes, integrations, JWT authorizers, stages, cascade delete |
 | AppSync | In-process | GraphQL API management API, schema registry, AWS scalars, domain names, channel namespaces |
 | IAM | In-process | Users, roles, groups, policies, instance profiles, access keys |
 | STS | In-process | AssumeRole, WebIdentity, SAML, GetFederationToken, GetSessionToken |
@@ -272,29 +272,30 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Kinesis | In-process | Streams, shards, enhanced fan-out, split and merge |
 | Secrets Manager | In-process | Versioning, resource policies, tagging |
 | Step Functions | In-process | ASL execution, task tokens, execution history |
-| CloudFormation | In-process | Stacks, change sets, resource provisioning |
+| CloudFormation | In-process | Stacks, change sets, resource provisioning, SAM Globals merge, implicit API from Api events |
 | EventBridge | In-process | Custom buses, rules, SQS, SNS and Lambda targets |
 | EventBridge Pipes | In-process | Poller-based integration connecting SQS, Kinesis, DynamoDB, and MSK sources to targets with optional filtering |
 | EventBridge Scheduler | In-process | Schedule groups, schedules, flexible time windows, retry policies, DLQs |
 | CloudWatch Logs | In-process | Log groups, streams, ingestion, filtering |
 | CloudWatch Metrics | In-process | Custom metrics, statistics, alarms |
 | ElastiCache | Real Docker | Redis / Valkey protocol, IAM auth, SigV4 validation |
+| MemoryDB | Real Docker | Redis / Valkey protocol via real containers; JSON 1.1 control plane; reuses ElastiCache RESP proxy |
 | RDS | Real Docker | PostgreSQL, MySQL, MariaDB, IAM auth, JDBC-compatible engines |
 | RDS Data API | REST JSON over real RDS containers | Raw SQL execution and transactions for local MySQL / MariaDB RDS resources |
-| Neptune | Real Docker | Graph DB via TinkerPop Gremlin Server; RDS-shaped control plane; Gremlin WebSocket on port 8182 with SigV4 proxy |
+| Neptune | Real Docker | Graph DB via TinkerPop Gremlin Server (default) or Neo4j for openCypher/Bolt (`NEPTUNE_DB_TYPE`); RDS-shaped control plane; SigV4 proxy on port 8182 |
 | DocumentDB | Real Docker, mock mode available | MongoDB-compatible cluster via real MongoDB containers; RDS-shaped control plane; MongoDB wire protocol on port 27017 |
 | MSK | Real Docker | Kafka-compatible broker via Redpanda |
-| Athena | In-process with DuckDB sidecar | Real SQL execution over S3 and Glue-backed views |
+| Athena | In-process with DuckDB sidecar | Real SQL execution over S3 and Glue-backed views; partition keys in table metadata |
 | Glue | In-process | Data Catalog, Schema Registry, tables consumed by Athena |
 | EMR | In-process | Cluster (job flow) lifecycle, instance groups and fleets, steps, security configurations, tagging |
 | Data Firehose | In-process | Streaming delivery, NDJSON flush to S3 |
 | ECS | Real Docker | Clusters, task definitions, tasks, services, capacity providers, task sets |
-| EC2 | Real Docker | RunInstances launches containers, SSH key injection, UserData, IMDS, VPC resources |
-| ACM | In-process | Certificate issuance and validation lifecycle |
+| EC2 | Real Docker | RunInstances launches containers, SSH key injection, UserData, IMDS, VPC resources; empty `stateReason` omitted in DescribeInstances |
+| ACM | In-process | Certificate issuance and validation lifecycle; persisted across restart |
 | ECR | In-process with real registry | Repositories, docker push / pull, image-backed Lambda functions |
 | Resource Groups Tagging API | In-process | GetResources, tag and untag resources, tag key and value discovery across services |
 | SES | In-process | Send email, raw email, identity verification, DKIM, templates |
-| SES v2 | In-process | REST JSON API, identities, DKIM, account sending, templates |
+| SES v2 | In-process | REST JSON API, identities, DKIM, account sending, templates, dedicated IP pools, configuration-set option groups |
 | OpenSearch | Real Docker | Domain CRUD, tags, versions, instance types, upgrade stubs |
 | AppConfig | In-process | Applications, environments, profiles, hosted versions, deployments |
 | AppConfigData | In-process | Configuration sessions and dynamic configuration retrieval |
@@ -328,10 +329,12 @@ Floci uses real Docker containers when in-process emulation would reduce fidelit
 |---|---|---|
 | Lambda | `public.ecr.aws/lambda/<runtime>` | AWS runtime environment, execution model, warm container pool |
 | ElastiCache | `valkey/valkey:8` | Redis / Valkey protocol, ACL-based IAM auth, SigV4 validation |
+| MemoryDB | `valkey/valkey:8` | Valkey protocol via real containers; JSON 1.1 control plane; RESP proxy |
 | RDS PostgreSQL | `postgres:16-alpine` | PostgreSQL engine, IAM auth, JDBC-compatible access |
 | RDS MySQL / Aurora | `mysql:8.0` | MySQL engine, IAM auth, JDBC-compatible access |
 | RDS MariaDB | `mariadb:11` | MariaDB engine, IAM auth, JDBC-compatible access |
 | Neptune | `tinkerpop/gremlin-server:3.7.3` | TinkerPop Gremlin Server; Gremlin WebSocket on port 8182; SigV4 auth proxy |
+| Neptune (openCypher) | `neo4j:5-community` | Neo4j backend when `FLOCI_SERVICES_NEPTUNE_DB_TYPE=neo4j`; openCypher over Bolt |
 | DocumentDB | `mongo:7.0` | MongoDB engine; MongoDB wire protocol on port 27017 |
 | MSK | `redpandadata/redpanda:latest` | Kafka-compatible broker via Redpanda |
 | EC2 | AMI-mapped Linux images | Linux containers, SSH key injection, UserData, IMDS, IAM credentials |
@@ -358,6 +361,7 @@ docker compose up
 | `FLOCI_SERVICES_MSK_DEFAULT_IMAGE` | `redpandadata/redpanda:latest` |
 | `FLOCI_SERVICES_OPENSEARCH_DEFAULT_IMAGE` | `opensearchproject/opensearch:2` |
 | `FLOCI_SERVICES_NEPTUNE_DEFAULT_IMAGE` | `tinkerpop/gremlin-server:3.7.3` |
+| `FLOCI_SERVICES_NEPTUNE_DEFAULT_NEO4J_IMAGE` | `neo4j:5-community` |
 | `FLOCI_SERVICES_DOCDB_DEFAULT_IMAGE` | `mongo:7.0` |
 | `FLOCI_SERVICES_EKS_DEFAULT_IMAGE` | `rancher/k3s:latest` |
 | `FLOCI_SERVICES_ECR_REGISTRY_IMAGE` | `registry:2` |
@@ -469,6 +473,21 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (18 commits post **1.5.26**, 2026-06-21; pom baseline still **1.5.26**):
+
+| Area | Change |
+|---|---|
+| MemoryDB | New service; Valkey containers; JSON 1.1 control plane and RESP proxy |
+| Neptune | openCypher via Neo4j backend when `NEPTUNE_DB_TYPE=neo4j` |
+| SES v2 | Dedicated IP pools; configuration-set option groups |
+| API Gateway v2 | Cascade delete of child resources |
+| CloudFormation | SAM Globals merge; implicit API Gateway from SAM Api events |
+| DynamoDB | TableId, TableClass, OnDemandThroughput; deletion protection; scan limits; filter expression fixes |
+| ACM | Certificates restored after restart |
+| Athena | Partition keys in table metadata |
+| DocDB / Neptune | Container and proxy shutdown on emulator stop |
+| EC2 | Empty `stateReason` omitted in DescribeInstances |
+
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.26** (2026-06-19):
 
 | Area | Change |
@@ -544,7 +563,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.26** (merged 2026-06-09). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.26 + 18 post-release commits** (merged 2026-06-21). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
 
 **High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 

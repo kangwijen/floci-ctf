@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.ec2;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
@@ -26,6 +27,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -124,7 +126,7 @@ public class Ec2ContainerManager {
                         .withName(containerName)
                         .withEmbeddedDns()
                         .withDockerNetwork(Optional.empty())
-                        .withEnv(localAwsEnvironment(region, serviceEndpoint, imdsEndpoint))
+                        .withEnv(buildEnvVars(region, serviceEndpoint, imdsEndpoint, Map.of()))
                         .withEnv("AWS_EC2_INSTANCE_ID", instanceId)
                         .withPortBinding(22, sshHostPort)
                         .withHostDockerInternalOnLinux()
@@ -569,15 +571,20 @@ public class Ec2ContainerManager {
                 "exit 1")};
     }
 
-    static List<String> localAwsEnvironment(String region, String serviceEndpoint, String imdsEndpoint) {
-        return List.of(
-                "AWS_EC2_METADATA_SERVICE_ENDPOINT=" + imdsEndpoint,
-                "AWS_ENDPOINT_URL=" + serviceEndpoint,
-                "AWS_DEFAULT_REGION=" + region,
-                "AWS_REGION=" + region,
-                "AWS_ACCESS_KEY_ID=test",
-                "AWS_SECRET_ACCESS_KEY=test",
-                "AWS_SESSION_TOKEN=test-session-token");
+    static List<String> buildEnvVars(String region, String serviceEndpoint, String imdsEndpoint,
+                                     Map<String, String> userSupplied) {
+        Map<String, String> envMap = new LinkedHashMap<>();
+        ContainerEnvHardening.putAllIfAllowed(envMap, userSupplied != null ? userSupplied : Map.of());
+        ContainerEnvHardening.removeBlockedKeys(envMap);
+        envMap.put("AWS_EC2_METADATA_SERVICE_ENDPOINT", imdsEndpoint);
+        envMap.put("AWS_ENDPOINT_URL", serviceEndpoint);
+        envMap.put("AWS_DEFAULT_REGION", region);
+        envMap.put("AWS_REGION", region);
+        List<String> envVars = new ArrayList<>(envMap.size());
+        for (var entry : envMap.entrySet()) {
+            envVars.add(entry.getKey() + "=" + entry.getValue());
+        }
+        return envVars;
     }
 
     private static String summarizeUserDataOutput(ByteArrayOutputStream output) {
