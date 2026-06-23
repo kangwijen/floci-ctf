@@ -94,6 +94,16 @@ floci:
         flush-interval-ms: 5000
       batch:
         flush-interval-ms: 5000
+      codepipeline:
+        flush-interval-ms: 5000
+      s3vectors:
+        flush-interval-ms: 5000
+      ecs:
+        flush-interval-ms: 5000
+      codebuild:
+        flush-interval-ms: 5000
+      config:
+        flush-interval-ms: 5000
       rds:
         # Override storage mode for RDS (memory = no Docker volumes; hybrid/persistent = named volume per instance)
         # mode: memory
@@ -351,6 +361,8 @@ floci:
       # docker-network: floci-network
     codedeploy:
       enabled: true
+    codepipeline:
+      enabled: true
     autoscaling:
       enabled: true
     backup:
@@ -391,4 +403,6 @@ floci:
     cloudfront:
       enabled: true
     appsync:
+      enabled: true
+    s3vectors:
       enabled: true

@@ -13,6 +13,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
+import io.github.hectorvent.floci.services.resourcegroupstagging.ResourceGroupsTaggingService;
 import io.vertx.core.Vertx;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +54,7 @@ class EventBridgeSchedulerIntegrationTest {
                 new InMemoryStorage<>(), new InMemoryStorage<>(), new InMemoryStorage<>(),
                 new RegionResolver(REGION, ACCOUNT),
                 new ObjectMapper(), scheduler, invoker, replayDispatcher,
-                mock(InProcessTargetAuthorizer.class));
+                mock(InProcessTargetAuthorizer.class), new ResourceGroupsTaggingService());
     }
 
     @AfterEach

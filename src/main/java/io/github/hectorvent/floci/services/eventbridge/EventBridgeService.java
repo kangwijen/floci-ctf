@@ -18,6 +18,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
+import io.github.hectorvent.floci.services.resourcegroupstagging.ResourceGroupsTaggingService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,6 +52,7 @@ public class EventBridgeService {
     private final EventBridgeInvoker invoker;
     private final ReplayDispatcher replayDispatcher;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final ResourceGroupsTaggingService resourceGroupsTaggingService;
 
     @Inject
     public EventBridgeService(StorageFactory storageFactory,
@@ -60,7 +62,8 @@ public class EventBridgeService {
                               RuleScheduler ruleScheduler,
                               EventBridgeInvoker invoker,
                               ReplayDispatcher replayDispatcher,
-                              InProcessTargetAuthorizer targetAuthorizer) {
+                              InProcessTargetAuthorizer targetAuthorizer,
+                              ResourceGroupsTaggingService resourceGroupsTaggingService) {
         this(
                 storageFactory.create("eventbridge", "eventbridge-buses.json",
                         new TypeReference<Map<String, EventBus>>() {}),
@@ -75,7 +78,7 @@ public class EventBridgeService {
                 storageFactory.create("eventbridge", "eventbridge-replays.json",
                         new TypeReference<Map<String, Replay>>() {}),
                 regionResolver, objectMapper, ruleScheduler, invoker, replayDispatcher,
-                targetAuthorizer
+                targetAuthorizer, resourceGroupsTaggingService
         );
     }
 
@@ -90,7 +93,8 @@ public class EventBridgeService {
                        RuleScheduler ruleScheduler,
                        EventBridgeInvoker invoker,
                        ReplayDispatcher replayDispatcher,
-                       InProcessTargetAuthorizer targetAuthorizer) {
+                       InProcessTargetAuthorizer targetAuthorizer,
+                       ResourceGroupsTaggingService resourceGroupsTaggingService) {
         this.busStore = busStore;
         this.ruleStore = ruleStore;
         this.targetStore = targetStore;
@@ -103,6 +107,7 @@ public class EventBridgeService {
         this.invoker = invoker;
         this.replayDispatcher = replayDispatcher;
         this.targetAuthorizer = targetAuthorizer;
+        this.resourceGroupsTaggingService = resourceGroupsTaggingService;
     }
 
     @PostConstruct
@@ -150,6 +155,7 @@ public class EventBridgeService {
         );
         if (tags != null) {
             bus.getTags().putAll(tags);
+            resourceGroupsTaggingService.tagResources(List.of(bus.getArn()), tags, region);
         }
         busStore.put(key, bus);
         LOG.infov("Created event bus: {0} in region {1}", name, region);
@@ -166,7 +172,7 @@ public class EventBridgeService {
             throw new AwsException("ValidationException", "Cannot delete the default event bus.", 400);
         }
         String key = busKey(region, effectiveName);
-        busStore.get(key)
+        EventBus bus = busStore.get(key)
                 .orElseThrow(() -> new AwsException("ResourceNotFoundException",
                         "EventBus not found: " + effectiveName, 404));
         String rulePrefix = ruleKeyPrefix(region, effectiveName);
@@ -176,6 +182,7 @@ public class EventBridgeService {
                     "Cannot delete event bus with existing rules: " + name, 400);
         }
         busStore.delete(key);
+        resourceGroupsTaggingService.deleteResources(List.of(bus.getArn()), region);
         LOG.infov("Deleted event bus: {0}", name);
     }
 
@@ -275,6 +282,10 @@ public class EventBridgeService {
         }
         ruleStore.put(key, rule);
 
+        if (tags != null && !tags.isEmpty()) {
+            resourceGroupsTaggingService.tagResources(List.of(rule.getArn()), tags, region);
+        }
+
         if (ruleScheduler != null) {
             ruleScheduler.stopScheduler(rule.getArn());
             startSchedulerIfNeeded(rule);
@@ -301,6 +312,7 @@ public class EventBridgeService {
         }
 
         ruleStore.delete(key);
+        resourceGroupsTaggingService.deleteResources(List.of(rule.getArn()), region);
         LOG.infov("Deleted rule: {0}", name);
     }
 
@@ -443,6 +455,7 @@ public class EventBridgeService {
                             "Archive not found: " + archiveName, 404));
             archive.getTags().putAll(tags);
             archiveStore.put(key, archive);
+            resourceGroupsTaggingService.tagResources(List.of(resourceArn), tags, region);
             return;
         }
         if (resource.startsWith("event-bus/")) {
@@ -453,6 +466,7 @@ public class EventBridgeService {
                             "Resource not found: " + resourceArn, 404));
             bus.getTags().putAll(tags);
             busStore.put(key, bus);
+            resourceGroupsTaggingService.tagResources(List.of(resourceArn), tags, region);
             return;
         }
         if (resource.startsWith("rule/")) {
@@ -463,6 +477,7 @@ public class EventBridgeService {
                             "Resource not found: " + resourceArn, 404));
             rule.getTags().putAll(tags);
             ruleStore.put(key, rule);
+            resourceGroupsTaggingService.tagResources(List.of(resourceArn), tags, region);
             return;
         }
         throw new AwsException("ResourceNotFoundException", "Resource not found: " + resourceArn, 404);
@@ -478,6 +493,7 @@ public class EventBridgeService {
                             "Archive not found: " + archiveName, 404));
             tagKeys.forEach(archive.getTags()::remove);
             archiveStore.put(key, archive);
+            resourceGroupsTaggingService.untagResources(List.of(resourceArn), tagKeys, region);
             return;
         }
         if (resource.startsWith("event-bus/")) {
@@ -488,6 +504,7 @@ public class EventBridgeService {
                             "Resource not found: " + resourceArn, 404));
             tagKeys.forEach(bus.getTags()::remove);
             busStore.put(key, bus);
+            resourceGroupsTaggingService.untagResources(List.of(resourceArn), tagKeys, region);
             return;
         }
         if (resource.startsWith("rule/")) {
@@ -498,6 +515,7 @@ public class EventBridgeService {
                             "Resource not found: " + resourceArn, 404));
             tagKeys.forEach(rule.getTags()::remove);
             ruleStore.put(key, rule);
+            resourceGroupsTaggingService.untagResources(List.of(resourceArn), tagKeys, region);
             return;
         }
         throw new AwsException("ResourceNotFoundException", "Resource not found: " + resourceArn, 404);
@@ -1081,11 +1099,12 @@ public class EventBridgeService {
 
     public void deleteArchive(String archiveName, String region) {
         String key = archiveKey(region, archiveName);
-        archiveStore.get(key)
+        Archive archive = archiveStore.get(key)
                 .orElseThrow(() -> new AwsException("ResourceNotFoundException",
                         "Archive not found: " + archiveName, 404));
         archiveStore.delete(key);
         archivedEventStore.delete(archivedEventKey(region, archiveName));
+        resourceGroupsTaggingService.deleteResources(List.of(archive.getArchiveArn()), region);
         LOG.infov("Deleted archive: {0}", archiveName);
     }
 

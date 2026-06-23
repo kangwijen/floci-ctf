@@ -61,6 +61,7 @@ public class CognitoService {
     private final StorageBackend<String, ResourceServer> resourceServerStore;
     private final StorageBackend<String, CognitoUser> userStore;
     private final StorageBackend<String, CognitoGroup> groupStore;
+    private final StorageBackend<String, RevokedTokenInfo> revokedTokenStore;
     private final String baseUrl;
     private final RegionResolver regionResolver;
     private final LambdaService lambdaService;
@@ -84,6 +85,8 @@ public class CognitoService {
                 new TypeReference<Map<String, CognitoUser>>() {});
         this.groupStore = storageFactory.create("cognito", "cognito-groups.json",
                 new TypeReference<Map<String, CognitoGroup>>() {});
+        this.revokedTokenStore = storageFactory.create("cognito", "cognito-revoked-tokens.json",
+                new TypeReference<Map<String, RevokedTokenInfo>>() {});
         this.baseUrl = trimTrailingSlash(emulatorConfig.baseUrl());
         this.regionResolver = regionResolver;
         this.lambdaService = lambdaService;
@@ -97,11 +100,12 @@ public class CognitoService {
                    StorageBackend<String, ResourceServer> resourceServerStore,
                    StorageBackend<String, CognitoUser> userStore,
                    StorageBackend<String, CognitoGroup> groupStore,
+                   StorageBackend<String, RevokedTokenInfo> revokedTokenStore,
                    String baseUrl,
                    RegionResolver regionResolver,
                    LambdaService lambdaService) {
-        this(poolStore, clientStore, resourceServerStore, userStore, groupStore, baseUrl, regionResolver,
-                lambdaService, null);
+        this(poolStore, clientStore, resourceServerStore, userStore, groupStore, revokedTokenStore, baseUrl,
+                regionResolver, lambdaService, null);
     }
 
     CognitoService(StorageBackend<String, UserPool> poolStore,
@@ -109,6 +113,7 @@ public class CognitoService {
                    StorageBackend<String, ResourceServer> resourceServerStore,
                    StorageBackend<String, CognitoUser> userStore,
                    StorageBackend<String, CognitoGroup> groupStore,
+                   StorageBackend<String, RevokedTokenInfo> revokedTokenStore,
                    String baseUrl,
                    RegionResolver regionResolver,
                    LambdaService lambdaService,
@@ -118,6 +123,7 @@ public class CognitoService {
         this.resourceServerStore = resourceServerStore;
         this.userStore = userStore;
         this.groupStore = groupStore;
+        this.revokedTokenStore = revokedTokenStore;
         this.baseUrl = baseUrl;
         this.regionResolver = regionResolver;
         this.lambdaService = lambdaService;
@@ -803,7 +809,8 @@ public class CognitoService {
 
     public void adminUserGlobalSignOut(String userPoolId, String username) {
         adminGetUser(userPoolId, username);
-        LOG.infov("AdminUserGlobalSignOut stub: user {0} in pool {1} signed out globally", username, userPoolId);
+        revokeAllUserTokens(userPoolId, username);
+        LOG.infov("AdminUserGlobalSignOut: revoked all tokens for user {0} in pool {1}", username, userPoolId);
     }
 
     public CognitoUser adminGetUser(String userPoolId, String username) {
@@ -1157,9 +1164,13 @@ public class CognitoService {
     public void changePassword(String accessToken, String previousPassword, String proposedPassword) {
         String username = extractUsernameFromToken(accessToken);
         String poolId = extractPoolIdFromToken(accessToken);
+        String jti = extractJtiFromToken(accessToken);
         if (username == null || poolId == null) {
             throw new AwsException("NotAuthorizedException", "Invalid access token", 400);
         }
+        validateTokenNotRevoked(jti, poolId, "access");
+        Long iat = extractIatFromToken(accessToken);
+        validateUserNotGloballySignedOut(username, poolId, "access", iat != null ? iat : 0L);
 
         CognitoUser user = adminGetUser(poolId, username);
         if (user.getPasswordHash() != null && !user.getPasswordHash().equals(hashPassword(previousPassword))) {
@@ -1214,9 +1225,13 @@ public class CognitoService {
     public Map<String, Object> getUser(String accessToken) {
         String username = extractUsernameFromToken(accessToken);
         String poolId = extractPoolIdFromToken(accessToken);
-        if (username == null || poolId == null) {
+        String jti = extractJtiFromToken(accessToken);
+        if (username == null || poolId == null || jti == null) {
             throw new AwsException("NotAuthorizedException", "Invalid access token", 400);
         }
+        validateTokenNotRevoked(jti, poolId, "access");
+        Long iat = extractIatFromToken(accessToken);
+        validateUserNotGloballySignedOut(username, poolId, "access", iat != null ? iat : 0L);
         CognitoUser user = adminGetUser(poolId, username);
         Map<String, Object> result = new HashMap<>();
         result.put("Username", user.getUsername());
@@ -1229,18 +1244,26 @@ public class CognitoService {
     public void updateUserAttributes(String accessToken, Map<String, String> attributes) {
         String username = extractUsernameFromToken(accessToken);
         String poolId = extractPoolIdFromToken(accessToken);
+        String jti = extractJtiFromToken(accessToken);
         if (username == null || poolId == null) {
             throw new AwsException("NotAuthorizedException", "Invalid access token", 400);
         }
+        validateTokenNotRevoked(jti, poolId, "access");
+        Long iat = extractIatFromToken(accessToken);
+        validateUserNotGloballySignedOut(username, poolId, "access", iat != null ? iat : 0L);
         adminUpdateUserAttributes(poolId, username, attributes);
     }
 
     public void deleteUserAttributes(String accessToken, List<String> attributeNames) {
         String username = extractUsernameFromToken(accessToken);
         String poolId = extractPoolIdFromToken(accessToken);
+        String jti = extractJtiFromToken(accessToken);
         if (username == null || poolId == null) {
             throw new AwsException("NotAuthorizedException", "Invalid access token", 400);
         }
+        validateTokenNotRevoked(jti, poolId, "access");
+        Long iat = extractIatFromToken(accessToken);
+        validateUserNotGloballySignedOut(username, poolId, "access", iat != null ? iat : 0L);
         adminDeleteUserAttributes(poolId, username, attributeNames);
     }
 
@@ -1320,18 +1343,26 @@ public class CognitoService {
         }
         String poolId = parts[0];
         String username = parts[1];
+        String refreshTokenUuid = parts[4];
         if (!client.getUserPoolId().equals(poolId)) {
             throw new AwsException("NotAuthorizedException", "Invalid refresh token", 400);
         }
         if (isRefreshTokenExpired(client, parts)) {
             throw new AwsException("NotAuthorizedException", "Refresh Token has expired", 400);
         }
+        validateTokenNotRevoked(refreshTokenUuid, poolId, "refresh");
+        long issuedAt = 0L;
+        try {
+            issuedAt = Long.parseLong(parts[3]);
+        } catch (NumberFormatException ignored) {
+        }
+        validateUserNotGloballySignedOut(username, poolId, "refresh", issuedAt);
         UserPool pool = describeUserPool(poolId);
         CognitoUser user = adminGetUser(poolId, username);
         ClaimsOverride override = authFlowHandler.preTokenGenerationForRefresh(pool, client, user);
         Map<String, Object> auth = new HashMap<>();
-        auth.put("AccessToken", generateSignedJwt(user, pool, "access", client, override));
-        auth.put("IdToken", generateSignedJwt(user, pool, "id", client, override));
+        auth.put("AccessToken", generateSignedJwt(user, pool, "access", client, override, refreshTokenUuid));
+        auth.put("IdToken", generateSignedJwt(user, pool, "id", client, override, refreshTokenUuid));
         auth.put("ExpiresIn", resolveAccessTokenLifetimeSeconds(client));
         auth.put("TokenType", "Bearer");
         Map<String, Object> result = new HashMap<>();
@@ -1340,9 +1371,13 @@ public class CognitoService {
     }
 
     Map<String, Object> generateAuthResult(CognitoUser user, UserPool pool, UserPoolClient client, ClaimsOverride override) {
+        return generateAuthResult(user, pool, client, override, null);
+    }
+
+    Map<String, Object> generateAuthResult(CognitoUser user, UserPool pool, UserPoolClient client, ClaimsOverride override, String originJti) {
         Map<String, Object> auth = new HashMap<>();
-        auth.put("AccessToken", generateSignedJwt(user, pool, "access", client, override));
-        auth.put("IdToken", generateSignedJwt(user, pool, "id", client, override));
+        auth.put("AccessToken", generateSignedJwt(user, pool, "access", client, override, originJti));
+        auth.put("IdToken", generateSignedJwt(user, pool, "id", client, override, originJti));
         auth.put("RefreshToken", buildRefreshToken(pool.getId(), user.getUsername(), client.getClientId()));
         auth.put("ExpiresIn", resolveAccessTokenLifetimeSeconds(client));
         auth.put("TokenType", "Bearer");
@@ -1350,6 +1385,10 @@ public class CognitoService {
     }
 
     String generateSignedJwt(CognitoUser user, UserPool pool, String type, UserPoolClient client, ClaimsOverride override) {
+        return generateSignedJwt(user, pool, type, client, override, null);
+    }
+
+    String generateSignedJwt(CognitoUser user, UserPool pool, String type, UserPoolClient client, ClaimsOverride override, String originJti) {
         String header = encodeJwtHeader(pool);
         long now = System.currentTimeMillis() / 1000L;
         long lifetimeSeconds = resolveTokenLifetimeSeconds(client, type);
@@ -1367,6 +1406,10 @@ public class CognitoService {
         claims.put("username", user.getUsername());
         claims.put("email", email);
         claims.put("cognito:username", user.getUsername());
+        claims.put("jti", UUID.randomUUID().toString());
+        if (("access".equals(type) || "id".equals(type)) && originJti != null) {
+            claims.put("origin_jti", originJti);
+        }
         String clientId = client != null ? client.getClientId() : null;
         if (clientId != null && !clientId.isBlank()) {
             if ("access".equals(type)) claims.put("client_id", clientId);
@@ -1921,7 +1964,7 @@ public class CognitoService {
     }
 
     String buildRefreshToken(String poolId, String username, String clientId) {
-        long issuedAt = System.currentTimeMillis() / 1000L;
+        long issuedAt = System.currentTimeMillis();
         String raw = poolId + "|" + username + "|" + clientId + "|" + issuedAt + "|" + UUID.randomUUID();
         return Base64.getEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
@@ -2017,6 +2060,116 @@ public class CognitoService {
         Map<String, String> updated = new HashMap<>(existingTags != null ? existingTags : Map.of());
         tagKeys.forEach(updated::remove);
         return updated;
+    }
+
+    private String extractJtiFromToken(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length < 2) {
+                return null;
+            }
+            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            return extractJsonField(payloadJson, "jti");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long extractIatFromToken(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length < 2) {
+                return null;
+            }
+            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            String iatStr = extractJsonField(payloadJson, "iat");
+            if (iatStr != null) {
+                return Long.parseLong(iatStr);
+            }
+            Map<String, Object> payload = MAPPER.readValue(payloadJson, new TypeReference<>() {});
+            Object iat = payload.get("iat");
+            if (iat instanceof Number n) {
+                return n.longValue();
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        return null;
+    }
+
+    void validateRefreshTokenNotRevoked(String jti, String poolId, String username, long iat) {
+        validateTokenNotRevoked(jti, poolId, "refresh");
+        validateUserNotGloballySignedOut(username, poolId, "refresh", iat);
+    }
+
+    private void validateTokenNotRevoked(String jti, String poolId, String tokenType) {
+        if (jti == null) {
+            return;
+        }
+        String revokedKey = revokedTokenKey(poolId, jti);
+        Optional<RevokedTokenInfo> revoked = revokedTokenStore.get(revokedKey);
+        if (revoked.isPresent()) {
+            RevokedTokenInfo revokedInfo = revoked.get();
+            if (revokedInfo.isExpired()) {
+                revokedTokenStore.delete(revokedKey);
+                return;
+            }
+            String errorMessage = switch (tokenType) {
+                case "access" -> "Access Token has been revoked";
+                case "id" -> "ID Token has been revoked";
+                case "refresh" -> "Refresh Token has been revoked";
+                default -> "Token has been revoked";
+            };
+            throw new AwsException("NotAuthorizedException", errorMessage, 400);
+        }
+    }
+
+    private void validateUserNotGloballySignedOut(String username, String poolId, String tokenType, long iat) {
+        String globalRevokeKey = revokedTokenKey(poolId, "global:" + username);
+        Optional<RevokedTokenInfo> globalRevoked = revokedTokenStore.get(globalRevokeKey);
+        if (globalRevoked.isPresent()) {
+            RevokedTokenInfo globalInfo = globalRevoked.get();
+            if (!globalInfo.isExpired()) {
+                long revokedAtMs = globalInfo.getRevokedAt();
+                boolean revoked = false;
+                if (iat > 1000000000000L) {
+                    revoked = iat <= revokedAtMs;
+                } else if (iat > 0) {
+                    revoked = (iat * 1000L) <= revokedAtMs;
+                }
+                if (revoked) {
+                    String errorMessage = switch (tokenType) {
+                        case "access" -> "Access Token has been revoked";
+                        case "id" -> "ID Token has been revoked";
+                        case "refresh" -> "Refresh Token has been revoked";
+                        default -> "Token has been revoked";
+                    };
+                    throw new AwsException("NotAuthorizedException", errorMessage, 400);
+                }
+            } else {
+                revokedTokenStore.delete(globalRevokeKey);
+            }
+        }
+    }
+
+    private void revokeAllUserTokens(String userPoolId, String username) {
+        long nowMs = System.currentTimeMillis();
+        String globalRevokeKey = revokedTokenKey(userPoolId, "global:" + username);
+        long globalExpiration = nowMs + (365L * 24L * 60L * 60L * 1000L);
+        RevokedTokenInfo globalRevocation = new RevokedTokenInfo(
+                "global:" + username,
+                "global",
+                username,
+                userPoolId,
+                nowMs,
+                globalExpiration
+        );
+        revokedTokenStore.put(globalRevokeKey, globalRevocation);
+        LOG.debugv("Created global revocation record for user {0} in pool {1}", username, userPoolId);
+    }
+
+    private String revokedTokenKey(String poolId, String jti) {
+        return "revoked:" + poolId + ":" + jti;
     }
 
     private void ensureVerificationWiring() {

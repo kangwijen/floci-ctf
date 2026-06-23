@@ -161,6 +161,9 @@ public class AwsQueryController {
             "AttachInternetGateway", "DetachInternetGateway",
             "CreateRouteTable", "DescribeRouteTables", "DeleteRouteTable",
             "AssociateRouteTable", "DisassociateRouteTable", "CreateRoute", "DeleteRoute",
+            "CreateNetworkAcl", "DescribeNetworkAcls", "DeleteNetworkAcl",
+            "CreateNetworkAclEntry", "ReplaceNetworkAclEntry", "DeleteNetworkAclEntry",
+            "ReplaceNetworkAclAssociation",
             "CreateNatGateway", "DescribeNatGateways", "DeleteNatGateway",
             "AllocateAddress", "AssociateAddress", "DisassociateAddress", "ReleaseAddress", "DescribeAddresses",
             "DescribeAddressesAttribute",
@@ -362,7 +365,11 @@ public class AwsQueryController {
             "CreateConfigurationSetEventDestination",
             "UpdateConfigurationSetEventDestination",
             "DeleteConfigurationSetEventDestination",
-            "UpdateConfigurationSetSendingEnabled"
+            "UpdateConfigurationSetSendingEnabled",
+            "CreateConfigurationSetTrackingOptions",
+            "UpdateConfigurationSetTrackingOptions",
+            "DeleteConfigurationSetTrackingOptions",
+            "UpdateConfigurationSetReputationMetricsEnabled"
     );
 
     private static final Set<String> COGNITO_ACTIONS = Set.of(

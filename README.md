@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.26**, +18 commits merged 2026-06-21) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.26**, +33 commits; latest merge `9253ee82`, +15 commits 2026-06-23) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -195,7 +195,7 @@ LocalStack's community edition [sunset in March 2026](https://blog.localstack.cl
 | CodeBuild | Real Docker execution | No |
 | Native binary | ~40 MB | No |
 
-**58 AWS services. Broad coverage. Free forever.**
+**60 AWS services. Broad coverage. Free forever.**
 
 ## Architecture Overview
 
@@ -207,11 +207,11 @@ flowchart LR
         Router["HTTP Router\nJAX-RS / Vert.x"]
 
         subgraph Stateless ["Stateless Services"]
-            A["SSM · SQS · SNS\nIAM · STS · KMS\nSecrets Manager · SES\nCognito · Kinesis\nEventBridge · Scheduler · AppConfig\nCloudWatch · Step Functions\nCloudFormation · ACM · Config\nAPI Gateway · AppSync · ELB v2 · Auto Scaling\nCodeDeploy · Backup · Bedrock Runtime · Route53 · Transfer"]
+            A["SSM · SQS · SNS\nIAM · STS · KMS\nSecrets Manager · SES\nCognito · Kinesis\nEventBridge · Scheduler · AppConfig\nCloudWatch · Step Functions\nCloudFormation · ACM · Config\nAPI Gateway · AppSync · ELB v2 · Auto Scaling\nCodeDeploy · CodePipeline · Backup · Bedrock Runtime · Route53 · Transfer"]
         end
 
         subgraph Stateful ["Stateful Services"]
-            B["S3 · DynamoDB\nDynamoDB Streams"]
+            B["S3 · S3 Vectors · DynamoDB\nDynamoDB Streams"]
         end
 
         subgraph Containers ["Container Services"]
@@ -236,10 +236,10 @@ Floci supports local emulation for application services, data services, eventing
 
 | Category | Services |
 |---|---|
-| Core app services | S3, SQS, SNS, DynamoDB, Lambda, IAM, STS, KMS, Secrets Manager |
+| Core app services | S3, S3 Vectors, SQS, SNS, DynamoDB, Lambda, IAM, STS, KMS, Secrets Manager |
 | Events and workflows | EventBridge, EventBridge Pipes, EventBridge Scheduler, Step Functions, CloudWatch Logs, CloudWatch Metrics |
 | API and identity | API Gateway REST, API Gateway v2, AppSync, Cognito, ACM, Route53, Cloud Map |
-| Containers and compute | ECS, EC2, EKS, CodeBuild, CodeDeploy, Auto Scaling, ELB v2 |
+| Containers and compute | ECS, EC2, EKS, CodeBuild, CodeDeploy, CodePipeline, Auto Scaling, ELB v2 |
 | Data and analytics | Athena, Glue, EMR, Firehose, OpenSearch, Textract, Transcribe |
 | Security and governance | WAF v2, CloudTrail |
 | Databases | RDS, RDS Data API, Neptune, DocumentDB, MemoryDB |
@@ -259,6 +259,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | SQS | In-process | Standard and FIFO queues, DLQ, visibility timeout, batch operations, tagging |
 | SNS | In-process | Topics, subscriptions, SQS, Lambda and HTTP delivery, tagging |
 | S3 | In-process | Versioning, multipart upload, pre-signed URLs, Object Lock, event notifications |
+| S3 Vectors | In-process | Vector buckets, indexes, put/get/list/delete vectors, similarity query |
 | DynamoDB | In-process | GSI, LSI, Query, Scan, TTL, transactions, batch operations, TableId, TableClass, OnDemandThroughput, deletion protection |
 | DynamoDB Streams | In-process | Shard iterators, records, Lambda event source mapping trigger |
 | Lambda | Real Docker | Runtime environment, execution model, warm container pool, aliases, Function URLs |
@@ -267,10 +268,10 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | AppSync | In-process | GraphQL API management API, schema registry, AWS scalars, domain names, channel namespaces |
 | IAM | In-process | Users, roles, groups, policies, instance profiles, access keys |
 | STS | In-process | AssumeRole, WebIdentity, SAML, GetFederationToken, GetSessionToken |
-| Cognito | In-process | User pools, app clients, auth flows, JWKS and OpenID well-known endpoints |
-| KMS | In-process | Encrypt, decrypt, sign, verify, data keys, aliases |
+| Cognito | In-process | User pools, app clients, auth flows, JWKS and OpenID well-known endpoints; `AdminUserGlobalSignOut` revokes access and refresh tokens |
+| KMS | In-process | Encrypt, decrypt, sign, verify, data keys, aliases; typed `KeySpec` / `KeyUsage` enums and signing algorithms in key metadata |
 | Kinesis | In-process | Streams, shards, enhanced fan-out, split and merge |
-| Secrets Manager | In-process | Versioning, resource policies, tagging |
+| Secrets Manager | In-process | Versioning, resource policies, tagging, automatic rotation lifecycle via Lambda |
 | Step Functions | In-process | ASL execution, task tokens, execution history |
 | CloudFormation | In-process | Stacks, change sets, resource provisioning, SAM Globals merge, implicit API from Api events |
 | EventBridge | In-process | Custom buses, rules, SQS, SNS and Lambda targets |
@@ -289,12 +290,12 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Glue | In-process | Data Catalog, Schema Registry, tables consumed by Athena |
 | EMR | In-process | Cluster (job flow) lifecycle, instance groups and fleets, steps, security configurations, tagging |
 | Data Firehose | In-process | Streaming delivery, NDJSON flush to S3 |
-| ECS | Real Docker | Clusters, task definitions, tasks, services, capacity providers, task sets |
-| EC2 | Real Docker | RunInstances launches containers, SSH key injection, UserData, IMDS, VPC resources; empty `stateReason` omitted in DescribeInstances |
+| ECS | Real Docker | Clusters, task definitions, tasks, services, capacity providers, task sets; durable control-plane state persisted via `StorageBackedMap` |
+| EC2 | Real Docker | RunInstances launches containers, SSH key injection, UserData, IMDS, VPC resources, Network ACLs; empty `stateReason` omitted in DescribeInstances |
 | ACM | In-process | Certificate issuance and validation lifecycle; persisted across restart |
 | ECR | In-process with real registry | Repositories, docker push / pull, image-backed Lambda functions |
 | Resource Groups Tagging API | In-process | GetResources, tag and untag resources, tag key and value discovery across services |
-| SES | In-process | Send email, raw email, identity verification, DKIM, templates |
+| SES | In-process | Send email, raw email, identity verification, DKIM, templates; v1 configuration-set tracking and reputation-metrics options |
 | SES v2 | In-process | REST JSON API, identities, DKIM, account sending, templates, dedicated IP pools, configuration-set option groups |
 | OpenSearch | Real Docker | Domain CRUD, tags, versions, instance types, upgrade stubs |
 | AppConfig | In-process | Applications, environments, profiles, hosted versions, deployments |
@@ -302,11 +303,12 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Bedrock Runtime | In-process stub | Dummy Converse and InvokeModel responses for local development |
 | EKS | Real Docker, mock mode available | k3s clusters with live Kubernetes API server |
 | ELB v2 | In-process | ALB, NLB, target groups, listeners, routing rules, Lambda targets, tags |
-| CodeBuild | In-process with real Docker | Real buildspec execution, CloudWatch logs, S3 artifacts |
+| CodeBuild | In-process with real Docker | Real buildspec execution, CloudWatch logs, S3 artifacts; projects, report groups, and source credentials persisted |
 | CodeDeploy | In-process with Lambda traffic shifting | Deployment groups, configs, lifecycle hooks, auto-rollback |
-| Auto Scaling | In-process with reconciler | Launch configs, ASGs, desired capacity reconciliation, instance refresh, mixed-instances policy, lifecycle hooks |
+| CodePipeline | In-process orchestration | Pipelines, executions, S3 artifacts, approvals, local providers, custom workers |
+| Auto Scaling | In-process with reconciler | Launch configs, ASGs, desired capacity reconciliation, instance refresh, mixed-instances policy, lifecycle hooks; rejects launch templates without image IDs |
 | AWS Backup | In-process | Vaults, backup plans, selections, simulated job lifecycle, recovery points |
-| AWS Config | In-process | Config rules, configuration recorders, delivery channels, conformance packs, tagging |
+| AWS Config | In-process | Config rules, configuration recorders, delivery channels, conformance packs, tagging; rules, recorders, channels, and tags persisted across restart |
 | CloudTrail | In-process | Trail lifecycle, event selectors (`GetEventSelectors` defaults), logging status; management API only |
 | WAF v2 | In-process | Web ACLs, IP sets, regex pattern sets, rule groups, logging configs, resource associations, tagging (REGIONAL and CLOUDFRONT scopes) |
 | Route53 | In-process | Hosted zones, SOA and NS records, resource record sets, change tracking, tagging |
@@ -378,7 +380,7 @@ Floci can trade speed for durability depending on the workflow. Configure the de
 | `hybrid` | In-memory performance with periodic async flushing every 5 seconds. | Local development | Good |
 | `wal` | Write-ahead log. Every mutation is logged before responding. | Maximum durability | Highest |
 
-Use `memory` for fast test runs. Use `hybrid` when you want state preserved across container restarts without much overhead.
+Use `memory` for fast test runs. Use `hybrid` when you want state preserved across container restarts without much overhead. Recent upstream fixes persist durable metadata for **AWS Config** (rules, conformance packs, recorders, delivery channels, tags), **ECS** (clusters, task definitions, services), **CodeBuild** (projects, report groups, source credentials), and **EC2** spot and flow-log state via `StorageBackedMap` / configured storage backends.
 
 For more detail, see the [Storage Configuration documentation](https://floci.io/floci/configuration/storage/).
 
@@ -473,6 +475,25 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (+15 commits at `9253ee82`, 2026-06-23; pom baseline still **1.5.26**):
+
+| Area | Change |
+|---|---|
+| CodePipeline | New JSON 1.1 service; local pipeline execution (S3, CodeBuild, CodeDeploy, Lambda, manual approval, custom workers) |
+| S3 Vectors | New REST JSON service; vector buckets, indexes, put/get/list/delete, similarity query |
+| KMS | `KeySpec` / `KeyUsage` enums; signing algorithms exposed in key metadata |
+| Cognito | Token revocation on `AdminUserGlobalSignOut` |
+| Secrets Manager | Automatic secret rotation lifecycle via Lambda |
+| SES v1 | Configuration-set tracking options and reputation-metrics options |
+| EC2 | Network ACL lifecycle APIs; user data logging fix |
+| Auto Scaling | Rejects launch templates without image IDs |
+| AWS Config | Persist rules, conformance packs, recorders, delivery channels, tags |
+| ECS | Persist durable control-plane resources via `StorageBackedMap` |
+| CodeBuild | Persist projects, report groups, and source credentials |
+| RDS | PostgreSQL proxy honors requested database name |
+| SSM | Reject SendCommand timeouts below AWS minimum |
+| Floci UI | Readiness probe URL resolved from container endpoint |
+
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (18 commits post **1.5.26**, 2026-06-21; pom baseline still **1.5.26**):
 
 | Area | Change |
@@ -563,7 +584,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.26 + 18 post-release commits** (merged 2026-06-21). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.26 + 33 post-release commits** (latest `9253ee82`, +15 commits merged 2026-06-23). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
 
 **High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 
