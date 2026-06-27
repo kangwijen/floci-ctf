@@ -384,7 +384,7 @@ public class S3Controller {
             }
 
             // --- Website Hosting Redirection Logic ---
-            if (uriInfo.getQueryParameters().isEmpty() || (uriInfo.getQueryParameters().size() == 1 && hasQueryParam(uriInfo, "list-type"))) {
+            if (isWebsiteRequest(httpHeaders) && (uriInfo.getQueryParameters().isEmpty() || (uriInfo.getQueryParameters().size() == 1 && hasQueryParam(uriInfo, "list-type")))) {
                 try {
                     WebsiteConfiguration webConfig = s3Service.getBucketWebsite(bucket);
                     if (webConfig.getIndexDocument() != null) {
@@ -397,7 +397,8 @@ public class S3Controller {
                                     .header("x-amz-website-redirect-location", "index")
                                     .build();
                         } catch (AwsException e) {
-                            // If index.html is missing, we could serve ErrorDocument, but for now we fall back to listObjects
+                            Response r = serveErrorDocument(bucket, webConfig);
+                            if (r != null) return r;
                         }
                     }
                 } catch (AwsException e) {
@@ -667,6 +668,14 @@ public class S3Controller {
                     200, null, obj.getSize(), obj.getSize(), versionId);
             return objectResponse;
         } catch (AwsException e) {
+            if ("NoSuchKey".equals(e.getErrorCode()) && isWebsiteRequest(httpHeaders)) {
+                try {
+                    WebsiteConfiguration webConfig = s3Service.getBucketWebsite(bucket);
+                    Response r = serveErrorDocument(bucket, webConfig);
+                    if (r != null) return r;
+                } catch (AwsException ignored) {
+                }
+            }
             recordAccessLog(bucket, key, "REST.GET.OBJECT", "GET", uriInfo, httpHeaders, startedAt,
                     e.getHttpStatus(), e.getErrorCode(), -1, null, versionId);
             return xmlErrorResponse(e);
@@ -2025,6 +2034,34 @@ public class S3Controller {
         String crc64nvme = httpHeaders.getHeaderString("x-amz-checksum-crc64nvme");
         if (crc64nvme != null && !crc64nvme.equals(S3Checksum.crc64NvmeBase64(data))) {
             throw new AwsException("BadDigest", "The CRC64NVME checksum you specified did not match the payload.", 400);
+        }
+    }
+
+    private static boolean isWebsiteRequest(HttpHeaders httpHeaders) {
+        String host = httpHeaders.getHeaderString("Host");
+        return host != null && host.contains("s3-website");
+    }
+
+    private Response serveErrorDocument(String bucket, WebsiteConfiguration cfg) {
+        if (cfg.getErrorDocument() == null) {
+            return null;
+        }
+        try {
+            S3Object err = s3Service.getObject(bucket, cfg.getErrorDocument());
+            return Response.status(404)
+                    .entity(err.getData())
+                    .type(err.getContentType())
+                    .header("Content-Length", err.getSize())
+                    .header("x-amz-error-code", "NoSuchKey")
+                    .header("x-amz-error-message", "The specified key does not exist.")
+                    .build();
+        } catch (AwsException ignored) {
+            return Response.status(404)
+                    .entity("<html><head><title>404 Not Found</title></head>\n<body><h1>404 Not Found</h1>\n<ul><li>Code: NoSuchKey</li><li>Message: The specified key does not exist.</li></ul></body></html>")
+                    .type(MediaType.TEXT_HTML)
+                    .header("x-amz-error-code", "NoSuchKey")
+                    .header("x-amz-error-message", "The specified key does not exist.")
+                    .build();
         }
     }
 

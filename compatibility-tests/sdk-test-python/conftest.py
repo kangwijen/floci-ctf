@@ -187,6 +187,24 @@ def servicediscovery_client(aws_config, client_config):
     return boto3.client("servicediscovery", config=client_config, **aws_config)
 
 
+@pytest.fixture
+def iot_client(aws_config, client_config):
+    """Create AWS IoT client."""
+    return boto3.client("iot", config=client_config, **aws_config)
+
+
+@pytest.fixture
+def iot_data_client(aws_config, client_config):
+    """Create AWS IoT Data client."""
+    return boto3.client("iot-data", config=client_config, **aws_config)
+
+
+@pytest.fixture
+def iot_jobs_data_client(aws_config, client_config):
+    """Create AWS IoT Jobs Data client."""
+    return boto3.client("iot-jobs-data", config=client_config, **aws_config)
+
+
 # ============================================
 # Utility Fixtures
 # ============================================

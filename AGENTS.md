@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Latest upstream merge | 33 commits post 1.5.26 (2026-06-23`) |
+| Latest upstream merge | 1.5.28 (2026-06-28) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -289,9 +289,11 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **main** (15 commits through **`9253ee82`**, merged 2026-06-23; pom still **1.5.26**): CodePipeline JSON 1.1 with local stage execution (S3, CodeBuild, CodeDeploy, Lambda, nested pipelines, manual approval), S3 Vectors REST JSON (vector buckets, indexes, put/get/query/delete vectors), KMS `KmsKeySpec` / `KmsKeyUsage` / `KmsMessageType` enums and key metadata algorithms, Cognito `AdminUserGlobalSignOut` token revocation (`RevokedTokenInfo` store), SES v1 configuration-set tracking options and reputation-metrics flags, EC2 Network ACL lifecycle (default ACL on VPC create, persisted `ec2-network-acls.json`), Secrets Manager automatic rotation lifecycle (`RotateSecret` + Lambda hook), hybrid/persistent storage for AWS Config rules/recorders/channels/tags, ECS durable resources (`StorageBackedMap`), CodeBuild projects/report groups/source credentials, EC2 spot and flow-log state unchanged. **CTF preserved:** SigV4 presign generator (operator root AKIA), `seedDeployerPrincipal` off when enforcement on, strict IAM, Secrets Manager single-layer KMS envelopes (`SecretsManagerKmsSupport`), Cognito auth flows and global sign-out via `InProcessTargetAuthorizer`, `ContainerEnvHardening` on CodeBuild/ECS runtime env, EC2 flow logs + spot persistence.
+**Latest merge:** upstream **main** (52 commits through **`aeb11d77`**, merged 2026-06-28; releases **1.5.27** and **1.5.28**, pom **1.5.28**): IoT Core (control plane, IoT Data, embedded MQTT broker, topic rules), Elastic Beanstalk Query API, MemoryDB ACLs and users, AppSync `$util` VTL runtime, EventBridge Pipes Kafka sources (MSK and `smk://`), S3 bucket logging configuration, ECS `efsVolumeConfiguration` shared mounts, SES v1 delivery options and SNS feedback topics, EC2 instance-type catalog and Java Ubuntu AMI, Cognito auth-flow fixes, Lambda SQS ESM fidelity, IAM managed-policy account context and thread-safe stores, CodeDeploy persistence, plus 1.5.27 items (CodePipeline, S3 Vectors, MemoryDB, KMS enums, Cognito token revocation, Secrets Manager rotation, Config/ECS/CodeBuild persistence, Network ACLs, SAM Globals). **CTF preserved:** SigV4 presign generator (operator root AKIA), `seedDeployerPrincipal` off when enforcement on, strict IAM, Secrets Manager single-layer KMS envelopes (`SecretsManagerKmsSupport`), Cognito auth flows and global sign-out via `InProcessTargetAuthorizer`, `ContainerEnvHardening` on CodeBuild/ECS runtime env, EC2 flow logs + spot persistence.
 
-**Previous merge:** upstream **main** (18 commits post **1.5.26**, merged 2026-06-21): MemoryDB service (Valkey containers), Neptune openCypher via Neo4j backend (`NEPTUNE_DB_TYPE`), SES v2 dedicated IP pools and configuration-set option groups, API Gateway v2 cascade delete, CloudFormation SAM Globals merge and implicit API from Api events, DynamoDB TableId/TableClass/OnDemandThroughput/deletion protection/scan limits/filter expression fixes, ACM certificate persistence after restart, Athena partition keys in table metadata, DocDB/Neptune container shutdown on emulator stop, EC2 empty `stateReason` omitted in DescribeInstances.
+**Previous merge:** upstream **main** (15 commits through **`9253ee82`**, merged 2026-06-23; release **1.5.27**): CodePipeline JSON 1.1 with local stage execution (S3, CodeBuild, CodeDeploy, Lambda, nested pipelines, manual approval), S3 Vectors REST JSON (vector buckets, indexes, put/get/query/delete vectors), KMS `KmsKeySpec` / `KmsKeyUsage` / `KmsMessageType` enums and key metadata algorithms, Cognito `AdminUserGlobalSignOut` token revocation (`RevokedTokenInfo` store), SES v1 configuration-set tracking options and reputation-metrics flags, EC2 Network ACL lifecycle (default ACL on VPC create, persisted `ec2-network-acls.json`), Secrets Manager automatic rotation lifecycle (`RotateSecret` + Lambda hook), hybrid/persistent storage for AWS Config rules/recorders/channels/tags, ECS durable resources (`StorageBackedMap`), CodeBuild projects/report groups/source credentials, EC2 spot and flow-log state unchanged.
+
+**Earlier merge:** upstream **main** (18 commits post **1.5.26**, merged 2026-06-21): MemoryDB service (Valkey containers), Neptune openCypher via Neo4j backend (`NEPTUNE_DB_TYPE`), SES v2 dedicated IP pools and configuration-set option groups, API Gateway v2 cascade delete, CloudFormation SAM Globals merge and implicit API from Api events, DynamoDB TableId/TableClass/OnDemandThroughput/deletion protection/scan limits/filter expression fixes, ACM certificate persistence after restart, Athena partition keys in table metadata, DocDB/Neptune container shutdown on emulator stop, EC2 empty `stateReason` omitted in DescribeInstances.
 
 **Earlier:** upstream **1.5.26** (24 commits, merged 2026-06-09; released 2026-06-19): presigned URL account context (#1413), Lambda SQS DLQ redrive (#1419), Cognito password recovery (#1415), EC2 Spot instances and embedded DNS (#1291, #1390), API Gateway SQS query integrations (#1385), CloudFormation provisioning expansion, Auto Scaling reconciliation/instance refresh, DocumentDB, SSM patch baselines and Run Command in EC2 containers.
 
@@ -317,7 +319,13 @@ Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merges):
 - Secrets Manager: `SecretsManagerService`, `SecretsManagerJsonHandler`, `SecretsManagerKmsSupport` (single-layer envelopes; rotation must not re-wrap KMS ciphertext)
 - CodePipeline: `CodePipelineService`, `CodePipelineJsonHandler` (storage-backed pipelines; in-process actions inherit IAM on integrated services)
 - S3 Vectors: `S3VectorsService`, `S3VectorsController` (new REST host prefix; standard HTTP IAM/SigV4 path)
-- Storage persistence: `AwsConfigService`, `EcsService`, `CodeBuildService`, `Ec2Service` (hybrid flush intervals; do not bypass `StorageFactory`)
+- IoT: `IotService`, `IotController`, `IotDataController`, `IotMqttBrokerService` (new REST JSON + MQTT; standard HTTP IAM/SigV4 path)
+- Elastic Beanstalk: `ElasticBeanstalkService`, `ElasticBeanstalkQueryHandler`
+- MemoryDB ACLs: `MemoryDbService`, `MemoryDbHandler`, `services/memorydb/model/Acl`, `User`
+- AppSync `$util`: `services/appsync/graphql/util/*`
+- S3 bucket logging: `S3Controller`, `S3AccessLogService`
+- EventBridge Pipes Kafka: `PipesService` (MSK and `smk://` sources)
+- Storage persistence: `AwsConfigService`, `EcsService`, `CodeBuildService`, `Ec2Service`, `CodeDeployService` (hybrid flush intervals; do not bypass `StorageFactory`)
 - ACM / Athena: certificate persistence, partition keys in table metadata
 - `SnsService` (`iamEnforcementEnabled` gate on default topic policy)
 - `EcsContainerManager`, `CodeBuildRunner` (`ContainerEnvHardening` in `buildEnvVars`)
