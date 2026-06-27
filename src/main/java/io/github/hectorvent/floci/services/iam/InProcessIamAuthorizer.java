@@ -140,6 +140,16 @@ public class InProcessIamAuthorizer {
                                           String resourceArn,
                                           String region,
                                           String sourceArn) {
+        authorizeServicePrincipal(servicePrincipal, credentialScope, action, resourceArn, region, sourceArn, null);
+    }
+
+    public void authorizeServicePrincipal(String servicePrincipal,
+                                          String credentialScope,
+                                          String action,
+                                          String resourceArn,
+                                          String region,
+                                          String sourceArn,
+                                          String sourceAccountId) {
         if (!config.services().iam().enforcementEnabled()) {
             return;
         }
@@ -157,6 +167,9 @@ public class InProcessIamAuthorizer {
         Map<String, String> conditionCtx = buildConditionContext(servicePrincipal, accountId);
         if (sourceArn != null && !sourceArn.isBlank()) {
             conditionCtx.put("aws:sourcearn", sourceArn);
+        }
+        if (sourceAccountId != null && !sourceAccountId.isBlank()) {
+            conditionCtx.put("aws:sourceaccount", sourceAccountId);
         }
         CallerContext emptyIdentity = CallerContext.of(List.of());
         Decision decision = evaluator.evaluate(emptyIdentity, resourcePolicies, iamAction, resource, conditionCtx);

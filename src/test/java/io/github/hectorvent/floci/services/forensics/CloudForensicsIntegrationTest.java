@@ -20,8 +20,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
@@ -177,11 +175,7 @@ class CloudForensicsIntegrationTest {
         CtfLabIamTestSupport.putObject(WORKLOAD_BUCKET, "read-me.txt", "payload");
         CtfLabIamTestSupport.getObject(WORKLOAD_BUCKET, "read-me.txt");
 
-        String hourPrefix = ACCESS_LOG_PREFIX + DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT)
-                .withZone(ZoneOffset.UTC)
-                .format(java.time.Instant.now());
-
-        String logKey = CtfLabIamTestSupport.listBucket(ACCESS_LOG_BUCKET + "?prefix=" + hourPrefix)
+        String logKey = CtfLabIamTestSupport.listBucket(ACCESS_LOG_BUCKET + "?prefix=" + ACCESS_LOG_PREFIX)
                 .statusCode(200)
                 .extract().xmlPath()
                 .getString("ListBucketResult.Contents[0].Key");

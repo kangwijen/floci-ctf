@@ -43,6 +43,7 @@ public class InProcessTargetAuthorizer {
     public static final String BCM_DATA_EXPORTS_SERVICE = "bcm-data-exports.amazonaws.com";
     public static final String BILLING_REPORTS_SERVICE = "billingreports.amazonaws.com";
     public static final String DELIVERY_LOGS_SERVICE = "delivery.logs.amazonaws.com";
+    public static final String LOGGING_SERVICE = "logging.s3.amazonaws.com";
 
     private final InProcessIamAuthorizer iamAuthorizer;
     private final EmulatorConfig config;
@@ -168,6 +169,11 @@ public class InProcessTargetAuthorizer {
 
     public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey,
                                       String region, String sourceArn) {
+        authorizeServiceS3Put(servicePrincipal, bucketName, objectKey, region, sourceArn, null);
+    }
+
+    public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey,
+                                      String region, String sourceArn, String sourceAccountId) {
         if (bucketName == null || bucketName.isBlank()) {
             return;
         }
@@ -187,16 +193,21 @@ public class InProcessTargetAuthorizer {
                     servicePrincipal, "s3", "GetBucketPolicy", bucketArn, region);
             return;
         }
+        if (LOGGING_SERVICE.equals(servicePrincipal)) {
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
+            return;
+        }
         if (CONFIG_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "ListBucket", bucketArn, region);
             iamAuthorizer.authorizeServicePrincipal(
-                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
             return;
         }
         iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
         iamAuthorizer.authorizeServicePrincipal(
-                servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
+                servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
     }
 
     public void authorizeFirehoseS3Put(String roleArn, String bucketName, String objectKey, String region) {
@@ -211,6 +222,22 @@ public class InProcessTargetAuthorizer {
 
     public void authorizeVpcFlowLogsS3Put(String bucketName, String objectKey, String region) {
         authorizeServiceS3Put(DELIVERY_LOGS_SERVICE, bucketName, objectKey, region);
+    }
+
+    /**
+     * S3 server access log delivery uses {@code logging.s3.amazonaws.com} with destination bucket
+     * policies conditioned on {@code aws:SourceArn} / {@code aws:SourceAccount} of the source bucket.
+     */
+    public void authorizeS3AccessLogDelivery(String sourceBucketName,
+                                            String targetBucketName,
+                                            String objectKey,
+                                            String region,
+                                            String sourceAccountId) {
+        if (targetBucketName == null || targetBucketName.isBlank()) {
+            return;
+        }
+        String sourceArn = AwsArnUtils.Arn.of("s3", "", "", sourceBucketName).toString();
+        authorizeServiceS3Put(LOGGING_SERVICE, targetBucketName, objectKey, region, sourceArn, sourceAccountId);
     }
 
     public void authorizeLambdaEventSourcePoll(String executionRoleArn, String eventSourceArn, String region) {

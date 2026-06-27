@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -379,7 +380,7 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull());
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
     }
 
     @Test
@@ -398,7 +399,7 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), eq(trailArn));
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), eq(trailArn), isNull());
     }
 
     @Test
@@ -421,7 +422,21 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull());
+                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
+    }
+
+    @Test
+    void s3AccessLogDeliveryChecksPutObjectWithSourceArnAndAccount() {
+        authorizer.authorizeS3AccessLogDelivery(
+                "source-bucket", "ctf-delivery-bucket", "access-logs/key.log", REGION, ACCOUNT);
+
+        verify(iamAuthorizer, never()).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.LOGGING_SERVICE), eq("s3"), eq("GetBucketAcl"),
+                any(), any());
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.LOGGING_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::ctf-delivery-bucket/access-logs/key.log"), eq(REGION),
+                eq("arn:aws:s3:::source-bucket"), eq(ACCOUNT));
     }
 
     @Test

@@ -196,6 +196,8 @@ floci:
     s3:
       enabled: true
       default-presign-expiry-seconds: 3600
+      # access-log-delivery-mode: instant   # instant | scheduled | aws | normal
+      # access-log-delivery-interval-seconds: 3600
     dynamodb:
       enabled: true
     sns:

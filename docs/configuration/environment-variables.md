@@ -192,6 +192,8 @@ See [Initialization Hooks](./initialization-hooks.md) for lifecycle phases and s
 |---|---|---|
 | `FLOCI_SERVICES_S3_ENABLED` | `true` | Enable the S3 service |
 | `FLOCI_SERVICES_S3_DEFAULT_PRESIGN_EXPIRY_SECONDS` | `3600` | Default pre-signed URL expiry when none is specified |
+| `FLOCI_SERVICES_S3_ACCESS_LOG_DELIVERY_MODE` | `instant` | S3 server access log delivery: `instant` (per-request) or `scheduled` / `aws` / `normal` (batched flush) |
+| `FLOCI_SERVICES_S3_ACCESS_LOG_DELIVERY_INTERVAL_SECONDS` | `3600` | Flush interval for scheduled access log delivery (one hour default; AWS delivers on a best-effort basis, often within a few hours) |
 
 ### DynamoDB
 

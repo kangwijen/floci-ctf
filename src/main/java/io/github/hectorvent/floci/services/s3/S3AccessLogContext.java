@@ -12,6 +12,7 @@ public record S3AccessLogContext(
         long bytesSent,
         Long objectSize,
         long totalTimeMs,
+        long turnAroundTimeMs,
         String remoteIp,
         String requester,
         String requestId,
@@ -20,7 +21,12 @@ public record S3AccessLogContext(
         String referer,
         String versionId,
         String signatureVersion,
+        String cipherSuite,
         String authenticationType,
         String hostHeader,
+        String tlsVersion,
+        String accessPointArn,
+        String aclRequired,
+        String sourceRegion,
         Instant timestamp) {
 }

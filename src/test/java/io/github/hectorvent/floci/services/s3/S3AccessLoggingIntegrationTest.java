@@ -6,13 +6,12 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
+import java.util.regex.Pattern;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +24,8 @@ class S3AccessLoggingIntegrationTest {
     private static final String LOG_PREFIX = "access-logs/";
     private static final String OBJECT_KEY = "logged-object.txt";
     private static final String OBJECT_BODY = "access-log-payload";
+    private static final Pattern SIMPLE_LOG_KEY = Pattern.compile(
+            "access-logs/\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-[0-9a-f]{16}");
 
     @Test
     @Order(1)
@@ -48,12 +49,13 @@ class S3AccessLoggingIntegrationTest {
 
     @Test
     @Order(3)
-    void putBucketLogging() {
+    void putBucketLoggingWithSimplePrefixFormat() {
         String xml = """
                 <BucketLoggingStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
                     <LoggingEnabled>
                         <TargetBucket>%s</TargetBucket>
                         <TargetPrefix>%s</TargetPrefix>
+                        <TargetObjectKeyFormat><SimplePrefix/></TargetObjectKeyFormat>
                     </LoggingEnabled>
                 </BucketLoggingStatus>
                 """.formatted(LOG_BUCKET, LOG_PREFIX);
@@ -79,7 +81,8 @@ class S3AccessLoggingIntegrationTest {
             .statusCode(200)
             .body(containsString("<LoggingEnabled>"))
             .body(containsString("<TargetBucket>" + LOG_BUCKET + "</TargetBucket>"))
-            .body(containsString("<TargetPrefix>" + LOG_PREFIX + "</TargetPrefix>"));
+            .body(containsString("<TargetPrefix>" + LOG_PREFIX + "</TargetPrefix>"))
+            .body(containsString("<SimplePrefix"));
     }
 
     @Test
@@ -113,38 +116,34 @@ class S3AccessLoggingIntegrationTest {
         .then()
             .statusCode(204);
 
-        String hourPrefix = LOG_PREFIX + DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT)
-                .withZone(ZoneOffset.UTC)
-                .format(java.time.Instant.now());
-        String logKey = given()
-            .queryParam("prefix", hourPrefix)
+        List<String> keys = given()
+            .queryParam("prefix", LOG_PREFIX)
         .when()
             .get("/" + LOG_BUCKET)
         .then()
             .statusCode(200)
+            .body("ListBucketResult.Contents.size()", greaterThanOrEqualTo(4))
             .extract()
             .xmlPath()
-            .getString("ListBucketResult.Contents[0].Key");
+            .getList("ListBucketResult.Contents.Key", String.class);
 
-        String logBody = given()
-        .when()
-            .get("/" + LOG_BUCKET + "/" + logKey)
-        .then()
-            .statusCode(200)
-            .extract()
-            .asString();
+        assertTrue(keys.stream().allMatch(key -> SIMPLE_LOG_KEY.matcher(key).matches()),
+                "unexpected log object keys: " + keys);
 
-        List<String> lines = logBody.lines().filter(line -> !line.isBlank()).toList();
-        assertTrue(lines.size() >= 4, "expected at least four access log lines");
+        StringBuilder joined = new StringBuilder();
+        for (String key : keys) {
+            joined.append(given().when().get("/" + LOG_BUCKET + "/" + key).then().statusCode(200).extract().asString());
+        }
+        String logBody = joined.toString();
+        assertTrue(logBody.lines().filter(line -> !line.isBlank()).count() >= 4);
 
-        String joined = String.join("\n", lines);
-        assertTrue(joined.contains(SOURCE_BUCKET));
-        assertTrue(joined.contains("REST.PUT.OBJECT"));
-        assertTrue(joined.contains("REST.GET.OBJECT"));
-        assertTrue(joined.contains("REST.GET.BUCKET"));
-        assertTrue(joined.contains("REST.DELETE.OBJECT"));
-        assertTrue(joined.contains(OBJECT_KEY));
-        assertTrue(joined.contains("HTTP/1.1"));
+        assertTrue(logBody.contains(SOURCE_BUCKET));
+        assertTrue(logBody.contains("REST.PUT.OBJECT"));
+        assertTrue(logBody.contains("REST.GET.OBJECT"));
+        assertTrue(logBody.contains("REST.GET.BUCKET"));
+        assertTrue(logBody.contains("REST.DELETE.OBJECT"));
+        assertTrue(logBody.contains(OBJECT_KEY));
+        assertTrue(logBody.contains("HTTP/1.1"));
     }
 
     @Test

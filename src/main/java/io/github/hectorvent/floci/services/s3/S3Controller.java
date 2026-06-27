@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.s3;
 import static io.github.hectorvent.floci.services.s3.S3RequestParser.hasQueryParam;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
@@ -10,6 +11,7 @@ import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesParts;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesResult;
@@ -94,6 +96,7 @@ public class S3Controller {
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
     private final IamService iamService;
     private final EmulatorConfig emulatorConfig;
+    private final AccountResolver accountResolver;
     private final io.github.hectorvent.floci.services.floci.ui.UiPages uiPages;
 
     @Inject
@@ -103,6 +106,7 @@ public class S3Controller {
                         io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
                         IamService iamService,
                         EmulatorConfig emulatorConfig,
+                        AccountResolver accountResolver,
                         io.github.hectorvent.floci.services.floci.ui.UiPages uiPages) {
         this.s3Service = s3Service;
         this.s3SelectService = s3SelectService;
@@ -111,6 +115,7 @@ public class S3Controller {
         this.currentVertxRequest = currentVertxRequest;
         this.iamService = iamService;
         this.emulatorConfig = emulatorConfig;
+        this.accountResolver = accountResolver;
         this.uiPages = uiPages;
     }
 
@@ -2755,7 +2760,11 @@ public class S3Controller {
                                  int httpStatus, String errorCode, long bytesSent, Long objectSize,
                                  String versionId) {
         String[] auth = resolveAuthType(httpHeaders, uriInfo);
+        String[] transport = resolveTransportSecurity(httpHeaders);
         String requestId = newAccessLogRequestId();
+        long totalTimeMs = elapsedMillis(startedAtNanos);
+        long turnAroundTimeMs = Math.max(0, totalTimeMs > 0 ? totalTimeMs - 1 : 0);
+        Instant eventTime = Instant.now();
         accessLogService.recordAccess(new S3AccessLogContext(
                 bucket,
                 key,
@@ -2765,18 +2774,59 @@ public class S3Controller {
                 errorCode,
                 bytesSent,
                 objectSize,
-                elapsedMillis(startedAtNanos),
+                totalTimeMs,
+                turnAroundTimeMs,
                 resolveRemoteIp(),
-                "-",
+                resolveRequester(httpHeaders, uriInfo),
                 requestId,
                 newAccessLogHostId(),
                 httpHeaders.getHeaderString("User-Agent"),
                 httpHeaders.getHeaderString("Referer"),
                 versionId,
                 auth[0],
+                transport[0],
                 auth[1],
                 httpHeaders.getHeaderString("Host"),
-                Instant.now()));
+                transport[1],
+                "-",
+                "-",
+                regionResolver.resolveRegion(null),
+                eventTime));
+    }
+
+    private String resolveRequester(HttpHeaders httpHeaders, UriInfo uriInfo) {
+        String auth = httpHeaders.getHeaderString("Authorization");
+        String akid = accountResolver.extractAccessKeyId(auth);
+        String accountId;
+        if (akid == null) {
+            String credential = uriInfo.getQueryParameters().getFirst("X-Amz-Credential");
+            akid = accountResolver.extractAccessKeyIdFromCredential(credential);
+            accountId = accountResolver.resolveFromPresignedCredential(credential);
+        } else {
+            accountId = accountResolver.resolve(auth);
+        }
+        if (akid == null) {
+            return "-";
+        }
+        Optional<CallerIdentity> identity = iamService.resolveCallerIdentity(
+                akid, accountId, emulatorConfig.auth().rootAccessKeyId());
+        if (identity.isEmpty()) {
+            return "-";
+        }
+        CallerIdentity caller = identity.get();
+        if (caller.arn().contains(":assumed-role/")) {
+            return caller.arn();
+        }
+        return S3AccessLogFormatter.canonicalUserId(caller.account());
+    }
+
+    private static String[] resolveTransportSecurity(HttpHeaders httpHeaders) {
+        String forwardedProto = httpHeaders.getHeaderString("X-Forwarded-Proto");
+        boolean https = forwardedProto != null && forwardedProto.equalsIgnoreCase("https");
+        if (!https) {
+            return new String[] {"-", "-"};
+        }
+        return new String[] {"ECDHE-RSA-AES128-GCM-SHA256", "TLSv1.2"};
     }
 
     private static String newAccessLogRequestId() {

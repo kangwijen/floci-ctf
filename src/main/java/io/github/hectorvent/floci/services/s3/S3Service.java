@@ -1046,21 +1046,24 @@ public class S3Service {
         Bucket bucket = bucketStore.get(bucketName)
                 .orElseThrow(() -> new AwsException("NoSuchBucket",
                         "The specified bucket does not exist.", 404));
-        String targetBucket = XmlParser.extractFirst(loggingXml, "TargetBucket", null);
-        if (targetBucket == null || targetBucket.isBlank()) {
+        if (loggingXml == null || loggingXml.isBlank()
+                || !loggingXml.toLowerCase(java.util.Locale.ROOT).contains("<targetbucket")) {
+            bucket.setLoggingConfiguration(null);
+            bucketStore.put(bucketName, bucket);
+            LOG.infov("Cleared logging configuration for bucket: {0}", bucketName);
+            return;
+        }
+        LoggingConfiguration config = S3LoggingConfigurationParser.parse(loggingXml);
+        if (config == null) {
             throw new AwsException("MalformedXML",
                     "The XML you provided was not well-formed or did not validate against our published schema.",
                     400);
         }
-        targetBucket = targetBucket.trim();
-        ensureBucketExists(targetBucket);
-        String targetPrefix = XmlParser.extractFirst(loggingXml, "TargetPrefix", "");
-        if (targetPrefix == null) {
-            targetPrefix = "";
-        }
-        bucket.setLoggingConfiguration(new LoggingConfiguration(targetBucket, targetPrefix));
+        ensureBucketExists(config.getTargetBucket());
+        bucket.setLoggingConfiguration(config);
         bucketStore.put(bucketName, bucket);
-        LOG.infov("Set logging configuration for bucket: {0} -> {1}/{2}", bucketName, targetBucket, targetPrefix);
+        LOG.infov("Set logging configuration for bucket: {0} -> {1}/{2}",
+                bucketName, config.getTargetBucket(), config.getTargetPrefix());
     }
 
     public String getBucketLogging(String bucketName) {
@@ -1074,14 +1077,48 @@ public class S3Service {
                     .end("BucketLoggingStatus")
                     .build();
         }
-        return new XmlBuilder()
+        XmlBuilder builder = new XmlBuilder()
                 .start("BucketLoggingStatus", AwsNamespaces.S3)
                 .start("LoggingEnabled")
                 .elem("TargetBucket", config.getTargetBucket())
-                .elem("TargetPrefix", config.getTargetPrefix() != null ? config.getTargetPrefix() : "")
-                .end("LoggingEnabled")
-                .end("BucketLoggingStatus")
-                .build();
+                .elem("TargetPrefix", config.getTargetPrefix() != null ? config.getTargetPrefix() : "");
+        appendTargetGrants(builder, config);
+        appendTargetObjectKeyFormat(builder, config);
+        return builder.end("LoggingEnabled").end("BucketLoggingStatus").build();
+    }
+
+    private static void appendTargetGrants(XmlBuilder builder, LoggingConfiguration config) {
+        if (config.getTargetGrants() == null || config.getTargetGrants().isEmpty()) {
+            return;
+        }
+        for (io.github.hectorvent.floci.services.s3.model.TargetGrant grant : config.getTargetGrants()) {
+            builder.start("TargetGrant");
+            if (grant.getGranteeId() != null || grant.getGranteeDisplayName() != null) {
+                builder.start("Grantee");
+                builder.elem("ID", grant.getGranteeId());
+                builder.elem("DisplayName", grant.getGranteeDisplayName());
+                builder.elem("Type", grant.getGranteeType() != null ? grant.getGranteeType() : "CanonicalUser");
+                builder.end("Grantee");
+            }
+            builder.elem("Permission", grant.getPermission());
+            builder.end("TargetGrant");
+        }
+    }
+
+    private static void appendTargetObjectKeyFormat(XmlBuilder builder, LoggingConfiguration config) {
+        io.github.hectorvent.floci.services.s3.model.TargetObjectKeyFormat format = config.getTargetObjectKeyFormat();
+        if (format == null) {
+            return;
+        }
+        builder.start("TargetObjectKeyFormat");
+        if (format.getPartitionedPrefix() != null) {
+            builder.start("PartitionedPrefix");
+            builder.elem("PartitionDateSource", format.getPartitionedPrefix().getPartitionDateSource());
+            builder.end("PartitionedPrefix");
+        } else {
+            builder.start("SimplePrefix").end("SimplePrefix");
+        }
+        builder.end("TargetObjectKeyFormat");
     }
 
     public void deleteBucketLogging(String bucketName) {

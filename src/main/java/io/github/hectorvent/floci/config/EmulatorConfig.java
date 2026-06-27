@@ -744,6 +744,18 @@ public interface EmulatorConfig {
 
         @WithDefault("3600")
         int defaultPresignExpirySeconds();
+
+        /**
+         * {@code instant}: write each access log line to the target bucket on the request path (CTF default).
+         * {@code scheduled}, {@code aws}, or {@code normal}: buffer lines and flush on
+         * {@link #accessLogDeliveryIntervalSeconds()} (AWS best-effort batch delivery).
+         */
+        @WithDefault("instant")
+        String accessLogDeliveryMode();
+
+        /** Flush interval for scheduled access log delivery. AWS typically delivers within a few hours; 1 hour is a practical emulator default. */
+        @WithDefault("3600")
+        int accessLogDeliveryIntervalSeconds();
     }
 
     interface DynamoDbServiceConfig {
