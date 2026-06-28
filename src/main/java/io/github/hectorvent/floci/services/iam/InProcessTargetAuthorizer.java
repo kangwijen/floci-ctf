@@ -38,6 +38,8 @@ public class InProcessTargetAuthorizer {
     public static final String CODEDEPLOY_SERVICE = "codedeploy.amazonaws.com";
     public static final String CONFIG_SERVICE = "config.amazonaws.com";
     public static final String CLOUDTRAIL_SERVICE = "cloudtrail.amazonaws.com";
+    /** AWS CloudTrail S3 delivery canned ACL for trail log objects. */
+    public static final String CLOUDTRAIL_DELIVERY_OBJECT_ACL = "bucket-owner-full-control";
     public static final String FIREHOSE_SERVICE = "firehose.amazonaws.com";
     public static final String EC2_SERVICE = "ec2.amazonaws.com";
     public static final String BCM_DATA_EXPORTS_SERVICE = "bcm-data-exports.amazonaws.com";
@@ -174,6 +176,11 @@ public class InProcessTargetAuthorizer {
 
     public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey,
                                       String region, String sourceArn, String sourceAccountId) {
+        authorizeServiceS3Put(servicePrincipal, bucketName, objectKey, region, sourceArn, sourceAccountId, null);
+    }
+
+    public void authorizeServiceS3Put(String servicePrincipal, String bucketName, String objectKey,
+                                      String region, String sourceArn, String sourceAccountId, String cannedAcl) {
         if (bucketName == null || bucketName.isBlank()) {
             return;
         }
@@ -183,31 +190,34 @@ public class InProcessTargetAuthorizer {
                 : bucketArn + "/*";
         if (BCM_DATA_EXPORTS_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(
-                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, null, cannedAcl);
             return;
         }
         if (BILLING_REPORTS_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(
-                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn);
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, null, cannedAcl);
             iamAuthorizer.authorizeServicePrincipal(
                     servicePrincipal, "s3", "GetBucketPolicy", bucketArn, region);
             return;
         }
         if (LOGGING_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(
-                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId, cannedAcl);
             return;
         }
         if (CONFIG_SERVICE.equals(servicePrincipal)) {
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
             iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "ListBucket", bucketArn, region);
             iamAuthorizer.authorizeServicePrincipal(
-                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
+                    servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId, cannedAcl);
             return;
         }
         iamAuthorizer.authorizeServicePrincipal(servicePrincipal, "s3", "GetBucketAcl", bucketArn, region);
+        String putObjectAcl = CLOUDTRAIL_SERVICE.equals(servicePrincipal)
+                ? (cannedAcl != null && !cannedAcl.isBlank() ? cannedAcl : CLOUDTRAIL_DELIVERY_OBJECT_ACL)
+                : cannedAcl;
         iamAuthorizer.authorizeServicePrincipal(
-                servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId);
+                servicePrincipal, "s3", "PutObject", objectResource, region, sourceArn, sourceAccountId, putObjectAcl);
     }
 
     public void authorizeFirehoseS3Put(String roleArn, String bucketName, String objectKey, String region) {

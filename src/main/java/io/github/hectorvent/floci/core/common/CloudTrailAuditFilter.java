@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.services.cloudtrail.CloudTrailAuditCoordinator;
 import io.github.hectorvent.floci.services.cloudtrail.CloudTrailEventRecorder;
 import io.github.hectorvent.floci.services.cloudtrail.CloudTrailService;
 import io.github.hectorvent.floci.services.configservice.ConfigSnapshotChangeHook;
@@ -39,6 +40,7 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
     private final IamActionRegistry actionRegistry;
     private final RegionResolver regionResolver;
     private final ConfigSnapshotChangeHook configSnapshotChangeHook;
+    private final CloudTrailAuditCoordinator auditCoordinator;
 
     @Inject
     public CloudTrailAuditFilter(EmulatorConfig config,
@@ -46,13 +48,15 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
                                  CloudTrailEventRecorder eventRecorder,
                                  IamActionRegistry actionRegistry,
                                  RegionResolver regionResolver,
-                                 ConfigSnapshotChangeHook configSnapshotChangeHook) {
+                                 ConfigSnapshotChangeHook configSnapshotChangeHook,
+                                 CloudTrailAuditCoordinator auditCoordinator) {
         this.config = config;
         this.cloudTrailService = cloudTrailService;
         this.eventRecorder = eventRecorder;
         this.actionRegistry = actionRegistry;
         this.regionResolver = regionResolver;
         this.configSnapshotChangeHook = configSnapshotChangeHook;
+        this.auditCoordinator = auditCoordinator;
     }
 
     @Override
@@ -86,9 +90,14 @@ public class CloudTrailAuditFilter implements ContainerResponseFilter {
                 ? actionRegistry.resolve(credentialScope, request)
                 : null;
 
-        Map<String, Object> event = eventRecorder.buildEvent(request, response, iamAction, credentialScope);
-        cloudTrailService.recordEvent(region, event);
-        configSnapshotChangeHook.onManagementEvent(region, event, response.getStatus());
+        auditCoordinator.beginRecording();
+        try {
+            Map<String, Object> event = eventRecorder.buildEvent(request, response, iamAction, credentialScope);
+            cloudTrailService.recordEvent(region, event);
+            configSnapshotChangeHook.onManagementEvent(region, event, response.getStatus());
+        } finally {
+            auditCoordinator.endRecording();
+        }
     }
 
     private boolean shouldSkip(String path, ContainerRequestContext request) {

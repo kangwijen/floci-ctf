@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEventResou
 import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailTrail;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
+import io.github.hectorvent.floci.services.s3.model.PutObjectOptions;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -173,8 +174,12 @@ public class CloudTrailDeliveryService {
                     trail.getS3BucketName(),
                     objectKey,
                     region,
-                    trail.getTrailArn());
-            s3Service.putObject(trail.getS3BucketName(), objectKey, payload, "application/json", Map.of());
+                    trail.getTrailArn(),
+                    null,
+                    InProcessTargetAuthorizer.CLOUDTRAIL_DELIVERY_OBJECT_ACL);
+            s3Service.putObject(trail.getS3BucketName(), objectKey, payload, "application/json", Map.of(),
+                    new PutObjectOptions()
+                            .withAcl(InProcessTargetAuthorizer.CLOUDTRAIL_DELIVERY_OBJECT_ACL));
             LOG.debugv("Delivered {0} CloudTrail events to s3://{1}/{2}",
                     events.size(), trail.getS3BucketName(), objectKey);
         } catch (Exception e) {

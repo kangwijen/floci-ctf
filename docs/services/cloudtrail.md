@@ -85,7 +85,7 @@ HTTP audit events follow AWS CloudTrail record semantics where practical:
 |---|---|
 | Data vs management | S3 object APIs (`PutObject`, `GetObject`, `DeleteObject`, ...) and SQS data plane (`SendMessage`, `ReceiveMessage`, ...) set `eventCategory: Data` and `managementEvent: false`. `PurgeQueue` and control-plane APIs stay `Management`. |
 | `resources` | Populated from `ResourceArnBuilder` with CloudFormation-style `type` (`AWS::S3::Object`, `AWS::SQS::Queue`, `AWS::IAM::Role`, `AWS::SecretsManager::Secret`, `AWS::CloudTrail::Trail`, ...). S3 object events also include the parent bucket ARN. |
-| `requestParameters` | SQS data-plane calls (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) include `queueUrl` on Query (`application/x-www-form-urlencoded`) and JSON 1.0 (`application/x-amz-json-1.0`) wire protocols. `SendMessage` also records `messageBody` with the submitted payload. |
+| `requestParameters` | SQS data-plane calls (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) include `queueUrl` on Query (`application/x-www-form-urlencoded`) and JSON 1.0 (`application/x-amz-json-1.0`) wire protocols. `SendMessage` also records `messageBody` with the submitted payload. S3 `ListObjectsV2` (`?list-type=2`) records `eventName: ListObjectsV2` (v1 list APIs remain `ListBucket`). |
 | `responseElements` | S3 versioned writes/deletes expose `x-amz-version-id` / `x-amz-delete-marker` from response headers. STS `AssumeRole` includes `credentials.accessKeyId` and `assumedRoleUser` (no secret key). IAM `CreateAccessKey` includes `accessKey` metadata. SQS `SendMessage` includes `messageId`. |
 | `userIdentity` | IAM users include `sessionContext.attributes` (`mfaAuthenticated`, `creationDate`). Assumed-role sessions include `sessionContext.sessionIssuer`. |
 
@@ -95,11 +95,11 @@ Regression: `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailSqsAuditIntegra
 
 ## LookupEvents
 
-`LookupEvents` searches the in-memory or persisted event index populated by the audit filter and test helpers. Supported `LookupAttributes` keys: `EventName`, `Username`, `ResourceName`, `EventSource`, `ReadOnly`. Results sort most recent first (`eventTime` descending). Events sharing the same second keep insertion order (most recently recorded first within that second).
+`LookupEvents` searches the in-memory or persisted event index populated by the audit filter and test helpers. Supported `LookupAttributes` keys: `EventName`, `Username`, `ResourceName`, `EventSource`, `ReadOnly`. Results sort most recent first (`eventTime` descending). Events sharing the same second keep insertion order (most recently recorded first within that second). Before scanning, `LookupEvents` waits for in-flight HTTP audit recordings to finish so the last event in a concurrent burst is visible on the first poll.
 
 **Pagination:** `MaxResults` defaults to 50 and is capped at 50 (values outside 1-50 return `InvalidMaxResultsException`). When more events match than fit in one page, the response includes `NextToken`; pass it on the next `LookupEvents` call to continue. Invalid or expired tokens return `InvalidNextTokenException`.
 
-**`eventTime`:** Indexed and delivered events use UTC with millisecond precision (`YYYY-MM-DDTHH:MM:SS.sssZ`).
+**`eventTime`:** Indexed and delivered events use UTC with millisecond precision (`YYYY-MM-DDTHH:MM:SS.sssZ`). HTTP audit events stamp `eventTime` at request arrival (not response-filter completion). The index enforces monotonic timestamps so `ListAllMyBuckets` and later bucket-scoped calls preserve caller order in `lookup-events` even when responses complete out of order.
 
 For buckets without active trails, use `LookupEvents` or list `AWSLogs/...` objects after logging starts.
 
@@ -192,6 +192,6 @@ Grant `cloudtrail:LookupEvents` on `arn:aws:cloudtrail:REGION:ACCOUNT:trail/*` u
 - `StopLogging` is always audited (mutating CloudTrail API bypasses the active-trail gate). Prior events remain in the index after logging stops; `StartLogging` does not wipe history.
 - See [Live forensics authoring](#live-forensics-authoring) for `sourceIPAddress`, `answers.json` grading, event-store teardown, and pagination detail.
 - SQS audit events include `requestParameters.queueUrl` for `ReceiveMessage`, `SendMessage`, and `PurgeQueue` on Query and JSON 1.0 wire protocols. `SendMessage` records `requestParameters.messageBody` with the actual payload. HTTP `AssumedRole` callers include `userIdentity.sessionContext.sessionIssuer`.
-- Trail S3 delivery honors bucket policy `aws:SourceArn` conditions for the `cloudtrail.amazonaws.com` service principal.
+- Trail S3 delivery honors bucket policy `aws:SourceArn` and `s3:x-amz-acl` conditions for the `cloudtrail.amazonaws.com` service principal. Delivery sets `bucket-owner-full-control` on log objects.
 - `GetEventSelectors` is supported; trails without explicit selectors return sensible defaults.
 - Forensic Compose sets `FLOCI_STORAGE_MODE=hybrid` and `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`. See [README forensic lab](../../README.md#forensic-lab) and [AGENTS.md](../../AGENTS.md#forensic-services-map).

@@ -513,6 +513,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if (delimiter != null && !delimiter.isBlank()) {
             out.put("s3:delimiter", delimiter);
         }
+        String cannedAcl = ctx.getHeaderString("x-amz-acl");
+        if (cannedAcl != null && !cannedAcl.isBlank()) {
+            out.put("s3:x-amz-acl", cannedAcl);
+        }
     }
 
     private String extractCredentialScope(String auth) {

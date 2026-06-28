@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * CloudTrail S3 delivery with IAM enforcement: bucket policy requires {@code aws:SourceArn}
- * on {@code s3:PutObject}; in-process delivery must pass the trail ARN.
+ * and {@code s3:x-amz-acl} on {@code s3:PutObject}; in-process delivery must pass both.
  */
 @QuarkusTest
 @TestProfile(CloudTrailS3DeliveryIntegrationTest.Profile.class)
@@ -153,7 +153,10 @@ class CloudTrailS3DeliveryIntegrationTest {
                    "Principal":{"Service":"cloudtrail.amazonaws.com"},
                    "Action":"s3:PutObject",
                    "Resource":"arn:aws:s3:::%s/AWSLogs/%s/*",
-                   "Condition":{"StringEquals":{"aws:SourceArn":"%s"}}}
+                   "Condition":{"StringEquals":{
+                     "aws:SourceArn":"%s",
+                     "s3:x-amz-acl":"bucket-owner-full-control"
+                   }}}
                 ]}\
                 """.formatted(bucket, bucket, ACCOUNT, trailArn);
     }

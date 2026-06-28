@@ -81,7 +81,7 @@ public class CloudTrailEventRecorder {
                                           ContainerResponseContext response,
                                           String iamAction,
                                           String credentialScope) {
-        Instant now = Instant.now();
+        Instant eventInstant = resolveEventTime(request);
         String eventId = UUID.randomUUID().toString();
         String region = resolveRegion(request);
         String accountId = resolveAccountId(request);
@@ -93,8 +93,8 @@ public class CloudTrailEventRecorder {
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("eventVersion", EVENT_VERSION);
-        event.put("userIdentity", buildUserIdentity(request, accountId, now));
-        event.put("eventTime", EVENT_TIME.format(now));
+        event.put("userIdentity", buildUserIdentity(request, accountId, eventInstant));
+        event.put("eventTime", EVENT_TIME.format(eventInstant));
         event.put("eventSource", eventSource);
         event.put("eventName", eventName);
         event.put("awsRegion", region);
@@ -255,7 +255,12 @@ public class CloudTrailEventRecorder {
 
     static String toEventName(String iamAction, ContainerRequestContext request, String credentialScope) {
         if (iamAction != null && iamAction.contains(":")) {
-            return iamAction.substring(iamAction.indexOf(':') + 1);
+            String action = iamAction.substring(iamAction.indexOf(':') + 1);
+            if ("ListBucket".equals(action) && "s3".equals(credentialScope)
+                    && "2".equals(request.getUriInfo().getQueryParameters().getFirst("list-type"))) {
+                return "ListObjectsV2";
+            }
+            return action;
         }
         String target = request.getHeaderString("X-Amz-Target");
         if (target != null && target.contains(".")) {
@@ -1025,6 +1030,17 @@ public class CloudTrailEventRecorder {
     public static String formatEventTime(Instant instant) {
         Instant value = instant == null ? Instant.now() : instant;
         return EVENT_TIME.format(value);
+    }
+
+    static Instant resolveEventTime(ContainerRequestContext request) {
+        if (request == null) {
+            return Instant.now();
+        }
+        Object value = request.getProperty(CloudTrailAuditTiming.REQUEST_TIME_PROPERTY);
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        return Instant.now();
     }
 
     private record ErrorDetails(String code, String message) {

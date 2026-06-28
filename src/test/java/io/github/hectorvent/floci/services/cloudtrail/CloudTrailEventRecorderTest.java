@@ -44,4 +44,23 @@ class CloudTrailEventRecorderTest {
                 CloudTrailEventRecorder.cloudTrailResourceType(
                         "sqs", "SendMessage", "arn:aws:sqs:us-east-1:123:queue"));
     }
+
+    @Test
+    void toEventName_mapsListTypeTwoToListObjectsV2() {
+        jakarta.ws.rs.container.ContainerRequestContext request = org.mockito.Mockito.mock(
+                jakarta.ws.rs.container.ContainerRequestContext.class);
+        jakarta.ws.rs.core.UriInfo uriInfo = org.mockito.Mockito.mock(jakarta.ws.rs.core.UriInfo.class);
+        jakarta.ws.rs.core.MultivaluedMap<String, String> listV2Query = new jakarta.ws.rs.core.MultivaluedHashMap<>();
+        listV2Query.add("list-type", "2");
+        org.mockito.Mockito.when(request.getUriInfo()).thenReturn(uriInfo);
+        org.mockito.Mockito.when(uriInfo.getQueryParameters()).thenReturn(listV2Query);
+
+        assertEquals("ListObjectsV2",
+                CloudTrailEventRecorder.toEventName("s3:ListBucket", request, "s3"));
+
+        jakarta.ws.rs.core.MultivaluedMap<String, String> v1Query = new jakarta.ws.rs.core.MultivaluedHashMap<>();
+        org.mockito.Mockito.when(uriInfo.getQueryParameters()).thenReturn(v1Query);
+        assertEquals("ListBucket",
+                CloudTrailEventRecorder.toEventName("s3:ListBucket", request, "s3"));
+    }
 }

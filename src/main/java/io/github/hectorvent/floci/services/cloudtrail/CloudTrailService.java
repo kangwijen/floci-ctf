@@ -29,6 +29,7 @@ public class CloudTrailService {
     private final CloudTrailEventRecorder eventRecorder;
     private final GuardDutyCloudTrailHook guardDutyCloudTrailHook;
     private final RegionResolver regionResolver;
+    private final CloudTrailAuditCoordinator auditCoordinator;
 
     @Inject
     public CloudTrailService(StorageFactory storageFactory,
@@ -36,7 +37,8 @@ public class CloudTrailService {
                              CloudTrailDeliveryService deliveryService,
                              CloudTrailEventRecorder eventRecorder,
                              GuardDutyCloudTrailHook guardDutyCloudTrailHook,
-                             RegionResolver regionResolver) {
+                             RegionResolver regionResolver,
+                             CloudTrailAuditCoordinator auditCoordinator) {
         this.trailStore = storageFactory.create("cloudtrail", "cloudtrail-trails.json",
                 new TypeReference<Map<String, CloudTrailTrail>>() {});
         this.eventStore = eventStore;
@@ -44,6 +46,7 @@ public class CloudTrailService {
         this.eventRecorder = eventRecorder;
         this.guardDutyCloudTrailHook = guardDutyCloudTrailHook;
         this.regionResolver = regionResolver;
+        this.auditCoordinator = auditCoordinator;
     }
 
     CloudTrailService(StorageBackend<String, CloudTrailTrail> trailStore,
@@ -51,13 +54,15 @@ public class CloudTrailService {
                       CloudTrailDeliveryService deliveryService,
                       CloudTrailEventRecorder eventRecorder,
                       GuardDutyCloudTrailHook guardDutyCloudTrailHook,
-                      RegionResolver regionResolver) {
+                      RegionResolver regionResolver,
+                      CloudTrailAuditCoordinator auditCoordinator) {
         this.trailStore = trailStore;
         this.eventStore = eventStore;
         this.deliveryService = deliveryService;
         this.eventRecorder = eventRecorder;
         this.guardDutyCloudTrailHook = guardDutyCloudTrailHook;
         this.regionResolver = regionResolver;
+        this.auditCoordinator = auditCoordinator;
     }
 
     public CloudTrailTrail createTrail(String region, String name, String s3BucketName,
@@ -260,6 +265,7 @@ public class CloudTrailService {
                                                                 List<CloudTrailEventStore.LookupAttribute> lookupAttributes,
                                                                 Integer maxResults,
                                                                 String nextToken) {
+        auditCoordinator.awaitQuiet();
         return eventStore.lookup(region, startTime, endTime, lookupAttributes, maxResults, nextToken);
     }
 

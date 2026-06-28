@@ -12,6 +12,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -172,6 +174,60 @@ class CloudTrailFieldFidelityIntegrationTest {
         JsonNode newest = objectMapper.readTree(events.get(0).path("CloudTrailEvent").asText());
         assertTrue(newest.path("eventTime").asText()
                 .matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"));
+    }
+
+    @Test
+    void s3ListObjectsV2RecordsAwsEventName() throws Exception {
+        String trailBucket = "list-v2-trail-bucket";
+        String trailName = "list-v2-trail";
+        String dataBucket = "list-v2-data-bucket";
+
+        provisionLoggingTrail(trailBucket, trailName);
+        given().when().put("/" + dataBucket).then().statusCode(200);
+
+        given()
+                .header("Authorization", S3_AUTH)
+                .when().get("/" + dataBucket + "?list-type=2")
+                .then().statusCode(200);
+
+        JsonNode listEvent = lookupSingleEvent("ListObjectsV2", "s3.amazonaws.com");
+        assertEquals("ListObjectsV2", listEvent.path("eventName").asText());
+        assertEquals(dataBucket, listEvent.path("requestParameters").path("bucketName").asText());
+        assertEquals("Management", listEvent.path("eventCategory").asText());
+        assertTrue(listEvent.path("readOnly").asBoolean());
+    }
+
+    @Test
+    void listAllMyBucketsPrecedesLaterBucketCallsInEventTimeOrder() throws Exception {
+        String trailBucket = "account-list-trail-bucket";
+        String trailName = "account-list-trail";
+        String dataBucket = "account-list-data-bucket";
+        String objectKey = "account-list-object.txt";
+
+        provisionLoggingTrail(trailBucket, trailName);
+
+        given()
+                .header("Authorization", S3_AUTH)
+                .when().get("/")
+                .then().statusCode(200);
+        given().when().put("/" + dataBucket).then().statusCode(200);
+        given()
+                .header("Authorization", S3_AUTH)
+                .body("ordering payload")
+                .when().put("/" + dataBucket + "/" + objectKey)
+                .then().statusCode(200);
+
+        JsonNode listBucketsEvent = lookupSingleEvent("ListAllMyBuckets", "s3.amazonaws.com");
+        JsonNode createBucketEvent = lookupSingleEvent("CreateBucket", "s3.amazonaws.com");
+        JsonNode putObjectEvent = lookupSingleEvent("PutObject", "s3.amazonaws.com");
+
+        Instant listTime = Instant.parse(listBucketsEvent.path("eventTime").asText());
+        Instant createTime = Instant.parse(createBucketEvent.path("eventTime").asText());
+        Instant putTime = Instant.parse(putObjectEvent.path("eventTime").asText());
+        assertTrue(!listTime.isAfter(createTime),
+                "ListAllMyBuckets eventTime should not be after CreateBucket");
+        assertTrue(!createTime.isAfter(putTime),
+                "CreateBucket eventTime should not be after PutObject");
     }
 
     private void provisionLoggingTrail(String trailBucket, String trailName) {

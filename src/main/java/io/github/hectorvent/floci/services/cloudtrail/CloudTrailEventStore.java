@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 @ApplicationScoped
 public class CloudTrailEventStore {
@@ -29,6 +30,7 @@ public class CloudTrailEventStore {
 
     private final StorageBackend<String, CloudTrailEvent> eventStore;
     private final AtomicLong sequenceCounter = new AtomicLong();
+    private final AtomicReference<Instant> lastIndexedEventTime = new AtomicReference<>();
 
     @Inject
     public CloudTrailEventStore(StorageFactory storageFactory) {
@@ -47,17 +49,22 @@ public class CloudTrailEventStore {
     void clear() {
         eventStore.clear();
         sequenceCounter.set(0);
+        lastIndexedEventTime.set(null);
     }
 
     public void indexRecordedEvent(String region,
                                    Map<String, Object> event,
                                    CloudTrailEventRecorder recorder) {
+        Instant parsed = recorder.eventTime(event);
+        Instant effective = enforceMonotonicEventTime(parsed);
+        event.put("eventTime", CloudTrailEventRecorder.formatEventTime(effective));
+
         CloudTrailEvent indexed = new CloudTrailEvent();
         indexed.setRegion(region);
         indexed.setEventId(recorder.eventId(event));
         indexed.setEventName(recorder.eventName(event));
         indexed.setEventSource(recorder.eventSource(event));
-        indexed.setEventTime(recorder.eventTime(event));
+        indexed.setEventTime(effective);
         indexed.setSequence(sequenceCounter.incrementAndGet());
         indexed.setUsername(recorder.username(event));
         indexed.setReadOnly(recorder.readOnly(event));
@@ -69,6 +76,20 @@ public class CloudTrailEventStore {
             indexed.setResourceType(primary.getResourceType());
         }
         store(indexed);
+    }
+
+    private Instant enforceMonotonicEventTime(Instant candidate) {
+        Instant base = candidate != null ? candidate : Instant.now();
+        while (true) {
+            Instant last = lastIndexedEventTime.get();
+            Instant effective = base;
+            if (last != null && !effective.isAfter(last)) {
+                effective = last.plusMillis(1);
+            }
+            if (lastIndexedEventTime.compareAndSet(last, effective)) {
+                return effective;
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

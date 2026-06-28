@@ -214,7 +214,7 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 | Area | Primary files / docs |
 |------|----------------------|
 | CloudTrail trail lifecycle | `CloudTrailService`, `CloudTrailJsonHandler`, [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
-| CloudTrail audit recording | `CloudTrailAuditFilter`, `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
+| CloudTrail audit recording | `CloudTrailAuditFilter`, `CloudTrailAuditRequestFilter`, `CloudTrailAuditCoordinator`, `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
 | CloudTrail audit config | `EmulatorConfig.CloudTrailServiceConfig` (`audit-enabled`, `exclude-internal-paths`) |
 | Config delivery / snapshots | `ConfigSnapshotDeliveryService`, `AwsConfigService`, [docs/services/config.md](./docs/services/config.md) |
 | S3 access logging | `S3AccessLogService`, `S3AccessLogFormatter`, [docs/services/s3.md](./docs/services/s3.md#access-logging) |
@@ -251,8 +251,11 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | SQS `ListQueues` IAM deny shape | Closed | `SqsListQueuesIamIntegrationTest`; IAM runs before service-disabled short-circuit |
 | SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) with `requestParameters.queueUrl` | Closed | Query and JSON 1.0 protocols; `CloudTrailSqsAuditIntegrationTest` |
 | SQS `SendMessage` audit `requestParameters.messageBody` | Closed | Actual payload recorded (not redacted); `CloudTrailSqsAuditIntegrationTest` |
-| Trail S3 delivery `aws:SourceArn` bucket policy | Closed | `cloudtrail.amazonaws.com` `s3:PutObject` honors trail ARN conditions; `CloudTrailS3DeliveryIntegrationTest` |
+| Trail S3 delivery `aws:SourceArn` and `s3:x-amz-acl` bucket policy | Closed | `cloudtrail.amazonaws.com` `s3:PutObject` honors trail ARN and `bucket-owner-full-control` ACL conditions; `CloudTrailS3DeliveryIntegrationTest` |
+| S3 `ListObjectsV2` audit `eventName` | Closed | `?list-type=2` records `ListObjectsV2` (not `ListBucket`); `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailEventRecorderTest` |
 | `GetEventSelectors` with defaults | Closed | `CloudTrailIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#trail-lifecycle) |
+| `lookup-events` tail visibility under concurrent audit | Closed | `LookupEvents` awaits in-flight HTTP audit recordings; `CloudTrailAuditCoordinator` |
+| `ListAllMyBuckets` vs bucket-scoped audit ordering | Closed | Request-arrival `eventTime` plus monotonic index timestamps; `CloudTrailFieldFidelityIntegrationTest` |
 | `lookup-events` pagination, `eventTime` precision, same-second order | Closed | Millisecond `eventTime`; insertion order within same second; `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
 | Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live forensics authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |

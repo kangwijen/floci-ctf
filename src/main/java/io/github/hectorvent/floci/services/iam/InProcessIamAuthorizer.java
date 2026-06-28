@@ -150,6 +150,18 @@ public class InProcessIamAuthorizer {
                                           String region,
                                           String sourceArn,
                                           String sourceAccountId) {
+        authorizeServicePrincipal(servicePrincipal, credentialScope, action, resourceArn, region,
+                sourceArn, sourceAccountId, null);
+    }
+
+    public void authorizeServicePrincipal(String servicePrincipal,
+                                          String credentialScope,
+                                          String action,
+                                          String resourceArn,
+                                          String region,
+                                          String sourceArn,
+                                          String sourceAccountId,
+                                          String cannedAcl) {
         if (!config.services().iam().enforcementEnabled()) {
             return;
         }
@@ -170,6 +182,9 @@ public class InProcessIamAuthorizer {
         }
         if (sourceAccountId != null && !sourceAccountId.isBlank()) {
             conditionCtx.put("aws:sourceaccount", sourceAccountId);
+        }
+        if (cannedAcl != null && !cannedAcl.isBlank()) {
+            conditionCtx.put("s3:x-amz-acl", cannedAcl);
         }
         CallerContext emptyIdentity = CallerContext.of(List.of());
         Decision decision = evaluator.evaluate(emptyIdentity, resourcePolicies, iamAction, resource, conditionCtx);
