@@ -283,7 +283,18 @@ public class CloudTrailService {
     }
 
     public void recordEvent(String region, Map<String, Object> event) {
-        eventStore.indexRecordedEvent(region, event, eventRecorder);
+        recordInjectedEvent(region, event, false, true);
+    }
+
+    public void recordInjectedEvent(String region,
+                                    Map<String, Object> event,
+                                    boolean preserveEventTime,
+                                    boolean deliverToTrails) {
+        eventStore.indexInjectedEvent(region, event, eventRecorder, preserveEventTime);
+        guardDutyCloudTrailHook.onCloudTrailEvent(region, event);
+        if (!deliverToTrails) {
+            return;
+        }
         Instant now = Instant.now();
         List<CloudTrailTrail> trails = new ArrayList<>(listActiveLoggingTrails(region));
         if (isGlobalServiceEvent(event)) {
@@ -298,7 +309,6 @@ public class CloudTrailService {
             trail.setUpdated(now);
             trailStore.put(key(trail.getHomeRegion(), trail.getName()), trail);
         }
-        guardDutyCloudTrailHook.onCloudTrailEvent(region, event);
     }
 
     private static boolean isGlobalServiceEvent(Map<String, Object> event) {

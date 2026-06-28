@@ -57,7 +57,7 @@ just test-python
 
 Most tests default to permissive `test`/`test` credentials. Against the hardened CTF image, export operator `FLOCI_AUTH_ROOT_*` or participant IAM keys as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Cloud Map tests skip when `servicediscovery` is disabled.
 
-Forensic lab: with `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`, use boto3 `cloudtrail` client for trail lifecycle and `lookup_events` after API activity. GuardDuty/Security Hub require JSON 1.1 HTTP (see `sdk-test-java` `ForensicLabCompatibilityTest`).
+Audit exercise: with `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`, use boto3 `cloudtrail` client for trail lifecycle and `lookup_events` after API activity. GuardDuty/Security Hub require JSON 1.1 HTTP (see `sdk-test-java` `ForensicLabCompatibilityTest`).
 
 ## Docker
 

@@ -51,7 +51,7 @@ When snapshot delivery is implemented against real AWS, periodic snapshots land 
 s3://{bucket}/{prefix}/AWSLogs/{account-id}/Config/{region}/{yyyy}/{MM}/{dd}/{timestamp}_ConfigSnapshot.json
 ```
 
-Forensic labs can pre-seed objects at that path, or use `PutDeliveryChannel` plus manual uploads to the bucket so players practice bucket policy and object analysis without a live Config aggregator.
+Audit exercises can pre-seed objects at that path, or use `PutDeliveryChannel` plus manual uploads to the bucket so participants practice bucket policy and object analysis without a live Config aggregator.
 
 Example:
 

@@ -271,7 +271,9 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 
 **Resource-based policies (HTTP):** S3 bucket policy, Lambda resource policy, SQS queue policy, SNS topic policy, KMS key policy (see above).
 
-**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. S3 presigned POST policy SigV4 is validated in `S3Controller` when signature form fields are present.
+**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. SigV4a presign is rejected.
+
+**Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`.
 
 ### Assumed roles
 
@@ -329,6 +331,7 @@ Optional CTF controls (see [environment variables](../configuration/environment-
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind Lambda/CodeBuild/ECS credential HTTP servers to `127.0.0.1` |
 | `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | Honor `X-Floci-CloudTrail-Source-Ip` for CloudTrail `sourceIPAddress` only |
+| `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED` | `false` | Operator-only `POST /_floci/cloudtrail/events*` for synthetic audit events |
 
 ### Managed policy version timing
 
@@ -357,8 +360,8 @@ S3 presigned URLs use the same SigV4 query-string model as AWS. Sign with `aws s
    export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
    export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 
-   aws iam create-user --user-name player1
-   aws iam create-access-key --user-name player1
+   aws iam create-user --user-name participant-user
+   aws iam create-access-key --user-name participant-user
    # attach policies, create S3 buckets, Lambda functions, etc.
    ```
 3. **Issue participant credentials** from IAM (`CreateAccessKey` output). Participants must sign every request with SigV4 using those keys.

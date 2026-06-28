@@ -100,7 +100,7 @@ Notable CTF deltas on core services (full map in [AGENTS.md](https://github.com/
 | Area | Behavior when enforcement is on |
 |---|---|
 | [IAM](iam.md#ctf-hardening) | Identity + resource policies; scoped `Resource` ARNs; operator `FLOCI_AUTH_ROOT_*` bypass |
-| [S3](s3.md) | SigV4 presigned URLs; bucket policy merge after signature check |
+| [S3](s3.md) | SigV4 presigned GET/PUT and POST under strict enforcement; bucket policy merge after signature check |
 | [KMS](kms.md#ctf-fork) | Grant-based decrypt on HTTP when identity/key policy alone deny |
 | [STS](sts.md#ctf-fork) | `GetSessionToken` intersects session policy with parent user; WebIdentity/SAML trust conditions |
 | [Step Functions](step-functions.md#ctf-fork) | `aws-sdk` tasks for KMS, Secrets Manager, S3; `InProcessIamAuthorizer` on state machine role |

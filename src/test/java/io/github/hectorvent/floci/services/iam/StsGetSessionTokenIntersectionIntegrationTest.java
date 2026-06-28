@@ -27,7 +27,7 @@ class StsGetSessionTokenIntersectionIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-session-parent";
+        String user = "session-parent-user";
         CtfLabIamTestSupport.createUser(user);
         parentAkid = CtfLabIamTestSupport.createAccessKey(user);
 

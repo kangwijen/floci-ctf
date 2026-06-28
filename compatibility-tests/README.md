@@ -18,7 +18,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) tag **1.5.24**:
 | S3 | Range streaming; server access logging (fork) |
 | Glue | Database tags, batch delete table |
 
-`sdk-test-java` covers **CloudTrail** (`CloudTrailTest`), **Cloud Map** (`CloudMapTest`), and **AppSync** (`AppSyncTest`). Forensic lab probes: `ForensicLabCompatibilityTest`.
+`sdk-test-java` covers **CloudTrail** (`CloudTrailTest`), **Cloud Map** (`CloudMapTest`), and **AppSync** (`AppSyncTest`). Audit exercise probes: `ForensicLabCompatibilityTest`.
 
 ## Upstream post-1.5.24 highlights (20 commits, 2026-06-13)
 
@@ -99,7 +99,7 @@ just test-all
 # CTF enforcement probes
 just test-ctf-java
 
-# Forensic lab probes (audit + LookupEvents + GuardDuty/Security Hub)
+# Audit exercise probes (audit + LookupEvents + GuardDuty/Security Hub)
 just test-forensic-java
 
 # IaC compatibility (CDK, Terraform, OpenTofu)
@@ -152,7 +152,7 @@ AWS_SECRET_ACCESS_KEY=test
 # FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY=...
 ```
 
-Forensic lab probes against a running instance with **inter-service audit** enabled (`FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator):
+Audit exercise probes against a running instance with **inter-service audit** enabled (`FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator):
 
 | Test class | Purpose |
 | --- | --- |
@@ -185,6 +185,6 @@ All test runners exit `0` on full pass and non-zero if any test fails — suitab
 
 ## Related docs
 
-- Fork operator guide: [../README.md](../README.md#forensic-lab)
-- Agent map: [../AGENTS.md](../AGENTS.md#forensic-services-map)
+- Fork operator guide: [../README.md](../README.md#audit-and-forensics-profile)
+- Agent map: [../AGENTS.md](../AGENTS.md#audit-services-map)
 - CloudTrail service: [../docs/services/cloudtrail.md](../docs/services/cloudtrail.md)

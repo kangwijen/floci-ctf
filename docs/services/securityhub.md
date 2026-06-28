@@ -38,7 +38,7 @@ aws securityhub batch-import-findings --findings '[
     "SchemaVersion": "2018-10-08",
     "Id": "forensic/sample/1",
     "ProductArn": "arn:aws:securityhub:us-east-1:000000000000:product/000000000000/default",
-    "GeneratorId": "forensic-lab",
+    "GeneratorId": "audit-exercise",
     "AwsAccountId": "000000000000",
     "Types": ["Software and Configuration Checks"],
     "CreatedAt": "2024-06-01T12:00:00Z",
@@ -53,6 +53,6 @@ aws securityhub batch-import-findings --findings '[
 aws securityhub get-findings --filters '{"ProductArn":[{"Value":"arn:aws:securityhub:us-east-1:000000000000:product/000000000000/default","Comparison":"EQUALS"}]}'
 ```
 
-## Forensic lab notes
+## Audit exercise notes
 
-Use Security Hub as the aggregation point for custom ASFF JSON, [GuardDuty](guardduty.md) findings, and player-submitted imports. Compliance standards and security control automation are not evaluated; stored findings round-trip through import and get APIs only.
+Use Security Hub as the aggregation point for custom ASFF JSON, [GuardDuty](guardduty.md) findings, and participant-submitted imports. Compliance standards and security control automation are not evaluated; stored findings round-trip through import and get APIs only.

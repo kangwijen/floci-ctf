@@ -10,7 +10,7 @@
 #   Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to registered credentials.
 #   test/test and unsigned calls return 403.
 #
-# Forensic lab (floci-ctf Compose defaults):
+# Audit exercise (floci-ctf Compose defaults):
 #   FLOCI_STORAGE_MODE=hybrid, FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true
 #   Set FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true for sdk-test-java forensic probes.
 #
@@ -49,7 +49,7 @@ apply_ctf_profile() {
     fi
 }
 
-# Apply forensic lab hints for compatibility probes.
+# Apply audit exercise hints for compatibility probes.
 apply_forensic_profile() {
     apply_ctf_profile
     export FLOCI_CLOUDTRAIL_AUDIT_ENABLED="${FLOCI_CLOUDTRAIL_AUDIT_ENABLED:-true}"

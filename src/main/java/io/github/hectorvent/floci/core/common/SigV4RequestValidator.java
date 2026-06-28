@@ -125,6 +125,21 @@ public final class SigV4RequestValidator {
                                               String rawQuery,
                                               String hostHeader,
                                               String secretKey) {
+        return validatePresignedUrl(method, rawPath, rawQuery, hostHeader, secretKey, null);
+    }
+
+    /**
+     * Validates an inbound S3 presigned URL (SigV4 query-string authentication).
+     *
+     * @param requestHeaders optional inbound headers; signed {@code x-amz-*} values fall back here
+     *                       when absent from the query string
+     */
+    public static Result validatePresignedUrl(String method,
+                                              String rawPath,
+                                              String rawQuery,
+                                              String hostHeader,
+                                              String secretKey,
+                                              Map<String, String> requestHeaders) {
         try {
             if (rawQuery == null || rawQuery.isBlank()) {
                 return Result.INVALID_AUTHORIZATION;
@@ -170,7 +185,8 @@ public final class SigV4RequestValidator {
                     region,
                     service,
                     date,
-                    credentialScope);
+                    credentialScope,
+                    requestHeaders);
 
             if (MessageDigest.isEqual(
                     expectedSignature.getBytes(StandardCharsets.UTF_8),
@@ -265,8 +281,35 @@ public final class SigV4RequestValidator {
                                                    String service,
                                                    String dateStamp,
                                                    String credentialScope) throws Exception {
+        return computePresignedSignature(
+                method,
+                rawPath,
+                rawQuery,
+                hostHeader,
+                secretKey,
+                amzDate,
+                signedHeadersList,
+                region,
+                service,
+                dateStamp,
+                credentialScope,
+                null);
+    }
+
+    public static String computePresignedSignature(String method,
+                                                   String rawPath,
+                                                   String rawQuery,
+                                                   String hostHeader,
+                                                   String secretKey,
+                                                   String amzDate,
+                                                   String signedHeadersList,
+                                                   String region,
+                                                   String service,
+                                                   String dateStamp,
+                                                   String credentialScope,
+                                                   Map<String, String> requestHeaders) throws Exception {
         String canonicalRequest = buildPresignedCanonicalRequest(
-                method, rawPath, rawQuery, hostHeader, signedHeadersList);
+                method, rawPath, rawQuery, hostHeader, signedHeadersList, requestHeaders);
 
         String stringToSign = "AWS4-HMAC-SHA256\n"
                 + amzDate + "\n"
@@ -293,6 +336,16 @@ public final class SigV4RequestValidator {
                                                          String rawQuery,
                                                          String hostHeader,
                                                          String signedHeadersList) throws Exception {
+        return buildPresignedCanonicalRequest(
+                method, rawPath, rawQuery, hostHeader, signedHeadersList, null);
+    }
+
+    private static String buildPresignedCanonicalRequest(String method,
+                                                         String rawPath,
+                                                         String rawQuery,
+                                                         String hostHeader,
+                                                         String signedHeadersList,
+                                                         Map<String, String> requestHeaders) throws Exception {
         String normalizedSignedHeaders = signedHeadersList.toLowerCase(Locale.ROOT);
         String[] signedHeaderNames = normalizedSignedHeaders.split(";");
         List<String> canonicalHeaderLines = new ArrayList<>();
@@ -301,7 +354,7 @@ public final class SigV4RequestValidator {
             if (trimmedName.isEmpty()) {
                 continue;
             }
-            String value = presignedHeaderValue(trimmedName, hostHeader, rawQuery);
+            String value = presignedHeaderValue(trimmedName, hostHeader, rawQuery, requestHeaders);
             if (value == null) {
                 throw new IllegalStateException("Missing signed header: " + trimmedName);
             }
@@ -318,13 +371,27 @@ public final class SigV4RequestValidator {
                 + UNSIGNED_PAYLOAD;
     }
 
-    private static String presignedHeaderValue(String headerName, String hostHeader, String rawQuery) {
+    private static String presignedHeaderValue(String headerName,
+                                               String hostHeader,
+                                               String rawQuery,
+                                               Map<String, String> requestHeaders) {
         if ("host".equals(headerName)) {
             return hostHeader;
         }
         if (headerName.startsWith("x-amz-")) {
             String queryName = headerNameToQueryParam(headerName);
-            return queryParam(rawQuery, queryName);
+            String fromQuery = queryParam(rawQuery, queryName);
+            if (fromQuery != null) {
+                return fromQuery;
+            }
+            if (requestHeaders != null) {
+                for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
+                    if (entry.getKey() != null
+                            && headerName.equals(entry.getKey().toLowerCase(Locale.ROOT))) {
+                        return entry.getValue();
+                    }
+                }
+            }
         }
         return null;
     }

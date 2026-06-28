@@ -1199,12 +1199,14 @@ public class IamService {
                 return null; // GetSessionToken-style identity session without mapped caller context
             }
             List<String> identityPolicies;
+            String boundaryDoc;
             if (isStsFederatedSessionArn(session.getRoleArn())) {
                 identityPolicies = resolveFederatedSessionIdentityPolicies(session);
+                boundaryDoc = resolveFederatedSessionBoundaryDocument(session);
             } else {
                 identityPolicies = collectRolePolicies(session.getRoleArn());
+                boundaryDoc = resolveRoleBoundaryDocument(session.getRoleArn());
             }
-            String boundaryDoc = resolveRoleBoundaryDocument(session.getRoleArn());
             return new CallerContext(identityPolicies, session.getSessionPolicyDocument(), boundaryDoc);
         }
 
@@ -1385,6 +1387,16 @@ public class IamService {
         return accessKeys.get(parentAccessKeyId)
                 .map(ak -> collectUserPolicies(ak.getUserName()))
                 .orElse(List.of());
+    }
+
+    private String resolveFederatedSessionBoundaryDocument(SessionCredential session) {
+        String parentAccessKeyId = session.getParentAccessKeyId();
+        if (parentAccessKeyId == null || parentAccessKeyId.isBlank()) {
+            return null;
+        }
+        return accessKeys.get(parentAccessKeyId)
+                .map(ak -> resolveUserBoundaryDocument(ak.getUserName()))
+                .orElse(null);
     }
 
     private List<String> collectRolePolicies(String roleArn) {

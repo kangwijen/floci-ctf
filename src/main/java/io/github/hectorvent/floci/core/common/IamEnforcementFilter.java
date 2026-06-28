@@ -107,6 +107,12 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        if (strict && SecurityBypassPaths.isMultipartBucketPostRequest(ctx)) {
+            LOG.infov("IAM strict enforcement DENY: unauthenticated bucket POST on {0}", path);
+            ctx.abortWith(accessDeniedResponse("s3:PutObject", "s3", ctx.getMediaType()));
+            return;
+        }
+
         // Cognito OAuth uses client_id/secret Basic auth or Bearer JWT (RFC 6749), not SigV4.
         // Controllers validate registered app clients; IAM policy evaluation does not apply here.
         if (SecurityBypassPaths.isCognitoOAuthPath(path)) {

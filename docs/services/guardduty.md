@@ -3,7 +3,7 @@
 **Protocol:** JSON 1.1 (`X-Amz-Target: GuardDuty_2017-11-28.*`)
 **Endpoint:** `POST http://localhost:4566/`
 
-GuardDuty provides detector lifecycle, sample findings, and optional CloudTrail-driven suspicious-event rules for forensic labs. For canonical service counts, see [Services Overview](index.md). GuardDuty is not yet listed in that matrix.
+GuardDuty provides detector lifecycle, sample findings, and optional CloudTrail-driven suspicious-event rules for audit exercises. For canonical service counts, see [Services Overview](index.md). GuardDuty is not yet listed in that matrix.
 
 ## Supported Actions
 
@@ -47,8 +47,8 @@ aws guardduty get-findings \
   --finding-ids $(aws guardduty list-findings --detector-id "$DETECTOR_ID" --query FindingIds[0] --output text)
 ```
 
-## Forensic lab notes
+## Audit exercise notes
 
-Pair GuardDuty with [CloudTrail](cloudtrail.md) audit (`FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`) and [Security Hub](securityhub.md) for a three-layer lab: API audit, threat findings, and centralized ASFF import.
+Pair GuardDuty with [CloudTrail](cloudtrail.md) audit (`FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`) and [Security Hub](securityhub.md) for a three-layer exercise: API audit, threat findings, and centralized ASFF import.
 
 Not modeled: multi-account invitations, malware protection, EKS runtime monitoring, or publishing destinations to S3/Firehose.

@@ -65,7 +65,7 @@ test-ctf-java:
     export FLOCI_IAM_ENFORCEMENT="${FLOCI_IAM_ENFORCEMENT:-true}"
     mvn test -q -Dtest=IamEnforcementTest,CloudMapIamEnforcementIntegrationTest,AppSyncIamEnforcementIntegrationTest
 
-# Forensic lab: CloudTrail audit delivery, LookupEvents, GuardDuty/Security Hub JSON API
+# Audit exercise: CloudTrail audit delivery, LookupEvents, GuardDuty/Security Hub JSON API
 [working-directory: 'sdk-test-java']
 test-forensic-java:
     #!/usr/bin/env bash

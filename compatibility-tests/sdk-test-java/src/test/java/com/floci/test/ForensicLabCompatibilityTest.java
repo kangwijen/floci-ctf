@@ -11,14 +11,14 @@ import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end forensic lab probes against a live floci-ctf instance.
+ * End-to-end audit exercise probes against a live floci-ctf instance.
  *
  * <p>Requires {@code floci.services.cloudtrail.audit-enabled=true} and an active logging trail.
  * When audit is off (default upstream image), tests skip via {@link Assumptions}.
  *
  * <p>GuardDuty and Security Hub use Floci JSON 1.1 targets (not AWS SDK REST clients).
  */
-@DisplayName("Forensic lab compatibility")
+@DisplayName("Audit exercise compatibility")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ForensicLabCompatibilityTest {
 
@@ -32,8 +32,8 @@ class ForensicLabCompatibilityTest {
     static void setup() {
         cloudTrail = TestFixtures.cloudTrailClient();
         s3 = TestFixtures.s3Client();
-        trailName = TestFixtures.uniqueName("forensic-compat-trail");
-        logBucket = TestFixtures.uniqueName("forensic-compat-logs");
+        trailName = TestFixtures.uniqueName("audit-compat-trail");
+        logBucket = TestFixtures.uniqueName("audit-compat-logs");
         auditEnabled = TestFixtures.isCloudTrailAuditEnabled();
         Assumptions.assumeTrue(auditEnabled,
                 "CloudTrail audit delivery not enabled; set FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true");
@@ -109,15 +109,15 @@ class ForensicLabCompatibilityTest {
                 {
                   "Findings": [{
                     "SchemaVersion": "2018-10-08",
-                    "Id": "forensic-compat/finding/1",
-                    "ProductArn": "arn:aws:securityhub:us-east-1:000000000000:product/forensic-compat",
-                    "GeneratorId": "forensic-compat-generator",
+                    "Id": "audit-compat/finding/1",
+                    "ProductArn": "arn:aws:securityhub:us-east-1:000000000000:product/audit-compat",
+                    "GeneratorId": "audit-compat-generator",
                     "AwsAccountId": "000000000000",
                     "Types": ["Software and Configuration Checks"],
                     "CreatedAt": "2026-06-12T00:00:00Z",
                     "UpdatedAt": "2026-06-12T00:00:00Z",
                     "Severity": {"Label": "MEDIUM"},
-                    "Title": "Forensic compat probe",
+                    "Title": "Imported finding sample",
                     "Description": "Imported by ForensicLabCompatibilityTest"
                   }]
                 }

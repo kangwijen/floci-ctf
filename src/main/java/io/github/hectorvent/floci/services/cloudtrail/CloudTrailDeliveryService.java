@@ -39,6 +39,7 @@ public class CloudTrailDeliveryService {
     private final RegionResolver regionResolver;
     private final ObjectMapper mapper;
     private final CloudTrailEventStore eventStore;
+    private final CloudTrailEventRecorder eventRecorder;
     private final InProcessTargetAuthorizer targetAuthorizer;
     private final ConcurrentHashMap<String, List<Map<String, Object>>> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TrailDeliveryContext> trailContexts = new ConcurrentHashMap<>();
@@ -49,11 +50,13 @@ public class CloudTrailDeliveryService {
                                      RegionResolver regionResolver,
                                      ObjectMapper mapper,
                                      CloudTrailEventStore eventStore,
+                                     CloudTrailEventRecorder eventRecorder,
                                      InProcessTargetAuthorizer targetAuthorizer) {
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
         this.mapper = mapper;
         this.eventStore = eventStore;
+        this.eventRecorder = eventRecorder;
         this.targetAuthorizer = targetAuthorizer;
     }
 
@@ -163,10 +166,11 @@ public class CloudTrailDeliveryService {
             return;
         }
         String accountId = regionResolver.getAccountId();
-        Instant now = Instant.now();
-        String dayPath = DAY_PATH.format(now);
+        Instant dayAnchor = resolveDeliveryDayAnchor(events);
+        Instant fileTimestamp = Instant.now();
+        String dayPath = DAY_PATH.format(dayAnchor);
         String objectKey = "AWSLogs/" + accountId + "/CloudTrail/" + region + "/" + dayPath + "/"
-                + accountId + "_CloudTrail_" + region + "_" + FILE_TIMESTAMP.format(now) + ".json.gz";
+                + accountId + "_CloudTrail_" + region + "_" + FILE_TIMESTAMP.format(fileTimestamp) + ".json.gz";
         try {
             byte[] payload = gzipJsonArray(events);
             targetAuthorizer.authorizeServiceS3Put(
@@ -193,6 +197,10 @@ public class CloudTrailDeliveryService {
             mapper.writeValue(gzip, events);
         }
         return bytes.toByteArray();
+    }
+
+    private Instant resolveDeliveryDayAnchor(List<Map<String, Object>> events) {
+        return eventRecorder.eventTime(events.get(0));
     }
 
     private record TrailDeliveryContext(CloudTrailTrail trail, String region) {

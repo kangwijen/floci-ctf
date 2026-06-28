@@ -36,9 +36,9 @@ class CloudTrailS3DeliveryIntegrationTest {
     private static final String TARGET_PREFIX = CtfLabIamTestSupport.CLOUDTRAIL_TARGET_PREFIX;
     private static final String REGION = "us-east-1";
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
-    private static final String LOG_BUCKET = "ctf-cloudtrail-delivery-logs";
-    private static final String ACTIVITY_BUCKET = "ctf-cloudtrail-activity";
-    private static final String TRAIL_NAME = "ctf-audit-trail";
+    private static final String LOG_BUCKET = "cloudtrail-delivery-logs";
+    private static final String ACTIVITY_BUCKET = "cloudtrail-activity";
+    private static final String TRAIL_NAME = "audit-trail";
 
     @TestHTTPResource("/")
     URL endpoint;

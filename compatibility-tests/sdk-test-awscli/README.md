@@ -54,7 +54,7 @@ Shared exports live in [`../lib/ctf-env.sh`](../lib/ctf-env.sh). Copy [`../env.e
 
 Against the hardened Compose image with IAM enforcement, replace `test`/`test` with operator root or participant IAM keys. Unsigned or dummy credentials return `403`. Use `is_ctf_credentials()` and `apply_forensic_profile()` from `lib/ctf-env.sh` in shell helpers.
 
-Forensic lab: after starting floci-ctf Compose, use `aws cloudtrail lookup-events` and `aws s3 ls s3://trail-bucket/AWSLogs/` with registered credentials (audit must be enabled on the emulator).
+Audit exercise: after starting floci-ctf Compose, use `aws cloudtrail lookup-events` and `aws s3 ls s3://trail-bucket/AWSLogs/` with registered credentials (audit must be enabled on the emulator).
 
 ```bash
 export FLOCI_ENDPOINT=http://localhost:4566

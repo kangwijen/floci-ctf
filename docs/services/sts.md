@@ -46,7 +46,7 @@ When IAM enforcement is enabled:
 
 | Action | CTF behavior |
 |---|---|
-| `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy |
+| `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy; session policy alone cannot expand permissions. Parent user permission boundaries apply. Regression: `StsGetSessionTokenIntersectionIntegrationTest` |
 | `AssumeRole` / `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` | Role trust policies are evaluated (`Principal`, `:root`, federated conditions); WebIdentity and SAML assertions are parsed for claim-based trust (no external IdP crypto validation) |
 | `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |
 

@@ -124,19 +124,13 @@ public class IamPolicyEvaluator {
         boolean sessionAllow = sessionStmts != null
                 && anyExplicitAllow(sessionStmts, action, resource, ctx);
 
-        boolean hasIdentityPolicyDocs = caller.identityPolicies() != null
-                && !caller.identityPolicies().isEmpty();
+        boolean baseAllow = identityAllow || resourceAllow;
 
-        if (!identityAllow && !resourceAllow) {
-            if (sessionStmts == null || !sessionAllow) {
+        if (sessionStmts != null) {
+            if (!sessionAllow || !baseAllow) {
                 return Decision.DENY;
             }
-            // GetFederationToken: session policy alone may grant. GetSessionToken / AssumeRole
-            // require an identity or resource grant intersected with any session policy.
-            if (hasIdentityPolicyDocs) {
-                return Decision.DENY;
-            }
-        } else if (sessionStmts != null && !sessionAllow) {
+        } else if (!baseAllow) {
             return Decision.DENY;
         }
 
@@ -182,10 +176,14 @@ public class IamPolicyEvaluator {
                 || (boundaryStmts != null && anyExplicitDeny(boundaryStmts, action, resource, ctx))) {
             return SimulationDecision.EXPLICIT_DENY;
         }
-        if (!anyExplicitAllow(identityStmts, action, resource, ctx)) {
-            return SimulationDecision.IMPLICIT_DENY;
-        }
-        if (sessionStmts != null && !anyExplicitAllow(sessionStmts, action, resource, ctx)) {
+        boolean identityAllow = anyExplicitAllow(identityStmts, action, resource, ctx);
+        boolean sessionAllow = sessionStmts != null
+                && anyExplicitAllow(sessionStmts, action, resource, ctx);
+        if (sessionStmts != null) {
+            if (!sessionAllow || !identityAllow) {
+                return SimulationDecision.IMPLICIT_DENY;
+            }
+        } else if (!identityAllow) {
             return SimulationDecision.IMPLICIT_DENY;
         }
         if (boundaryStmts != null && !anyExplicitAllow(boundaryStmts, action, resource, ctx)) {

@@ -2353,9 +2353,17 @@ public class S3Controller {
                 && credential != null && !credential.isEmpty()
                 && amzDate != null && !amzDate.isEmpty()
                 && signature != null && !signature.isEmpty();
+        boolean strict = emulatorConfig.services().iam().enforcementEnabled()
+                && emulatorConfig.services().iam().strictEnforcementEnabled();
         if (!hasAllSigFields) {
+            if (strict) {
+                throw new AwsException("AccessDenied",
+                        "Missing required presigned POST policy fields.", 403);
+            }
             return;
         }
+
+        rejectExpiredPresignedPostPolicy(policy);
 
         String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
         Optional<String> secret = resolvePresignSecret(accessKeyId);
@@ -2369,6 +2377,25 @@ public class S3Controller {
         if (result != SigV4RequestValidator.Result.VALID) {
             throw new AwsException("AccessDenied",
                     "The request signature we calculated does not match the signature you provided.", 403);
+        }
+    }
+
+    private void rejectExpiredPresignedPostPolicy(String policyBase64) {
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(policyBase64);
+            JsonNode policyNode = OBJECT_MAPPER.readTree(decoded);
+            JsonNode expiration = policyNode.get("expiration");
+            if (expiration == null || !expiration.isTextual()) {
+                return;
+            }
+            Instant expiresAt = Instant.parse(expiration.asText());
+            if (Instant.now().isAfter(expiresAt)) {
+                throw new AwsException("AccessDenied", "Request has expired", 403);
+            }
+        } catch (AwsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AwsException("AccessDenied", "Invalid presigned POST policy.", 403);
         }
     }
 

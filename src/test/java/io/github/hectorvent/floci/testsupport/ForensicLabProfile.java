@@ -5,7 +5,7 @@ import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.Map;
 
 /**
- * Forensic lab profile: IAM/SigV4 off, in-memory storage, CloudTrail audit recording,
+ * Audit exercise profile: IAM/SigV4 off, in-memory storage, CloudTrail audit recording,
  * and all forensic services enabled (Config, GuardDuty, Security Hub).
  */
 public class ForensicLabProfile implements QuarkusTestProfile {

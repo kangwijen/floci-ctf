@@ -16,6 +16,9 @@ import jakarta.ws.rs.ext.Provider;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 @Provider
@@ -120,7 +123,8 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
                     path,
                     rawQuery,
                     host,
-                    secret.get());
+                    secret.get(),
+                    collectRequestHeaders(requestContext));
 
             if (sigv4Result != SigV4RequestValidator.Result.VALID) {
                 requestContext.abortWith(errorResponse(403, "SignatureDoesNotMatch",
@@ -130,6 +134,17 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
         }
 
         requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+    }
+
+    private static Map<String, String> collectRequestHeaders(ContainerRequestContext requestContext) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (String name : requestContext.getHeaders().keySet()) {
+            String value = requestContext.getHeaderString(name);
+            if (value != null) {
+                headers.put(name.toLowerCase(Locale.ROOT), value);
+            }
+        }
+        return headers;
     }
 
     private Optional<String> resolvePresignSecret(String accessKeyId) {

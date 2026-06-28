@@ -84,7 +84,7 @@ mvn test -Dtest=CloudMapIamEnforcementIntegrationTest
 
 Other test classes still default to `test`/`test` and expect permissive mode unless you override credentials globally.
 
-### Forensic lab (floci-ctf)
+### Audit exercise (floci-ctf)
 
 When the emulator runs with `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` (Compose default):
 
@@ -101,7 +101,7 @@ GuardDuty and Security Hub use Floci JSON 1.1 targets via `TestFixtures.postJson
 
 `.github/workflows/compatibility.yml` runs `ctf-compat-java` on pull requests: Floci starts with CTF Compose-equivalent env (IAM enforcement, strict mode, SigV4, CloudTrail audit) and executes `IamEnforcementTest` and `ForensicLabCompatibilityTest`.
 
-Run the broader local probe set (adds Cloud Map, AppSync enforcement, and forensic lab):
+Run the broader local probe set (adds Cloud Map, AppSync enforcement, and audit exercise probes):
 
 ```bash
 cd compatibility-tests && just test-ctf-java

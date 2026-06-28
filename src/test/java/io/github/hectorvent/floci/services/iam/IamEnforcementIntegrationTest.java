@@ -314,10 +314,17 @@ class IamEnforcementIntegrationTest {
 
     @Test
     void sessionPolicyFromGetSessionTokenConstrainsTempCredentials() {
-        String sessionPolicy = """
+        String parentPolicy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
             ]}""";
+        String sessionPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/escrow/*"}
+            ]}""";
+        iamService.createUser("session-parent", "/");
+        String parentAccessKeyId = iamService.createAccessKey("session-parent").getAccessKeyId();
+        iamService.putUserPolicy("session-parent", "get-vault", parentPolicy);
         String sessionArn = "arn:aws:sts::000000000000:federated-user/floci-session";
         iamService.registerSession(
                 "ASIATESTSESSION01",
@@ -326,15 +333,40 @@ class IamEnforcementIntegrationTest {
                 sessionPolicy,
                 "secret",
                 "000000000000:floci-session",
-                sessionArn);
+                sessionArn,
+                parentAccessKeyId,
+                null);
         CallerContext caller = iamService.resolveCallerContext("ASIATESTSESSION01");
         Map<String, String> ctx = Map.of(
                 "aws:principalarn", sessionArn,
                 "aws:principalaccount", "000000000000");
         assertEquals(Decision.ALLOW, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/escrow/flag.txt", ctx));
         assertEquals(Decision.DENY, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::other/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/other/flag.txt", ctx));
+    }
+
+    @Test
+    void sessionPolicyWithoutParentGrantDoesNotExpandPermissions() {
+        String sessionPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+            ]}""";
+        String sessionArn = "arn:aws:sts::000000000000:federated-user/floci-session";
+        iamService.registerSession(
+                "ASIATESTSESSION03",
+                sessionArn,
+                Instant.now().plusSeconds(3600),
+                sessionPolicy,
+                "secret",
+                "000000000000:floci-session",
+                sessionArn);
+        CallerContext caller = iamService.resolveCallerContext("ASIATESTSESSION03");
+        Map<String, String> ctx = Map.of(
+                "aws:principalarn", sessionArn,
+                "aws:principalaccount", "000000000000");
+        assertEquals(Decision.DENY, evaluator.evaluate(
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
     }
 
     @Test
@@ -410,7 +442,7 @@ class IamEnforcementIntegrationTest {
               {"Effect":"Allow",
                "Principal":{"AWS":"arn:aws:iam::000000000000:user/reader"},
                "Action":"s3:GetObject",
-               "Resource":"arn:aws:s3:::ctf-bucket/*"}
+               "Resource":"arn:aws:s3:::scoped-bucket/*"}
             ]}""";
         Map<String, String> ctx = Map.of(
                 "aws:principalarn", "arn:aws:iam::000000000000:user/reader",
@@ -419,7 +451,7 @@ class IamEnforcementIntegrationTest {
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",
-                "arn:aws:s3:::ctf-bucket/flag.txt",
+                "arn:aws:s3:::scoped-bucket/flag.txt",
                 ctx));
     }
 
@@ -430,7 +462,7 @@ class IamEnforcementIntegrationTest {
               {"Effect":"Allow",
                "Principal":{"AWS":"arn:aws:iam::000000000000:user/reader"},
                "Action":"s3:GetObject",
-               "Resource":"arn:aws:s3:::ctf-bucket/*"}
+               "Resource":"arn:aws:s3:::scoped-bucket/*"}
             ]}""";
         Map<String, String> ctx = Map.of(
                 "aws:principalarn", "arn:aws:iam::000000000000:user/other",
@@ -439,7 +471,7 @@ class IamEnforcementIntegrationTest {
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",
-                "arn:aws:s3:::ctf-bucket/flag.txt",
+                "arn:aws:s3:::scoped-bucket/flag.txt",
                 ctx));
     }
 

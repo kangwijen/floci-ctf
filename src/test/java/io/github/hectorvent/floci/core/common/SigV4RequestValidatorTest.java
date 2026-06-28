@@ -504,6 +504,57 @@ class SigV4RequestValidatorTest {
     }
 
     @Test
+    void validatePresignedUrl_acceptsSignedHeadersFromRequestWhenNotInQuery() throws Exception {
+        String accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+        String secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        String amzDate = "20130524T000000Z";
+        String dateStamp = "20130524";
+        String region = "us-east-1";
+        String service = "s3";
+        String credentialScope = dateStamp + "/" + region + "/" + service + "/aws4_request";
+        String credentialValue = accessKeyId + "/" + credentialScope;
+        String host = "examplebucket.s3.amazonaws.com";
+        String path = "/encrypted-object.txt";
+        String kmsKeyId = "arn:aws:kms:us-east-1:000000000000:key/12345678-1234-1234-1234-123456789012";
+        String signedHeaders = "host;x-amz-server-side-encryption;x-amz-server-side-encryption-aws-kms-key-id";
+
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+        params.put("X-Amz-Credential", credentialValue);
+        params.put("X-Amz-Date", amzDate);
+        params.put("X-Amz-Expires", "86400");
+        params.put("X-Amz-SignedHeaders", signedHeaders);
+        String rawQueryWithoutSignature = params.entrySet().stream()
+                .map(e -> SigV4RequestValidator.awsUriEncode(e.getKey(), true)
+                        + "="
+                        + SigV4RequestValidator.awsUriEncode(e.getValue(), true))
+                .collect(Collectors.joining("&"));
+
+        Map<String, String> requestHeaders = Map.of(
+                "x-amz-server-side-encryption", "aws:kms",
+                "x-amz-server-side-encryption-aws-kms-key-id", kmsKeyId);
+
+        String signature = SigV4RequestValidator.computePresignedSignature(
+                "PUT",
+                path,
+                rawQueryWithoutSignature,
+                host,
+                secretKey,
+                amzDate,
+                signedHeaders,
+                region,
+                service,
+                dateStamp,
+                credentialScope,
+                requestHeaders);
+
+        String rawQuery = rawQueryWithoutSignature + "&X-Amz-Signature=" + signature;
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrl(
+                "PUT", path, rawQuery, host, secretKey, requestHeaders);
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
     void validatePresignedUrl_rejectsSigV4aAlgorithm() {
         String rawQuery = "X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256"
                 + "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"

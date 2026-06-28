@@ -615,9 +615,9 @@ class ResourceArnBuilderTest {
 
     @Test
     void cloudTrailStopLoggingBuildsTrailArnFromName() {
-        ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"forensic-trail\"}");
+        ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"audit-trail\"}");
         String arn = builder.build("cloudtrail", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/forensic-trail", arn);
+        assertEquals("arn:aws:cloudtrail:us-east-1:222222222222:trail/audit-trail", arn);
     }
 
     @Test
@@ -861,10 +861,10 @@ class ResourceArnBuilderTest {
     @Test
     void transferDescribeUserBuildsUserArn() {
         ContainerRequestContext ctx = jsonBodyCtx("""
-                {"ServerId":"s-abc12345","UserName":"player1"}
+                {"ServerId":"s-abc12345","UserName":"sample-user"}
                 """);
         String arn = builder.build("transfer", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:transfer:us-east-1:222222222222:user/s-abc12345/player1", arn);
+        assertEquals("arn:aws:transfer:us-east-1:222222222222:user/s-abc12345/sample-user", arn);
     }
 
     // ── Transcribe ────────────────────────────────────────────────────────────

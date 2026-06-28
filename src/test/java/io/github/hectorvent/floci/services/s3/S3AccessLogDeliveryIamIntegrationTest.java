@@ -34,8 +34,8 @@ class S3AccessLogDeliveryIamIntegrationTest {
 
     private static final String REGION = "us-east-1";
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
-    private static final String SOURCE_BUCKET = "ctf-access-log-source";
-    private static final String LOG_BUCKET = "ctf-access-log-target";
+    private static final String SOURCE_BUCKET = "access-log-source";
+    private static final String LOG_BUCKET = "access-log-target";
     private static final String LOG_PREFIX = "access-logs/";
     private static final String OBJECT_KEY = "probe.txt";
 

@@ -102,6 +102,14 @@ public class CloudTrailEventRecorder {
         if (userAgent != null && !userAgent.isBlank()) {
             event.put("userAgent", userAgent);
         }
+        Map<String, Object> additionalEventData = buildAdditionalEventData(request);
+        if (additionalEventData != null && !additionalEventData.isEmpty()) {
+            event.put("additionalEventData", additionalEventData);
+        }
+        Map<String, Object> tlsDetails = buildTlsDetails(request, eventSource, region);
+        if (tlsDetails != null && !tlsDetails.isEmpty()) {
+            event.put("tlsDetails", tlsDetails);
+        }
         event.put("requestParameters", buildRequestParameters(request, credentialScope));
         event.put("responseElements", null);
         event.put("requestID", requestId);
@@ -1041,6 +1049,51 @@ public class CloudTrailEventRecorder {
             return instant;
         }
         return Instant.now();
+    }
+
+    private Map<String, Object> buildAdditionalEventData(ContainerRequestContext request) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        String auth = request.getHeaderString("Authorization");
+        if (auth != null && auth.startsWith("AWS4-HMAC-SHA256")) {
+            data.put("SignatureVersion", "AWS4-HMAC-SHA256");
+            data.put("AuthenticationMethod", "AuthHeader");
+        } else {
+            var query = request.getUriInfo().getQueryParameters();
+            if (query.containsKey("X-Amz-Algorithm") || query.containsKey("x-amz-algorithm")) {
+                data.put("SignatureVersion", "AWS4-HMAC-SHA256");
+                data.put("AuthenticationMethod", "QueryString");
+            }
+        }
+        return data.isEmpty() ? null : data;
+    }
+
+    private Map<String, Object> buildTlsDetails(ContainerRequestContext request,
+                                                String eventSource,
+                                                String region) {
+        if (!config.auth().trustForwardedHeaders()) {
+            return null;
+        }
+        String proto = request.getHeaderString("X-Forwarded-Proto");
+        if (proto == null || !proto.equalsIgnoreCase("https")) {
+            return null;
+        }
+        Map<String, Object> tls = new LinkedHashMap<>();
+        tls.put("tlsVersion", "TLSv1.2");
+        tls.put("cipherSuite", "ECDHE-RSA-AES128-GCM-SHA256");
+        String host = request.getHeaderString("Host");
+        if (host == null || host.isBlank()) {
+            host = defaultServiceHost(eventSource, region);
+        }
+        tls.put("clientProvidedHostHeader", host);
+        return tls;
+    }
+
+    private static String defaultServiceHost(String eventSource, String region) {
+        if (eventSource == null || eventSource.isBlank()) {
+            return region + ".amazonaws.com";
+        }
+        String prefix = eventSource.replace(".amazonaws.com", "");
+        return prefix + "." + region + ".amazonaws.com";
     }
 
     private record ErrorDetails(String code, String message) {

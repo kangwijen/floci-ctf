@@ -2,6 +2,8 @@ package io.github.hectorvent.floci.core.common;
 
 import jakarta.ws.rs.container.ContainerRequestContext;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * Shared path and request classification for auth-related filters.
  */
@@ -53,13 +55,59 @@ public final class SecurityBypassPaths {
 
     /**
      * S3 presigned POST uploads use multipart form bodies validated in {@code S3Controller}.
+     * Requires {@code policy}/{@code Policy} or {@code x-amz-algorithm} form field markers.
      */
     public static boolean isPresignedPostRequest(ContainerRequestContext ctx) {
+        if (!isMultipartBucketPostRequest(ctx)) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.peek(ctx);
+        if (body == null) {
+            body = RequestBodyBuffer.buffer(ctx);
+        }
+        return multipartBodyContainsField(body, "policy", "Policy", "x-amz-algorithm");
+    }
+
+    /**
+     * Unauthenticated S3 bucket POST with {@code multipart/form-data} (not {@code ?delete}).
+     */
+    public static boolean isMultipartBucketPostRequest(ContainerRequestContext ctx) {
         if (!"POST".equalsIgnoreCase(ctx.getMethod())) {
             return false;
         }
         String contentType = ctx.getHeaderString("Content-Type");
-        return contentType != null && contentType.toLowerCase().startsWith("multipart/form-data");
+        if (contentType == null || !contentType.toLowerCase().startsWith("multipart/form-data")) {
+            return false;
+        }
+        return isS3BucketPostPath(ctx);
+    }
+
+    private static boolean isS3BucketPostPath(ContainerRequestContext ctx) {
+        if (ctx.getUriInfo().getQueryParameters().containsKey("delete")) {
+            return false;
+        }
+        String path = ctx.getUriInfo().getPath();
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        if (isInternalHealthOrInfoPath(path)) {
+            return false;
+        }
+        String normalized = path.startsWith("/") ? path.substring(1) : path;
+        return !normalized.isEmpty() && !normalized.contains("/");
+    }
+
+    private static boolean multipartBodyContainsField(byte[] body, String... fieldNames) {
+        if (body == null || body.length == 0) {
+            return false;
+        }
+        String raw = new String(body, StandardCharsets.ISO_8859_1);
+        for (String name : fieldNames) {
+            if (raw.contains("name=\"" + name + "\"") || raw.contains("name='" + name + "'")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -95,8 +95,8 @@ export AWS_ENDPOINT_URL=http://localhost:4566
 export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 
-aws iam create-user --user-name player1
-aws iam create-access-key --user-name player1
+aws iam create-user --user-name participant-user
+aws iam create-access-key --user-name participant-user
 # attach policies, create buckets, Lambda functions, etc.
 ```
 
@@ -113,7 +113,7 @@ curl -s http://localhost:4566/health | jq .services
 ```bash
 # As participant (briefing AKIA only — not operator root)
 aws sts get-caller-identity --endpoint-url "$AWS_ENDPOINT_URL"
-# Expect Arn like arn:aws:iam::ACCOUNT:user/player1 — not ...:root
+# Expect Arn like arn:aws:iam::ACCOUNT:user/participant-user — not ...:root
 ```
 
 Under strict mode, `test`/`test`, `floci`/`floci`, and other unregistered keys are rejected. Only IAM identities allowed by policy (or the configured root pair) succeed.
@@ -391,9 +391,9 @@ For more detail, see the [Storage Configuration documentation](https://floci.io/
 
 Floci supports per-account resource isolation with no extra setup. If `AWS_ACCESS_KEY_ID` is exactly 12 digits, Floci uses it as the account ID. Inbound S3 presigned URLs can also carry a 12-digit account id in `X-Amz-Credential` (`AccountContextFilter`). Resources created by one account are invisible to another. CTF presigned URL **generation** still uses the operator root access key id for SigV4 signing.
 
-## Forensic lab
+## Audit and forensics profile
 
-The root [docker-compose.yml](./docker-compose.yml) layers forensic defaults on top of CTF hardening so audit artifacts and service metadata survive restarts:
+The root [docker-compose.yml](./docker-compose.yml) layers audit defaults on top of CTF hardening so audit artifacts and service metadata survive restarts:
 
 | Variable | Compose value | Purpose |
 |---|---|---|
@@ -405,11 +405,11 @@ Operator setup for a typical evidence chain:
 1. Start Compose with operator root credentials (see [Quick start](#quick-start-operators)).
 2. Create an S3 bucket, optional SQS queue, and bucket notifications for trail delivery ([CloudTrail docs](./docs/services/cloudtrail.md)).
 3. `CreateTrail`, `StartLogging`, and exercise the scenario; review gzip JSON under `AWSLogs/{account-id}/CloudTrail/...` in the trail bucket.
-4. Use `LookupEvents` or Athena over trail objects to correlate player HTTP calls with **inter-service** activity (Step Functions tasks, EventBridge targets, Firehose flushes, Config snapshots) recorded with `invokedBy` service principals.
+4. Use `LookupEvents` or Athena over trail objects to correlate participant HTTP calls with **inter-service** activity (Step Functions tasks, EventBridge targets, Firehose flushes, Config snapshots) recorded with `invokedBy` service principals.
 
 Inter-service audit (when audit is enabled and a trail is logging): Step Functions and API Gateway in-process SDK calls use the execution role plus `invokedBy` (`states.amazonaws.com`, `apigateway.amazonaws.com`). Internal delivery (Firehose to S3, SNS to SQS, CloudWatch Logs subscriptions, S3 access logs) uses `userIdentity.type=AWSService`. See [CloudTrail inter-service events](./docs/services/cloudtrail.md#inter-service-events-in-process-audit).
 
-Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`). SQS audit events include `requestParameters.queueUrl` and `messageBody` on `SendMessage` (Query and JSON 1.0) so `LookupEvents` can correlate queue-scoped player activity. Trail S3 delivery evaluates bucket policy `aws:SourceArn` conditions for `cloudtrail.amazonaws.com`.
+Hardening: IAM enforcement and SigV4 still apply independently of audit recording. `StopLogging` and `DeleteTrail` are audited and can trigger GuardDuty `DefenseEvasion` findings. CloudTrail IAM actions scope to trail ARNs (`cloudtrail:StopLogging` on `arn:aws:cloudtrail:...:trail/name`). SQS audit events include `requestParameters.queueUrl` and `messageBody` on `SendMessage` (Query and JSON 1.0) so `LookupEvents` can correlate queue-scoped activity. Trail S3 delivery evaluates bucket policy `aws:SourceArn` and `s3:x-amz-acl` conditions for `cloudtrail.amazonaws.com`.
 
 5. Optional: configure [AWS Config](./docs/services/config.md) delivery channels for configuration snapshots in S3.
 
@@ -429,7 +429,7 @@ cd compatibility-tests && cp env.example .env
 just test-forensic-java
 ```
 
-Full map: [AGENTS.md forensic services](./AGENTS.md#forensic-services-map).
+Full map: [AGENTS.md audit services](./AGENTS.md#audit-services-map).
 
 ## Client tooling notes
 
@@ -470,7 +470,7 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 | Fork delta summary (this file) | [README.md](./README.md) |
 | CTF hardening and IAM behaviour | [docs/services/iam.md](./docs/services/iam.md#ctf-hardening) |
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
-| Forensic lab (CloudTrail, Config, storage) | [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
+| Audit profile (CloudTrail, Config, storage) | [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
 | Compatibility / SDK forensic probes | [compatibility-tests/README.md](./compatibility-tests/README.md) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |
 
@@ -561,7 +561,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 |---|---|
 | Cloud Map | New `servicediscovery` management API and docs |
 | CloudTrail | Trail lifecycle + audit delivery + LookupEvents |
-| Forensic lab | CloudTrail audit, Config snapshots, S3 access logs, VPC Flow Logs, GuardDuty, Security Hub |
+| Audit profile | CloudTrail audit, Config snapshots, S3 access logs, VPC Flow Logs, GuardDuty, Security Hub |
 | Cognito | Verification code subsystem (SNS/SES inspection) |
 | EC2 | Provisioning primitives (launch templates, NAT gateways, VPC endpoints) |
 | KMS | Key state and description operations |

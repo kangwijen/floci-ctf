@@ -86,6 +86,59 @@ public final class SigV4HttpTestSupport {
         return new SignedHeaders(authorization, amzDate, payloadHash);
     }
 
+    public static SignedRestHeaders signRestPost(
+            String host,
+            int port,
+            String path,
+            byte[] body,
+            String accessKeyId,
+            String secretKey,
+            String region,
+            String service,
+            Instant timestamp
+    ) throws Exception {
+        String payloadHash = sha256Hex(body);
+        String amzDate = DATETIME_FMT.format(timestamp);
+        String date = amzDate.substring(0, 8);
+        String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+        String credential = accessKeyId + "/" + credentialScope;
+        String hostHeader = host + ":" + port;
+        String contentType = "application/json; charset=UTF-8";
+
+        Map<String, String> headerValues = new LinkedHashMap<>();
+        headerValues.put("content-type", contentType);
+        headerValues.put("host", hostHeader);
+        headerValues.put("x-amz-content-sha256", payloadHash);
+        headerValues.put("x-amz-date", amzDate);
+
+        String signedHeaders = String.join(";",
+                headerValues.keySet().stream().sorted().toList());
+
+        String canonicalHeaders = Arrays.stream(signedHeaders.split(";"))
+                .map(name -> name + ":" + trimHeaderValue(headerValues.get(name)))
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("") + "\n";
+
+        String canonicalRequest = "POST\n"
+                + SigV4RequestValidator.canonicalUri(path) + "\n"
+                + SigV4RequestValidator.canonicalQueryString("") + "\n"
+                + canonicalHeaders + "\n"
+                + signedHeaders + "\n"
+                + payloadHash;
+
+        String stringToSign = "AWS4-HMAC-SHA256\n"
+                + amzDate + "\n"
+                + credentialScope + "\n"
+                + sha256Hex(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+
+        byte[] signingKey = deriveSigningKey(secretKey, date, region, service);
+        String signature = hexEncode(hmacSha256(signingKey, stringToSign));
+        String authorization = "AWS4-HMAC-SHA256 Credential=" + credential
+                + ", SignedHeaders=" + signedHeaders
+                + ", Signature=" + signature;
+        return new SignedRestHeaders(authorization, amzDate, payloadHash, null);
+    }
+
     public static SignedRestHeaders signRestGet(
             String host,
             int port,

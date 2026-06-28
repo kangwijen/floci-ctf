@@ -56,7 +56,7 @@ just test-typescript
 
 Most tests default to permissive `test`/`test` credentials. Against the hardened CTF image, export operator `FLOCI_AUTH_ROOT_*` or participant IAM keys as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Cloud Map tests skip when `servicediscovery` is disabled in the emulator.
 
-Forensic lab: Java SDK probes live in `sdk-test-java` (`ForensicLabCompatibilityTest`). Use `just test-forensic-java` from `compatibility-tests/`.
+Audit exercise: Java SDK probes live in `sdk-test-java` (`ForensicLabCompatibilityTest`). Use `just test-forensic-java` from `compatibility-tests/`.
 
 ```bash
 docker build -t floci-sdk-node .

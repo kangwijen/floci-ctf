@@ -28,22 +28,24 @@ Floci is configured exclusively through environment variables. Every option belo
 | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | When `true`, evaluate IAM identity and resource policies on HTTP API calls. `true` in this fork's Compose profile |
 | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | When `true` with enforcement enabled, deny missing auth, unregistered access keys, unknown IAM action mappings, and invalid presigned URLs instead of allowing them through. `true` in this fork's Compose profile |
 | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | When `true`, STS web identity and SAML assertions must be structurally valid, JWT `exp` must be in the future, `alg=none` is rejected, SAML must contain a `Signature` element, and JWT crypto is verified when signing keys are configured below |
-| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HMAC secret for HS256 web identity JWT verification (CTF labs) |
+| `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HMAC secret for HS256 web identity JWT verification |
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per OIDC provider host HMAC secret for HS256 verification (for example `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__accounts_google_com`) |
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM-encoded RSA public key for RS256 web identity JWT verification |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | When link-local URI mode is off: bind credential HTTP servers to `127.0.0.1` only (ports 9170/9171/9172). Ignored when link-local URI mode is on (servers bind `0.0.0.0`) |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2/v2/credentials/{token}` (no port) and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; credential servers bind `0.0.0.0`. Lambda/ECS/CodeBuild containers need `extra_hosts: ["169.254.170.2:host-gateway"]` |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
 
-### Forensic lab (Compose defaults)
+### Audit profile (Compose defaults)
 
 | Variable | Default (dev YAML) | Compose value | Description |
 |---|---|---|---|
 | `FLOCI_STORAGE_MODE` | `memory` | `hybrid` | Persist service metadata and audit-related state under `/app/data` |
 | `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `false` | `true` | Emit HTTP and in-process audit records to active CloudTrail trails |
 | `FLOCI_SERVICES_CLOUDTRAIL_EXCLUDE_INTERNAL_PATHS` | `/_floci,/_localstack,/_aws,/health` | same | Path prefixes excluded from audit recording |
+| `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | `false` | Honor `X-Floci-CloudTrail-Source-Ip` for audit `sourceIPAddress` |
+| `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED` | `false` | `false` | Operator-only `POST /_floci/cloudtrail/events*` (root AKID; 404 when internal paths hidden) |
 
-See [CloudTrail](../services/cloudtrail.md) and [README forensic lab](../../README.md#forensic-lab).
+See [CloudTrail](../services/cloudtrail.md) and [README audit profile](../../README.md#audit-and-forensics-profile).
 
 ## Authentication
 

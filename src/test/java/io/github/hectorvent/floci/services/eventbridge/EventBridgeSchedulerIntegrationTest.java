@@ -336,6 +336,9 @@ class EventBridgeSchedulerIntegrationTest {
                     public boolean cloudTrailAllowSourceIpHeader() { return false; }
 
                     @Override
+                    public boolean cloudTrailInjectionEnabled() { return false; }
+
+                    @Override
                     public boolean validateFederatedTokens() { return false; }
 
                     @Override

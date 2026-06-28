@@ -48,6 +48,8 @@ Maps to `FLOCI_CTF_*` environment variables.
 | `floci.ctf.federated-jwt-hmac-secret` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 HMAC secret for web identity JWT verification |
 | `floci.ctf.federated-jwt-hmac-secrets` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*` | _(none)_ | Per OIDC provider host HS256 secrets |
 | `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
+| `floci.ctf.cloud-trail-allow-source-ip-header` | `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | Operator-only: stamp `sourceIPAddress` on audit events |
+| `floci.ctf.cloud-trail-injection-enabled` | `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED` | `false` | Operator-only `POST /_floci/cloudtrail/events*` (root AKID + SigV4 when validate-signatures is on) |
 
 ```yaml
 floci:
@@ -139,7 +141,7 @@ floci:
   ctf:
     hide-internal-endpoints: true          # FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS — false | true | all
 
-  # Forensic lab (see docker-compose.yml)
+  # Audit profile (see docker-compose.yml)
   # services:
   #   cloudtrail:
   #     audit-enabled: true                # FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED

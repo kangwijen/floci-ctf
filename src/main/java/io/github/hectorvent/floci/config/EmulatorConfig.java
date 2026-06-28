@@ -476,6 +476,14 @@ public interface EmulatorConfig {
         boolean cloudTrailAllowSourceIpHeader();
 
         /**
+         * When {@code true}, operator-only {@code POST /_floci/cloudtrail/events*} injection routes
+         * are enabled (still hidden when {@link #hideInternalEndpointsMode()} hides {@code /_floci/*}).
+         * Env: {@code FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED}.
+         */
+        @WithDefault("false")
+        boolean cloudTrailInjectionEnabled();
+
+        /**
          * When {@code true}, federated OIDC JWTs must be structurally valid, non-expired ({@code exp}),
          * and cryptographically verified when signing keys are configured.
          * Env: {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS}.
@@ -610,7 +618,7 @@ public interface EmulatorConfig {
         @WithDefault("true")
         boolean enabled();
 
-        /** When true, record management API activity to active trails (forensic lab profile). */
+        /** When true, record management API activity to active trails (audit exercise profile). */
         @WithDefault("false")
         boolean auditEnabled();
 

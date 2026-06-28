@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * End-to-end forensic lab: CloudTrail audit and S3 delivery, S3 access logging,
+ * End-to-end audit exercise: CloudTrail audit and S3 delivery, S3 access logging,
  * GuardDuty detector findings, Security Hub import, and AWS Config snapshot delivery.
  */
 @QuarkusTest
@@ -43,12 +43,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class CloudForensicsIntegrationTest {
 
-    private static final String LOG_BUCKET = "ctf-forensic-cloudtrail-logs";
-    private static final String WORKLOAD_BUCKET = "ctf-forensic-workload";
-    private static final String ACCESS_LOG_BUCKET = "ctf-forensic-access-logs";
-    private static final String CONFIG_BUCKET = "ctf-forensic-config-delivery";
-    private static final String TRAIL_NAME = "ctf-forensic-audit-trail";
-    private static final String FORENSIC_USER = "ctf-forensic-audit-user";
+    private static final String LOG_BUCKET = "cloudtrail-logs-bucket";
+    private static final String WORKLOAD_BUCKET = "workload-bucket";
+    private static final String ACCESS_LOG_BUCKET = "access-logs-bucket";
+    private static final String CONFIG_BUCKET = "config-delivery-bucket";
+    private static final String TRAIL_NAME = "audit-trail";
+    private static final String FORENSIC_USER = "audit-investigator";
     private static final String ACCESS_LOG_PREFIX = "s3-access/";
     private static final String SECURITY_HUB_PRODUCT_ARN =
             "arn:aws:securityhub:us-east-1:000000000000:product/000000000000/default";
@@ -175,12 +175,16 @@ class CloudForensicsIntegrationTest {
         CtfLabIamTestSupport.putObject(WORKLOAD_BUCKET, "read-me.txt", "payload");
         CtfLabIamTestSupport.getObject(WORKLOAD_BUCKET, "read-me.txt");
 
-        String logKey = CtfLabIamTestSupport.listBucket(ACCESS_LOG_BUCKET + "?prefix=" + ACCESS_LOG_PREFIX)
+        List<String> logKeys = CtfLabIamTestSupport.listBucket(ACCESS_LOG_BUCKET + "?prefix=" + ACCESS_LOG_PREFIX)
                 .statusCode(200)
                 .extract().xmlPath()
-                .getString("ListBucketResult.Contents[0].Key");
-
-        String logBody = CtfLabIamTestSupport.getObject(ACCESS_LOG_BUCKET, logKey);
+                .getList("ListBucketResult.Contents.Key", String.class);
+        assertFalse(logKeys.isEmpty(), "expected access log objects under " + ACCESS_LOG_PREFIX);
+        StringBuilder combinedLogs = new StringBuilder();
+        for (String logKey : logKeys) {
+            combinedLogs.append(CtfLabIamTestSupport.getObject(ACCESS_LOG_BUCKET, logKey));
+        }
+        String logBody = combinedLogs.toString();
         assertTrue(logBody.contains(WORKLOAD_BUCKET));
         assertTrue(logBody.contains("REST.GET.OBJECT"));
         assertTrue(logBody.contains("read-me.txt"));
@@ -220,12 +224,12 @@ class CloudForensicsIntegrationTest {
                     "Findings": [
                         {
                             "SchemaVersion": "2018-10-08",
-                            "Id": "ctf-forensic-imported-finding",
+                            "Id": "imported-finding-sample",
                             "ProductArn": "%s",
-                            "GeneratorId": "ctf-forensic-lab",
+                            "GeneratorId": "audit-exercise-generator",
                             "AwsAccountId": "%s",
                             "Region": "%s",
-                            "Title": "Forensic lab imported finding",
+                            "Title": "Imported finding sample",
                             "Description": "Imported during CloudForensicsIntegrationTest",
                             "Severity": {"Label": "MEDIUM", "Normalized": 50},
                             "Compliance": {"Status": "FAILED"},
@@ -239,11 +243,11 @@ class CloudForensicsIntegrationTest {
                 .body("FailedCount", equalTo(0));
 
         CtfLabIamTestSupport.securityHub("GetFindings", """
-                {"Filters": {"Id": [{"Value": "ctf-forensic-imported-finding", "Comparison": "EQUALS"}]}}
+                {"Filters": {"Id": [{"Value": "imported-finding-sample", "Comparison": "EQUALS"}]}}
                 """)
                 .statusCode(200)
                 .body("Findings", hasSize(1))
-                .body("Findings[0].Title", equalTo("Forensic lab imported finding"));
+                .body("Findings[0].Title", equalTo("Imported finding sample"));
     }
 
     @Test

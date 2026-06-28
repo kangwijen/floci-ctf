@@ -14,6 +14,7 @@ floci:
   ctf:
     # Product default is true; tests keep internal routes for EmulatorInfoController etc.
     hide-internal-endpoints: false
+    cloud-trail-injection-enabled: true
   storage:
     mode: memory
     persistent-path: ./target/test-data

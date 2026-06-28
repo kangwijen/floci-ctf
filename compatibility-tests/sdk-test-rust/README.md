@@ -55,7 +55,7 @@ just test-rust
 
 Most tests default to permissive `test`/`test` credentials. Against the hardened CTF image, export operator `FLOCI_AUTH_ROOT_*` or participant IAM keys as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Cloud Map tests skip when `servicediscovery` is disabled in the emulator.
 
-Forensic lab: see `sdk-test-java` `ForensicLabCompatibilityTest` and [compatibility-tests README](../README.md).
+Audit exercise: see `sdk-test-java` `ForensicLabCompatibilityTest` and [compatibility-tests README](../README.md).
 
 ## Docker
 

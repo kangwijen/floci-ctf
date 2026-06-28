@@ -61,9 +61,9 @@ Compose enables (do not turn off for CTF): `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABL
 ```bash
 export AWS_ENDPOINT_URL=http://localhost:4566
 # Operator provisioning
-aws iam create-user --user-name player1
-aws iam create-access-key --user-name player1
-aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/player1, not :root
+aws iam create-user --user-name participant-user
+aws iam create-access-key --user-name participant-user
+aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/participant-user, not :root
 ```
 
 ### Fork vs upstream (summary)
@@ -199,22 +199,23 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 - OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
 - Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
 - In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
-- Operator event injection API for CloudTrail is not implemented
+- Operator event injection API for CloudTrail is implemented (`CloudTrailEventInjectionController`, `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`)
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
 ---
 
-## Forensic services map
+## Audit services map
 
-Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE=hybrid`, `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`.
+Compose audit defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE=hybrid`, `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`.
 
-**Instance-keyed grading:** Forensics labs grade live `lookup-events` output with provision-time `answers.json` fields (`eventTime`, `accessKeyId`, `VersionId`). Authoring detail: [docs/services/cloudtrail.md#live-forensics-authoring](./docs/services/cloudtrail.md#live-forensics-authoring).
+**Instance-keyed grading:** Audit exercises grade live `lookup-events` output with provision-time `answers.json` fields (`eventTime`, `accessKeyId`, `VersionId`). Authoring detail: [docs/services/cloudtrail.md#live-audit-authoring](./docs/services/cloudtrail.md#live-audit-authoring).
 
 | Area | Primary files / docs |
 |------|----------------------|
 | CloudTrail trail lifecycle | `CloudTrailService`, `CloudTrailJsonHandler`, [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
 | CloudTrail audit recording | `CloudTrailAuditFilter`, `CloudTrailAuditRequestFilter`, `CloudTrailAuditCoordinator`, `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder`, `CloudTrailDeliveryService`, `CloudTrailEventStore` |
+| CloudTrail operator injection | `CloudTrailEventInjectionController`, `CloudTrailEventInjectionService` (`FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`) |
 | CloudTrail audit config | `EmulatorConfig.CloudTrailServiceConfig` (`audit-enabled`, `exclude-internal-paths`) |
 | Config delivery / snapshots | `ConfigSnapshotDeliveryService`, `AwsConfigService`, [docs/services/config.md](./docs/services/config.md) |
 | S3 access logging | `S3AccessLogService`, `S3AccessLogFormatter`, [docs/services/s3.md](./docs/services/s3.md#access-logging) |
@@ -222,18 +223,18 @@ Compose forensic defaults (in addition to CTF security env): `FLOCI_STORAGE_MODE
 | CloudWatch Logs subscriptions | `CloudWatchLogsSubscriptionDispatcher` |
 | GuardDuty detectors / findings | `GuardDutyService`, `GuardDutyCloudTrailHook`, [docs/services/guardduty.md](./docs/services/guardduty.md) |
 | Security Hub ASFF import | `SecurityHubService`, `GuardDutyFindingSubscriber`, [docs/services/securityhub.md](./docs/services/securityhub.md) |
-| Persistent lab state | `StorageFactory`, `HybridStorage`, `./data` volume in `docker-compose.yml` |
+| Persistent exercise state | `StorageFactory`, `HybridStorage`, `./data` volume in `docker-compose.yml` |
 | In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `InProcessAuditContext`; SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2/S3 access logs |
-| E2E forensic scenario | `CloudForensicsIntegrationTest`, `InProcessCloudTrailIntegrationTest`, `InternalServiceCloudTrailIntegrationTest`, `ForensicLabProfile` |
+| E2E audit scenario | `CloudForensicsIntegrationTest`, `InProcessCloudTrailIntegrationTest`, `InternalServiceCloudTrailIntegrationTest`, `ForensicLabProfile` |
 | SDK compatibility probes | [compatibility-tests/sdk-test-java](./compatibility-tests/sdk-test-java) (`ForensicLabCompatibilityTest`) |
 
-**Forensic regression (unit/integration):**
+**Audit regression (unit/integration):**
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,CloudTrailS3DeliveryIntegrationTest,CloudTrailFieldFidelityIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,S3AccessLogScheduledDeliveryIntegrationTest,S3AccessLogDeliveryIamIntegrationTest,S3AccessLogFormatterTest,S3AccessLogKeyBuilderTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,CloudTrailS3DeliveryIntegrationTest,CloudTrailFieldFidelityIntegrationTest,CloudTrailEventInjectionIntegrationTest,CloudTrailEventInjectionDisabledIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,S3AccessLogScheduledDeliveryIntegrationTest,S3AccessLogDeliveryIamIntegrationTest,S3AccessLogFormatterTest,S3AccessLogKeyBuilderTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest
 ```
 
-**Forensic compatibility (running instance):**
+**Audit compatibility (running instance):**
 
 ```bash
 cd compatibility-tests && just test-forensic-java
@@ -241,13 +242,13 @@ cd compatibility-tests && just test-forensic-java
 
 Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default) and operator or IAM credentials in `.env`.
 
-**Forensic gaps closed on `floci:local`:**
+**Audit gaps closed on `floci:local`:**
 
 | Gap | Status | Regression / doc |
 |-----|--------|------------------|
 | `cloudtrail:LookupEvents` IAM scoping | Closed | `CloudTrailLookupEventsScopedIamIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#ctf-fork-notes) |
 | `cloudtrail:StopLogging` audit + history | Closed | `CloudTrailTamperingAuditIntegrationTest` |
-| `sourceIPAddress` authoring hooks | Closed | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-For`; alternate `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER`; [Live forensics authoring](./docs/services/cloudtrail.md#live-forensics-authoring) |
+| `sourceIPAddress` authoring hooks | Closed | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-For`; alternate `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER`; [Live audit authoring](./docs/services/cloudtrail.md#live-audit-authoring) |
 | SQS `ListQueues` IAM deny shape | Closed | `SqsListQueuesIamIntegrationTest`; IAM runs before service-disabled short-circuit |
 | SQS audit (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) with `requestParameters.queueUrl` | Closed | Query and JSON 1.0 protocols; `CloudTrailSqsAuditIntegrationTest` |
 | SQS `SendMessage` audit `requestParameters.messageBody` | Closed | Actual payload recorded (not redacted); `CloudTrailSqsAuditIntegrationTest` |
@@ -257,12 +258,17 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `lookup-events` tail visibility under concurrent audit | Closed | `LookupEvents` awaits in-flight HTTP audit recordings; `CloudTrailAuditCoordinator` |
 | `ListAllMyBuckets` vs bucket-scoped audit ordering | Closed | Request-arrival `eventTime` plus monotonic index timestamps; `CloudTrailFieldFidelityIntegrationTest` |
 | `lookup-events` pagination, `eventTime` precision, same-second order | Closed | Millisecond `eventTime`; insertion order within same second; `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
-| Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live forensics authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
+| Presigned GET (SigV4 query URLs) | Closed | `PreSignedUrlCtfIntegrationTest`, `SigV4RequestValidatorTest`; header fallback for signed `x-amz-*` |
+| Presigned POST under strict IAM | Closed | `S3PresignedPostCtfIntegrationTest`; policy expiration; no unauthenticated multipart bypass |
+| `GetSessionToken` session-policy intersection | Closed | Pure `(identity OR resource) AND session` in `IamPolicyEvaluator`; `StsGetSessionTokenIntersectionIntegrationTest`, `IamEnforcementIntegrationTest` |
+| `additionalEventData` / `tlsDetails` on HTTP audit | Closed | SigV4 auth metadata; TLS when `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-Proto: https`; `CloudTrailEventRecorderTest` |
+| Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live audit authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
+| Operator event injection API | Closed | `CloudTrailEventInjectionIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#operator-event-injection-api) |
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
 | `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |
 | KMS single-layer `SecretBinary` envelope | Closed | No double-wrap; one `kms:Decrypt` yields plaintext; `SecretsManagerKmsEnvelopeIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
 
-**Still open (do not grade player steps on these):** presigned GET, presigned POST, `GetSessionToken` session-policy intersection. Operator event injection API for CloudTrail is not implemented (future).
+**Still open (downstream / out of emulator scope):** SigV4a presign. Extended presigned POST condition operators beyond current parity only when compat tests require them.
 
 ---
 

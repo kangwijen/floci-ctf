@@ -53,7 +53,7 @@ just test-go
 
 Most tests default to permissive `test`/`test` credentials. Against the hardened CTF image, export operator `FLOCI_AUTH_ROOT_*` or participant IAM keys as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Cloud Map tests skip when `servicediscovery` is disabled in the emulator.
 
-Forensic lab: with CloudTrail audit enabled on the emulator, verify trail buckets and `AWSLogs/` prefixes via the `s3` client after API activity (see [compatibility-tests README](../README.md)).
+Audit exercise: with CloudTrail audit enabled on the emulator, verify trail buckets and `AWSLogs/` prefixes via the `s3` client after API activity (see [compatibility-tests README](../README.md)).
 
 ## Docker
 

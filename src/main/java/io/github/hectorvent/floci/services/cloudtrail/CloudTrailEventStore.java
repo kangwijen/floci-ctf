@@ -58,7 +58,29 @@ public class CloudTrailEventStore {
         Instant parsed = recorder.eventTime(event);
         Instant effective = enforceMonotonicEventTime(parsed);
         event.put("eventTime", CloudTrailEventRecorder.formatEventTime(effective));
+        storeIndexedEvent(region, event, recorder, effective);
+    }
 
+    public void indexInjectedEvent(String region,
+                                   Map<String, Object> event,
+                                   CloudTrailEventRecorder recorder,
+                                   boolean preserveEventTime) {
+        Instant parsed = recorder.eventTime(event);
+        Instant effective;
+        if (preserveEventTime) {
+            effective = parsed != null ? parsed : Instant.now();
+            updateLastIndexedTimeIfLater(effective);
+        } else {
+            effective = enforceMonotonicEventTime(parsed);
+            event.put("eventTime", CloudTrailEventRecorder.formatEventTime(effective));
+        }
+        storeIndexedEvent(region, event, recorder, effective);
+    }
+
+    private void storeIndexedEvent(String region,
+                                   Map<String, Object> event,
+                                   CloudTrailEventRecorder recorder,
+                                   Instant effective) {
         CloudTrailEvent indexed = new CloudTrailEvent();
         indexed.setRegion(region);
         indexed.setEventId(recorder.eventId(event));
@@ -76,6 +98,15 @@ public class CloudTrailEventStore {
             indexed.setResourceType(primary.getResourceType());
         }
         store(indexed);
+    }
+
+    private void updateLastIndexedTimeIfLater(Instant effective) {
+        lastIndexedEventTime.updateAndGet(last -> {
+            if (last == null || effective.isAfter(last)) {
+                return effective;
+            }
+            return last;
+        });
     }
 
     private Instant enforceMonotonicEventTime(Instant candidate) {

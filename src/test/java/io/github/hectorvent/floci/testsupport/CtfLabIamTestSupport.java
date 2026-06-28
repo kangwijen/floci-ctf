@@ -126,7 +126,7 @@ public final class CtfLabIamTestSupport {
                 .statusCode(200);
     }
 
-    /** CloudTrail JSON 1.1 call without Authorization (forensic lab profile). */
+    /** CloudTrail JSON 1.1 call without Authorization (audit exercise profile). */
     public static ValidatableResponse cloudTrail(String action, String jsonBody) {
         return given()
                 .header("X-Amz-Target", CLOUDTRAIL_TARGET_PREFIX + action)
@@ -137,7 +137,7 @@ public final class CtfLabIamTestSupport {
         .then();
     }
 
-    /** AWS Config JSON 1.1 call without Authorization (forensic lab profile). */
+    /** AWS Config JSON 1.1 call without Authorization (audit exercise profile). */
     public static ValidatableResponse configService(String action, String jsonBody) {
         return given()
                 .header("X-Amz-Target", CONFIG_TARGET_PREFIX + action)
@@ -148,7 +148,7 @@ public final class CtfLabIamTestSupport {
         .then();
     }
 
-    /** GuardDuty JSON 1.1 call without Authorization (forensic lab profile). */
+    /** GuardDuty JSON 1.1 call without Authorization (audit exercise profile). */
     public static ValidatableResponse guardDuty(String action, String jsonBody) {
         return given()
                 .header("X-Amz-Target", GUARDDUTY_TARGET_PREFIX + action)
@@ -159,7 +159,7 @@ public final class CtfLabIamTestSupport {
         .then();
     }
 
-    /** Security Hub JSON 1.1 call without Authorization (forensic lab profile). */
+    /** Security Hub JSON 1.1 call without Authorization (audit exercise profile). */
     public static ValidatableResponse securityHub(String action, String jsonBody) {
         return given()
                 .header("X-Amz-Target", SECURITY_HUB_TARGET_PREFIX + action)
@@ -170,7 +170,7 @@ public final class CtfLabIamTestSupport {
         .then();
     }
 
-    /** IAM Query API call without Authorization (forensic lab profile). */
+    /** IAM Query API call without Authorization (audit exercise profile). */
     public static ValidatableResponse iamQuery(String action) {
         return given()
                 .formParam("Action", action)
@@ -180,7 +180,7 @@ public final class CtfLabIamTestSupport {
         .then();
     }
 
-    /** Creates an IAM user without Authorization (forensic lab profile). */
+    /** Creates an IAM user without Authorization (audit exercise profile). */
     public static void createIamUser(String userName) {
         given()
                 .formParam("Action", "CreateUser")

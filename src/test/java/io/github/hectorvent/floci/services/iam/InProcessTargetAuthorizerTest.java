@@ -22,24 +22,24 @@ class InProcessTargetAuthorizerTest {
     private static final String ROLE_ARN = "arn:aws:iam::" + ACCOUNT + ":role/inprocess-exec";
 
     private static final String SQS_ARN =
-            "arn:aws:sqs:" + REGION + ":" + ACCOUNT + ":ctf-queue";
+            "arn:aws:sqs:" + REGION + ":" + ACCOUNT + ":example-queue";
     private static final String KINESIS_ARN =
-            "arn:aws:kinesis:" + REGION + ":" + ACCOUNT + ":stream/ctf-stream";
+            "arn:aws:kinesis:" + REGION + ":" + ACCOUNT + ":stream/example-stream";
     private static final String DYNAMODB_STREAM_ARN =
-            "arn:aws:dynamodb:" + REGION + ":" + ACCOUNT + ":table/ctf-table/stream/2024-01-01";
+            "arn:aws:dynamodb:" + REGION + ":" + ACCOUNT + ":table/example-table/stream/2024-01-01";
     private static final String MQ_ARN =
-            "arn:aws:mq:" + REGION + ":" + ACCOUNT + ":broker:ctf-broker:b-abc";
+            "arn:aws:mq:" + REGION + ":" + ACCOUNT + ":broker:example-broker:b-abc";
     private static final String LAMBDA_ARN =
-            "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:ctf-fn";
+            "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:example-fn";
     private static final String SNS_ARN =
-            "arn:aws:sns:" + REGION + ":" + ACCOUNT + ":ctf-topic";
+            "arn:aws:sns:" + REGION + ":" + ACCOUNT + ":example-topic";
     private static final String EVENT_BUS_ARN =
             "arn:aws:events:" + REGION + ":" + ACCOUNT + ":event-bus/default";
     private static final String STATE_MACHINE_ARN =
-            "arn:aws:states:" + REGION + ":" + ACCOUNT + ":stateMachine:ctf-sm";
+            "arn:aws:states:" + REGION + ":" + ACCOUNT + ":stateMachine:example-sm";
     private static final String FIREHOSE_ARN =
-            "arn:aws:firehose:" + REGION + ":" + ACCOUNT + ":deliverystream/ctf-stream";
-    private static final String BUCKET_ARN = "arn:aws:s3:::ctf-delivery-bucket";
+            "arn:aws:firehose:" + REGION + ":" + ACCOUNT + ":deliverystream/example-stream";
+    private static final String BUCKET_ARN = "arn:aws:s3:::delivery-bucket";
 
     private InProcessIamAuthorizer iamAuthorizer;
     private EmulatorConfig config;
@@ -345,7 +345,7 @@ class InProcessTargetAuthorizerTest {
 
     @Test
     void apigwLambdaInvokeResolvesFunctionName() {
-        authorizer.authorizeApigwLambdaInvoke("ctf-fn", REGION);
+        authorizer.authorizeApigwLambdaInvoke("example-fn", REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.APIGW_SERVICE), eq("lambda"), eq("InvokeFunction"),
@@ -373,23 +373,23 @@ class InProcessTargetAuthorizerTest {
     @Test
     void serviceS3PutChecksAclAndObjectKey() {
         authorizer.authorizeServiceS3Put(
-                InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE, "ctf-delivery-bucket", "AWSLogs/key.json", REGION);
+                InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE, "delivery-bucket", "AWSLogs/key.json", REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("GetBucketAcl"),
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
+                eq("arn:aws:s3:::delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
     }
 
     @Test
     void serviceS3PutPassesSourceArnToPutObjectOnly() {
-        String trailArn = "arn:aws:cloudtrail:" + REGION + ":" + ACCOUNT + ":trail/ctf-audit-trail";
+        String trailArn = "arn:aws:cloudtrail:" + REGION + ":" + ACCOUNT + ":trail/audit-trail";
 
         authorizer.authorizeServiceS3Put(
                 InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE,
-                "ctf-delivery-bucket",
+                "delivery-bucket",
                 "AWSLogs/key.json",
                 REGION,
                 trailArn);
@@ -399,7 +399,7 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CLOUDTRAIL_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), eq(trailArn), isNull());
+                eq("arn:aws:s3:::delivery-bucket/AWSLogs/key.json"), eq(REGION), eq(trailArn), isNull());
     }
 
     @Test
@@ -412,7 +412,7 @@ class InProcessTargetAuthorizerTest {
     @Test
     void configS3PutChecksAclListBucketAndObjectKey() {
         authorizer.authorizeServiceS3Put(
-                InProcessTargetAuthorizer.CONFIG_SERVICE, "ctf-delivery-bucket", "AWSLogs/key.json", REGION);
+                InProcessTargetAuthorizer.CONFIG_SERVICE, "delivery-bucket", "AWSLogs/key.json", REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("GetBucketAcl"),
@@ -422,31 +422,31 @@ class InProcessTargetAuthorizerTest {
                 eq(BUCKET_ARN), eq(REGION));
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CONFIG_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
+                eq("arn:aws:s3:::delivery-bucket/AWSLogs/key.json"), eq(REGION), isNull(), isNull());
     }
 
     @Test
     void s3AccessLogDeliveryChecksPutObjectWithSourceArnAndAccount() {
         authorizer.authorizeS3AccessLogDelivery(
-                "source-bucket", "ctf-delivery-bucket", "access-logs/key.log", REGION, ACCOUNT);
+                "source-bucket", "delivery-bucket", "access-logs/key.log", REGION, ACCOUNT);
 
         verify(iamAuthorizer, never()).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.LOGGING_SERVICE), eq("s3"), eq("GetBucketAcl"),
                 any(), any());
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.LOGGING_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/access-logs/key.log"), eq(REGION),
+                eq("arn:aws:s3:::delivery-bucket/access-logs/key.log"), eq(REGION),
                 eq("arn:aws:s3:::source-bucket"), eq(ACCOUNT));
     }
 
     @Test
     void bcmDataExportsS3PutChecksPutObjectOnly() {
         authorizer.authorizeServiceS3Put(
-                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, "ctf-delivery-bucket", "billing/out.parquet", REGION);
+                InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE, "delivery-bucket", "billing/out.parquet", REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/billing/out.parquet"), eq(REGION), isNull());
+                eq("arn:aws:s3:::delivery-bucket/billing/out.parquet"), eq(REGION), isNull());
         verify(iamAuthorizer, never()).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BCM_DATA_EXPORTS_SERVICE), eq("s3"), eq("GetBucketAcl"),
                 eq(BUCKET_ARN), eq(REGION));
@@ -455,11 +455,11 @@ class InProcessTargetAuthorizerTest {
     @Test
     void billingReportsS3PutChecksPutObjectAndGetBucketPolicy() {
         authorizer.authorizeServiceS3Put(
-                InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE, "ctf-delivery-bucket", "cur/out.parquet", REGION);
+                InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE, "delivery-bucket", "cur/out.parquet", REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/cur/out.parquet"), eq(REGION), isNull());
+                eq("arn:aws:s3:::delivery-bucket/cur/out.parquet"), eq(REGION), isNull());
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.BILLING_REPORTS_SERVICE), eq("s3"), eq("GetBucketPolicy"),
                 eq(BUCKET_ARN), eq(REGION));
@@ -467,14 +467,14 @@ class InProcessTargetAuthorizerTest {
 
     @Test
     void firehoseS3PutUsesStreamRoleArn() {
-        authorizer.authorizeFirehoseS3Put(ROLE_ARN, "ctf-delivery-bucket", "stream/out.json", REGION);
+        authorizer.authorizeFirehoseS3Put(ROLE_ARN, "delivery-bucket", "stream/out.json", REGION);
 
         verify(iamAuthorizer).authorizeWithResource(
                 eq(ROLE_ARN), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/stream/out.json"), eq(REGION));
+                eq("arn:aws:s3:::delivery-bucket/stream/out.json"), eq(REGION));
         verify(iamAuthorizer, never()).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.FIREHOSE_SERVICE), eq("s3"), eq("PutObject"),
-                eq("arn:aws:s3:::ctf-delivery-bucket/stream/out.json"), eq(REGION));
+                eq("arn:aws:s3:::delivery-bucket/stream/out.json"), eq(REGION));
     }
 
     @Test
