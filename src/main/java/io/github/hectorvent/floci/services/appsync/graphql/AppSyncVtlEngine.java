@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.appsync.graphql;
 
+import io.github.hectorvent.floci.core.common.CtfVelocityEngineFactory;
 import io.github.hectorvent.floci.services.appsync.graphql.util.AppSyncUtil;
 import io.github.hectorvent.floci.services.appsync.graphql.util.VtlErrorSignal;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,17 +20,13 @@ public class AppSyncVtlEngine {
 
     @Inject
     public AppSyncVtlEngine() {
-        this.engine = new VelocityEngine();
-        engine.setProperty(RuntimeConstants.INPUT_ENCODING, "UTF-8");
-        engine.setProperty(RuntimeConstants.RUNTIME_LOG_NAME,
-                "io.github.hectorvent.floci.appsync.vtl");
-        engine.setProperty(RuntimeConstants.RESOURCE_LOADERS, "string");
-        engine.setProperty("resource.loader.string.class",
-                "org.apache.velocity.runtime.resource.loader.StringResourceLoader");
-        engine.setProperty(RuntimeConstants.RUNTIME_REFERENCES_STRICT, false);
-        engine.setProperty("userdirective",
-                "io.github.hectorvent.floci.services.appsync.graphql.ReturnDirective");
-        engine.init();
+        this.engine = CtfVelocityEngineFactory.create(
+                "io.github.hectorvent.floci.appsync.vtl",
+                velocityEngine -> {
+                    velocityEngine.setProperty(RuntimeConstants.RUNTIME_REFERENCES_STRICT, false);
+                    velocityEngine.setProperty("userdirective",
+                            "io.github.hectorvent.floci.services.appsync.graphql.ReturnDirective");
+                });
     }
 
     public AppSyncVtlResult evaluate(String template, AppSyncVtlContext ctx) {

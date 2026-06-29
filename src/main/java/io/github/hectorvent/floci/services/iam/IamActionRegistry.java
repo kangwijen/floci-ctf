@@ -39,7 +39,26 @@ public class IamActionRegistry {
 
     private record ActionRule(String service, String method, Pattern pathPattern, String action) {}
 
+    /** API Gateway control-plane paths under {@code /restapis/...}, excluding data-plane {@code _user_request_}. */
+    private static final String APIGW_CONTROL_REST_PATH = ".*/restapis/(?!.*/_user_request_/).+";
+
     private static final List<ActionRule> RULES = List.of(
+        // ── API Gateway execute-api (data plane; must precede generic /{bucket}/key S3 rules) ──
+        rule("execute-api", "GET",     "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "POST",    "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "PUT",     "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "PATCH",   "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "DELETE",  "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "HEAD",    "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "OPTIONS", "^/execute-api/.+",      "execute-api:Invoke"),
+        rule("execute-api", "GET",     ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "POST",    ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "PUT",     ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "PATCH",   ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "DELETE",  ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "HEAD",    ".*/_user_request_.+",   "execute-api:Invoke"),
+        rule("execute-api", "OPTIONS", ".*/_user_request_.+",   "execute-api:Invoke"),
+
         // ── S3 ─────────────────────────────────────────────────────────────────
         rule("s3", "GET",    "^/?$",                              "s3:ListAllMyBuckets"),
         rule("s3", "PUT",    "^/[^/]+/?$",                       "s3:CreateBucket"),
@@ -91,11 +110,11 @@ public class IamActionRegistry {
         rule("apigateway", "PATCH",  ".*/account$",                       "apigateway:PATCH"),
         rule("apigateway", "GET",    ".*/restapis$",                        "apigateway:GET"),
         rule("apigateway", "POST",   ".*/restapis$",                        "apigateway:POST"),
-        rule("apigateway", "GET",    ".*/restapis/.+",                      "apigateway:GET"),
-        rule("apigateway", "PUT",    ".*/restapis/.+",                      "apigateway:PUT"),
-        rule("apigateway", "PATCH",  ".*/restapis/.+",                      "apigateway:PATCH"),
-        rule("apigateway", "DELETE", ".*/restapis/.+",                      "apigateway:DELETE"),
-        rule("apigateway", "POST",   ".*/restapis/.+",                      "apigateway:POST"),
+        rule("apigateway", "GET",    APIGW_CONTROL_REST_PATH,               "apigateway:GET"),
+        rule("apigateway", "PUT",    APIGW_CONTROL_REST_PATH,               "apigateway:PUT"),
+        rule("apigateway", "PATCH",  APIGW_CONTROL_REST_PATH,               "apigateway:PATCH"),
+        rule("apigateway", "DELETE", APIGW_CONTROL_REST_PATH,               "apigateway:DELETE"),
+        rule("apigateway", "POST",   APIGW_CONTROL_REST_PATH,               "apigateway:POST"),
 
         // ── Kinesis ────────────────────────────────────────────────────────────
         rule("kinesis", "POST", ".*", "kinesis:*"),
@@ -315,6 +334,57 @@ public class IamActionRegistry {
 
         LOG.debugv("No action mapping for {0} {1} {2} — defaulting to ALLOW", credentialScope, method, path);
         return null;
+    }
+
+    /**
+     * Returns the SigV4 credential scope implied by a REST route (method + path),
+     * independent of the Authorization header scope.
+     *
+     * <p>Returns {@code null} for query-protocol POST {@code /} (STS, IAM, JSON 1.1),
+     * requests with {@code X-Amz-Target}, and paths with no REST rule match.
+     */
+    public String resolveRestRouteScope(ContainerRequestContext ctx) {
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target != null && !target.isBlank()) {
+            return null;
+        }
+
+        String method = ctx.getMethod().toUpperCase();
+        String path = ctx.getUriInfo().getPath();
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        if ("/".equals(path) && !"GET".equals(method)) {
+            return null;
+        }
+
+        for (ActionRule rule : RULES) {
+            if ("s3".equals(rule.service()) && !isS3BucketStylePath(path)) {
+                continue;
+            }
+            if (rule.method().equals(method) && rule.pathPattern().matcher(path).find()) {
+                return rule.service();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * S3 REST rules use {@code /{bucket}/key} shapes that also match other services (e.g.
+     * {@code /restapis/{id}/resources}). Restrict S3 route inference to real bucket paths.
+     */
+    static boolean isS3BucketStylePath(String path) {
+        if (path == null || path.isBlank() || "/".equals(path)) {
+            return true;
+        }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        return !normalized.startsWith("/restapis")
+                && !normalized.startsWith("/execute-api")
+                && !normalized.startsWith("/v1/")
+                && !normalized.startsWith("/lambda")
+                && !normalized.startsWith("/2015-03-31/")
+                && !normalized.startsWith("/clusters/")
+                && !normalized.startsWith("/Execute");
     }
 
     /**

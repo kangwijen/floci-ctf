@@ -211,6 +211,19 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                           String region,
                                           String accountId,
                                           boolean strict) {
+        String routeScope = actionRegistry.resolveRestRouteScope(ctx);
+        if (routeScope != null && !routeScope.equals(credentialScope)) {
+            String denyAction = actionRegistry.resolve(routeScope, ctx);
+            if (denyAction == null) {
+                denyAction = routeScope + ":*";
+            }
+            LOG.infov(
+                    "IAM enforcement DENY: credential scope {0} mismatches REST route scope {1} path={2}",
+                    credentialScope, routeScope, ctx.getUriInfo().getPath());
+            ctx.abortWith(accessDeniedResponse(denyAction, routeScope, ctx.getMediaType()));
+            return;
+        }
+
         if (isDynamoDbBatchExecuteStatement(credentialScope, ctx)) {
             evaluateDynamoDbBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;

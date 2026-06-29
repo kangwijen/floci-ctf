@@ -242,6 +242,96 @@ class IamActionRegistryTest {
         assertNull(registry.resolve("kms", ctx));
     }
 
+    @Test
+    void resolveRestRouteScope_apigatewayCreateRestApi() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/restapis",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"name\":\"demo\"}");
+        assertEquals("apigateway", registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_nullForIamQueryAtRoot() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_FORM_URLENCODED_TYPE,
+                "Action=ListUsers&Version=2010-05-08");
+        assertNull(registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_nullForStsQueryAtRoot() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_FORM_URLENCODED_TYPE,
+                "Action=GetCallerIdentity&Version=2011-06-15");
+        assertNull(registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_nullForJson11AtRoot() {
+        ContainerRequestContext ctx = dynamodbTargetCtx("DynamoDB_20120810.PutItem");
+        assertNull(registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_s3ListBucketsAtRoot() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/",
+                new MultivaluedHashMap<>(),
+                null,
+                "");
+        assertEquals("s3", registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_apigatewayDespiteSmuggledQueryAction() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("Action", "ListUsers");
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/restapis",
+                query,
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"name\":\"demo\"}");
+        assertEquals("apigateway", registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_executeApiInvokePath() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/execute-api/abc123/prod/hello",
+                new MultivaluedHashMap<>(),
+                null,
+                "");
+        assertEquals("execute-api", registry.resolveRestRouteScope(ctx));
+        assertEquals("execute-api:Invoke", registry.resolve("execute-api", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_userRequestInvokePath() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/restapis/abc123/prod/_user_request_/hello",
+                new MultivaluedHashMap<>(),
+                null,
+                "");
+        assertEquals("execute-api", registry.resolveRestRouteScope(ctx));
+        assertEquals("execute-api:Invoke", registry.resolve("execute-api", ctx));
+    }
+
+    @Test
+    void resolve_apigatewayScopeDoesNotMapUserRequestToControlPlaneGet() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/restapis/abc123/prod/_user_request_/hello",
+                new MultivaluedHashMap<>(),
+                null,
+                "");
+        assertNull(registry.resolve("apigateway", ctx));
+    }
+
     // -------------------------------------------------------------------------
 
     private static ContainerRequestContext dynamodbTargetCtx(String target) {

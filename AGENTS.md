@@ -25,7 +25,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 4. Ship docs and tests with behavior changes (`README.md`, this file, `docs/services/iam.md` when IAM changes).
 5. Prioritize core CTF surface: IAM, STS, S3, SQS, SNS, DynamoDB, Lambda, KMS, Secrets Manager.
 
-**Fork-only HTTP auth (`core.common`):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `AccountResolver`, `AccountContextFilter`.
+**Fork-only HTTP auth (`core.common`):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `AccountResolver`, `AccountContextFilter`, `CtfVelocityEngineFactory` (VTL `SecureUberspector` sandbox).
 
 **Related fork deltas:** `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA, not upstream account-id signing), `ResourcePolicyResolver`, `PolicyPrincipalMatcher`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `StsQueryHandler`, `SecretsManagerKmsSupport`, `EksTokenAuthenticator`, `InProcessTargetAuthorizer`.
 
@@ -267,6 +267,9 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
 | `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |
 | KMS single-layer `SecretBinary` envelope | Closed | No double-wrap; one `kms:Decrypt` yields plaintext; `SecretsManagerKmsEnvelopeIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
+| API Gateway VTL ProcessBuilder RCE | Closed | `CtfVelocityEngineFactory` + `SecureUberspector`; `VtlProcessBuilderSandboxTest` |
+| API Gateway IAM scope-to-route mismatch | Closed | `IamActionRegistry.resolveRestRouteScope`; `ApiGatewayIamScopeBypassIntegrationTest` |
+| API Gateway data-plane IAM (`execute-api:Invoke`) | Closed | `execute-api` / `_user_request_` rules; `ApiGatewayExecuteApiScopeIntegrationTest` |
 
 **Still open (downstream / out of emulator scope):** SigV4a presign. Extended presigned POST condition operators beyond current parity only when compat tests require them.
 
@@ -358,7 +361,7 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,ApiGatewaySqsIntegrationTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,ApiGatewaySqsIntegrationTest,ApiGatewayIamScopeBypassIntegrationTest,VtlProcessBuilderSandboxTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **E2E against running instance:**

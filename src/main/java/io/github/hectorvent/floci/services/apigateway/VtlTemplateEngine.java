@@ -3,29 +3,12 @@ package io.github.hectorvent.floci.services.apigateway;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.core.common.CtfVelocityEngineFactory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.VelocityEngine;
-import org.apache.velocity.runtime.ParserPoolImpl;
-import org.apache.velocity.runtime.RuntimeConstants;
-import org.apache.velocity.runtime.directive.Break;
-import org.apache.velocity.runtime.directive.Define;
-import org.apache.velocity.runtime.directive.Evaluate;
-import org.apache.velocity.runtime.directive.Foreach;
-import org.apache.velocity.runtime.directive.Include;
-import org.apache.velocity.runtime.directive.Macro;
-import org.apache.velocity.runtime.directive.Parse;
-import org.apache.velocity.runtime.directive.Stop;
-import org.apache.velocity.runtime.parser.StandardParser;
-import org.apache.velocity.runtime.resource.ResourceCacheImpl;
-import org.apache.velocity.runtime.resource.ResourceManagerImpl;
-import org.apache.velocity.runtime.resource.loader.FileResourceLoader;
-import org.apache.velocity.runtime.resource.loader.StringResourceLoader;
-import org.apache.velocity.runtime.resource.util.StringResourceRepositoryImpl;
-import org.apache.velocity.util.introspection.TypeConversionHandlerImpl;
-import org.apache.velocity.util.introspection.UberspectImpl;
 
 import java.io.StringWriter;
 import java.net.URLDecoder;
@@ -46,23 +29,6 @@ import java.util.Map;
         VtlTemplateEngine.InputVariable.class,
         VtlTemplateEngine.UtilVariable.class,
         VtlTemplateEngine.ResponseOverride.class,
-        UberspectImpl.class,
-        TypeConversionHandlerImpl.class,
-        ResourceManagerImpl.class,
-        ResourceCacheImpl.class,
-        ParserPoolImpl.class,
-        FileResourceLoader.class,
-        StringResourceLoader.class,
-        StringResourceRepositoryImpl.class,
-        Foreach.class,
-        Include.class,
-        Parse.class,
-        Macro.class,
-        Evaluate.class,
-        Break.class,
-        Define.class,
-        Stop.class,
-        StandardParser.class,
 })
 public class VtlTemplateEngine {
 
@@ -72,13 +38,7 @@ public class VtlTemplateEngine {
     @Inject
     public VtlTemplateEngine(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        this.engine = new VelocityEngine();
-        engine.setProperty(RuntimeConstants.INPUT_ENCODING, "UTF-8");
-        engine.setProperty(RuntimeConstants.RUNTIME_LOG_NAME, "io.github.hectorvent.floci.vtl");
-        engine.setProperty(RuntimeConstants.RESOURCE_LOADERS, "string");
-        engine.setProperty("resource.loader.string.class",
-                "org.apache.velocity.runtime.resource.loader.StringResourceLoader");
-        engine.init();
+        this.engine = CtfVelocityEngineFactory.create("io.github.hectorvent.floci.vtl");
     }
 
     /**

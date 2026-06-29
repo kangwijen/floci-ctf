@@ -18,7 +18,13 @@
     "allDeclaredFields": true
   },
   {
-    "name": "org.apache.velocity.util.introspection.UberspectImpl",
+    "name": "org.apache.velocity.util.introspection.SecureUberspector",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.apache.velocity.util.introspection.SecureIntrospectorImpl",
     "allDeclaredConstructors": true,
     "allDeclaredMethods": true,
     "allDeclaredFields": true

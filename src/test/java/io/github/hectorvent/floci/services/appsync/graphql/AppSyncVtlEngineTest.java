@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.appsync.graphql;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.services.appsync.graphql.util.AppSyncUtil;
 import io.quarkus.test.junit.QuarkusTest;
@@ -763,6 +764,21 @@ class AppSyncVtlEngineTest {
         void j6_vtlSyntaxErrorPropagated() {
             assertThrows(Exception.class, () ->
                     engine.evaluate("#if(true)", defaultCtx()));
+        }
+
+        @Test
+        void j7_processBuilderReflectionDoesNotExecute() throws Exception {
+            String template = "#set($pbClass=$util.getClass().forName('java.lang.ProcessBuilder'))\n"
+                    + "#set($listClass=$util.getClass().forName('java.util.List'))\n"
+                    + "#set($ctor=$pbClass.getConstructor($listClass))\n"
+                    + "#set($cmd=$util.parseJson('[\"/bin/true\"]'))\n"
+                    + "#set($pb=$ctor.newInstance($cmd))\n"
+                    + "#set($p=$pb.start())\n"
+                    + "#set($exit=$p.waitFor())\n"
+                    + "{\"exit\":\"$exit\"}";
+            var result = engine.evaluate(template, defaultCtx());
+            JsonNode node = objectMapper.readTree(result.output().toString().trim());
+            assertNotEquals("0", node.path("exit").asText());
         }
     }
 }
