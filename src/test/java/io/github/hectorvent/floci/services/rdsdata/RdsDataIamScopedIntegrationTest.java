@@ -35,7 +35,7 @@ class RdsDataIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-rdsdata-player";
+        String user = "rdsdata-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 

@@ -1,12 +1,23 @@
 package io.github.hectorvent.floci.services.cloudtrail;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AccountResolver;
+import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
+import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.enterprise.inject.Instance;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CloudTrailEventRecorderTest {
 
@@ -43,6 +54,43 @@ class CloudTrailEventRecorderTest {
         assertEquals("AWS::SQS::Queue",
                 CloudTrailEventRecorder.cloudTrailResourceType(
                         "sqs", "SendMessage", "arn:aws:sqs:us-east-1:123:queue"));
+    }
+
+    @Test
+    void buildInProcessEvent_normalizesSqsJsonBodyQueueUrl() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        when(config.defaultAccountId()).thenReturn("000000000000");
+        CloudTrailEventRecorder recorder = new CloudTrailEventRecorder(
+                new ObjectMapper(),
+                mock(AccountResolver.class),
+                mock(IamService.class),
+                mock(ResourceArnBuilder.class),
+                config,
+                mock(Instance.class));
+
+        String queueUrl = "http://localhost:4566/000000000000/inprocess-queue";
+        Map<String, Object> requestParameters = new LinkedHashMap<>();
+        requestParameters.put("QueueUrl", queueUrl);
+        requestParameters.put("MessageBody", "payload");
+
+        Map<String, Object> event = recorder.buildInProcessEvent(InProcessAuditContext.builder()
+                .region("us-east-1")
+                .eventName("SendMessage")
+                .credentialScope("sqs")
+                .requestParameters(requestParameters)
+                .invokedBy("states.amazonaws.com")
+                .executionRoleArn("arn:aws:iam::000000000000:role/SfnRole")
+                .managementEvent(false)
+                .eventCategory("Data")
+                .build());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) event.get("requestParameters");
+        assertEquals(queueUrl, params.get("queueUrl"));
+        assertEquals("payload", params.get("messageBody"));
+        assertFalse(params.containsKey("QueueUrl"));
+        assertFalse(params.containsKey("MessageBody"));
+        assertEquals("Data", event.get("eventCategory"));
     }
 
     @Test

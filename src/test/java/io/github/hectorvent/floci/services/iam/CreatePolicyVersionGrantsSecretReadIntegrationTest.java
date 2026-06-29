@@ -35,12 +35,12 @@ class CreatePolicyVersionGrantsSecretReadIntegrationTest {
 
     private String playerAkid;
     private String policyArn;
-    private static final String SECRET_NAME = "ctf/policy-delta-secret";
+    private static final String SECRET_NAME = "test/policy-delta-secret";
 
     @BeforeAll
     void provision() throws Exception {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-policy-delta";
+        String user = "policy-delta";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -68,7 +68,7 @@ class CreatePolicyVersionGrantsSecretReadIntegrationTest {
                 + "/20260227/us-east-1/secretsmanager/aws4_request";
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", SECRET_NAME);
-        create.put("SecretString", "flag{policy-delta}");
+        create.put("SecretString", "policy-delta-value");
         given()
                 .header("Authorization", rootSm)
                 .header("X-Amz-Target", "secretsmanager.CreateSecret")
@@ -103,7 +103,7 @@ class CreatePolicyVersionGrantsSecretReadIntegrationTest {
 
         getSecretAsPlayer()
                 .statusCode(200)
-                .body("SecretString", equalTo("flag{policy-delta}"));
+                .body("SecretString", equalTo("policy-delta-value"));
     }
 
     private io.restassured.response.ValidatableResponse getSecretAsPlayer() throws Exception {

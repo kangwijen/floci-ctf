@@ -263,22 +263,22 @@ class IamEnforcementIntegrationTest {
     void listBucketPrefixConditionAllowsEscrowOnly() {
         String policy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault",
-               "Condition":{"StringLike":{"s3:prefix":["escrow/*"]}}}
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::data",
+               "Condition":{"StringLike":{"s3:prefix":["allowed/*"]}}}
             ]}""";
-        Map<String, String> escrowCtx = Map.of("s3:prefix", "escrow/");
+        Map<String, String> escrowCtx = Map.of("s3:prefix", "allowed/");
         assertEquals(Decision.ALLOW, evaluator.evaluate(
                 CallerContext.of(List.of(policy)),
                 List.of(),
                 "s3:ListBucket",
-                "arn:aws:s3:::vault",
+                "arn:aws:s3:::data",
                 escrowCtx));
         Map<String, String> archivedCtx = Map.of("s3:prefix", "archived/");
         assertEquals(Decision.DENY, evaluator.evaluate(
                 CallerContext.of(List.of(policy)),
                 List.of(),
                 "s3:ListBucket",
-                "arn:aws:s3:::vault",
+                "arn:aws:s3:::data",
                 archivedCtx));
     }
 
@@ -301,14 +301,14 @@ class IamEnforcementIntegrationTest {
     void listBucketPrefixConditionFailsWhenPrefixMissingFromContext() {
         String policy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault",
-               "Condition":{"StringLike":{"s3:prefix":["escrow/*"]}}}
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::data",
+               "Condition":{"StringLike":{"s3:prefix":["allowed/*"]}}}
             ]}""";
         assertEquals(Decision.DENY, evaluator.evaluate(
                 CallerContext.of(List.of(policy)),
                 List.of(),
                 "s3:ListBucket",
-                "arn:aws:s3:::vault",
+                "arn:aws:s3:::data",
                 Map.of()));
     }
 
@@ -316,11 +316,11 @@ class IamEnforcementIntegrationTest {
     void sessionPolicyFromGetSessionTokenConstrainsTempCredentials() {
         String parentPolicy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::data/*"}
             ]}""";
         String sessionPolicy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/escrow/*"}
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::data/allowed/*"}
             ]}""";
         iamService.createUser("session-parent", "/");
         String parentAccessKeyId = iamService.createAccessKey("session-parent").getAccessKeyId();
@@ -341,16 +341,16 @@ class IamEnforcementIntegrationTest {
                 "aws:principalarn", sessionArn,
                 "aws:principalaccount", "000000000000");
         assertEquals(Decision.ALLOW, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/escrow/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::data/allowed/object.txt", ctx));
         assertEquals(Decision.DENY, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/other/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::data/other/object.txt", ctx));
     }
 
     @Test
     void sessionPolicyWithoutParentGrantDoesNotExpandPermissions() {
         String sessionPolicy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::data/*"}
             ]}""";
         String sessionArn = "arn:aws:sts::000000000000:federated-user/floci-session";
         iamService.registerSession(
@@ -366,18 +366,18 @@ class IamEnforcementIntegrationTest {
                 "aws:principalarn", sessionArn,
                 "aws:principalaccount", "000000000000");
         assertEquals(Decision.DENY, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::data/object.txt", ctx));
     }
 
     @Test
     void getSessionTokenSessionPolicyCannotExceedParentUserPolicy() {
         String parentPolicy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::vault"}
+              {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::data"}
             ]}""";
         String sessionPolicy = """
             {"Version":"2012-10-17","Statement":[
-              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::vault/*"}
+              {"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::data/*"}
             ]}""";
         iamService.createUser("parent-user", "/");
         String parentAccessKeyId = iamService.createAccessKey("parent-user").getAccessKeyId();
@@ -398,7 +398,7 @@ class IamEnforcementIntegrationTest {
                 "aws:principalarn", sessionArn,
                 "aws:principalaccount", "000000000000");
         assertEquals(Decision.DENY, evaluator.evaluate(
-                caller, List.of(), "s3:GetObject", "arn:aws:s3:::vault/flag.txt", ctx));
+                caller, List.of(), "s3:GetObject", "arn:aws:s3:::data/object.txt", ctx));
     }
 
     @Test
@@ -451,7 +451,7 @@ class IamEnforcementIntegrationTest {
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",
-                "arn:aws:s3:::scoped-bucket/flag.txt",
+                "arn:aws:s3:::scoped-bucket/object-allowed.txt",
                 ctx));
     }
 
@@ -471,7 +471,7 @@ class IamEnforcementIntegrationTest {
                 CallerContext.of(List.of()),
                 List.of(bucketPolicy),
                 "s3:GetObject",
-                "arn:aws:s3:::scoped-bucket/flag.txt",
+                "arn:aws:s3:::scoped-bucket/object-allowed.txt",
                 ctx));
     }
 

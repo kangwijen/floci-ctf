@@ -21,8 +21,8 @@ import static org.hamcrest.Matchers.equalTo;
 class DynamoDbGetItemQueryScopedIntegrationTest {
 
     private static final String DYNAMODB_CONTENT_TYPE = "application/x-amz-json-1.0";
-    private static final String ALLOWED_TABLE = "ctf-lab-allowed-table";
-    private static final String DECOY_TABLE = "ctf-lab-decoy-table";
+    private static final String ALLOWED_TABLE = "lab-allowed-table";
+    private static final String DECOY_TABLE = "other-table";
 
     @TestHTTPResource("/")
     java.net.URL endpoint;
@@ -32,7 +32,7 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-dynamodb-player";
+        String user = "dynamodb-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -42,8 +42,8 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
         createTable(rootAuth, ALLOWED_TABLE);
         createTable(rootAuth, DECOY_TABLE);
 
-        putItem(rootAuth, ALLOWED_TABLE, "lab-flag", "allowed-value");
-        putItem(rootAuth, DECOY_TABLE, "decoy-flag", "decoy-value");
+        putItem(rootAuth, ALLOWED_TABLE, "allowed-item", "allowed-value");
+        putItem(rootAuth, DECOY_TABLE, "other-item", "decoy-value");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
@@ -95,7 +95,7 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
                 .body("""
                         {
                           "TableName": "%s",
-                          "Key": {"pk": {"S": "lab-flag"}}
+                          "Key": {"pk": {"S": "allowed-item"}}
                         }""".formatted(ALLOWED_TABLE))
                 .when().post("/")
                 .then().statusCode(200)
@@ -111,7 +111,7 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
                 .body("""
                         {
                           "TableName": "%s",
-                          "Key": {"pk": {"S": "decoy-flag"}}
+                          "Key": {"pk": {"S": "other-item"}}
                         }""".formatted(DECOY_TABLE))
                 .when().post("/")
                 .then().statusCode(403);
@@ -127,7 +127,7 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
                         {
                           "TableName": "%s",
                           "KeyConditionExpression": "pk = :pk",
-                          "ExpressionAttributeValues": {":pk": {"S": "lab-flag"}}
+                          "ExpressionAttributeValues": {":pk": {"S": "allowed-item"}}
                         }""".formatted(ALLOWED_TABLE))
                 .when().post("/")
                 .then().statusCode(200)
@@ -144,7 +144,7 @@ class DynamoDbGetItemQueryScopedIntegrationTest {
                         {
                           "TableName": "%s",
                           "KeyConditionExpression": "pk = :pk",
-                          "ExpressionAttributeValues": {":pk": {"S": "decoy-flag"}}
+                          "ExpressionAttributeValues": {":pk": {"S": "other-item"}}
                         }""".formatted(DECOY_TABLE))
                 .when().post("/")
                 .then().statusCode(403);

@@ -27,9 +27,9 @@ class InProcessDeliveryIamIntegrationTest {
 
     private static final String REGION = "us-east-1";
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
-    private static final String BUCKET = "ctf-inprocess-delivery-bucket";
+    private static final String BUCKET = "inprocess-delivery-bucket";
     private static final String LAMBDA_ARN =
-            "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:ctf-s3-no-policy";
+            "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:s3-no-policy";
 
     @TestHTTPResource("/")
     URL endpoint;

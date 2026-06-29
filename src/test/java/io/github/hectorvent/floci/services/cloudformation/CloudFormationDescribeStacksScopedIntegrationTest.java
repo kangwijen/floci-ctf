@@ -23,20 +23,20 @@ class CloudFormationDescribeStacksScopedIntegrationTest {
     @TestHTTPResource("/")
     java.net.URL endpoint;
 
-    private static final String LAB_STACK = "ctf-lab-stack";
-    private static final String DECOY_STACK = "ctf-decoy-stack";
+    private static final String LAB_STACK = "allowed-stack";
+    private static final String DECOY_STACK = "other-stack";
     private static final String TEMPLATE = """
             {"AWSTemplateFormatVersion":"2010-09-09",
              "Resources":{},
-             "Outputs":{"SecretName":{"Value":"ctf/witness-secret"},
-                        "KmsKeyId":{"Value":"alias/ctf-lab-key"}}}""";
+             "Outputs":{"SecretName":{"Value":"test/stack-output-secret"},
+                        "KmsKeyId":{"Value":"alias/test-stack-key"}}}""";
 
     private String playerAkid;
 
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-cfn-player";
+        String user = "cfn-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -74,8 +74,8 @@ class CloudFormationDescribeStacksScopedIntegrationTest {
                 .header("Authorization", auth)
                 .when().post("/")
                 .then().statusCode(200)
-                .body(containsString("ctf/witness-secret"))
-                .body(containsString("alias/ctf-lab-key"));
+                .body(containsString("test/stack-output-secret"))
+                .body(containsString("alias/test-stack-key"));
     }
 
     @Test

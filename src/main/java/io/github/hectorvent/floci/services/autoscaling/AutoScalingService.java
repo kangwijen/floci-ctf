@@ -416,7 +416,7 @@ public class AutoScalingService {
                     "An active instance refresh already exists for Auto Scaling group '" + asgName + "'.", 400);
         }
 
-        Instant now = Instant.now();
+        Instant now = nextInstanceRefreshStartTime(region, asgName);
         InstanceRefresh refresh = new InstanceRefresh();
         refresh.setInstanceRefreshId(UUID.randomUUID().toString());
         refresh.setAutoScalingGroupName(asgName);
@@ -823,6 +823,20 @@ public class AutoScalingService {
             String launchTemplateName,
             String launchTemplateVersion,
             MixedInstancesPolicy mixedInstancesPolicy) {}
+
+    private Instant nextInstanceRefreshStartTime(String region, String asgName) {
+        Instant now = Instant.now();
+        Optional<Instant> latestStart = instanceRefreshes.values().stream()
+                .filter(r -> region.equals(r.getRegion()))
+                .filter(r -> asgName.equals(r.getAutoScalingGroupName()))
+                .map(InstanceRefresh::getStartTime)
+                .filter(Objects::nonNull)
+                .max(Instant::compareTo);
+        if (latestStart.isPresent() && !now.isAfter(latestStart.get())) {
+            return latestStart.get().plusNanos(1);
+        }
+        return now;
+    }
 
     private static String instanceRefreshKey(String region, String asgName, String refreshId) {
         return region + "::" + asgName + "::" + refreshId;

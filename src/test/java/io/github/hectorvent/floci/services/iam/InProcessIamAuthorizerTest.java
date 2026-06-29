@@ -30,8 +30,8 @@ class InProcessIamAuthorizerTest {
 
     private static final String ROLE_ARN = "arn:aws:iam::222222222222:role/sfn-exec";
     private static final String KEY_ARN = "arn:aws:kms:us-east-1:222222222222:key/abc-123";
-    private static final String QUEUE_ARN = "arn:aws:sqs:us-east-1:222222222222:ctf-target";
-    private static final String LAMBDA_ARN = "arn:aws:lambda:us-east-1:222222222222:function:ctf-target";
+    private static final String QUEUE_ARN = "arn:aws:sqs:us-east-1:222222222222:test-target";
+    private static final String LAMBDA_ARN = "arn:aws:lambda:us-east-1:222222222222:function:test-target";
     private static final String EVENTS_SERVICE = "events.amazonaws.com";
 
     private EmulatorConfig config;

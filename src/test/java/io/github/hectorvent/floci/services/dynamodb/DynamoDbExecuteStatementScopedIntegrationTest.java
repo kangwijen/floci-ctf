@@ -21,8 +21,8 @@ import static org.hamcrest.Matchers.equalTo;
 class DynamoDbExecuteStatementScopedIntegrationTest {
 
     private static final String DYNAMODB_CONTENT_TYPE = "application/x-amz-json-1.0";
-    private static final String ALLOWED_TABLE = "ctf-partiql-allowed";
-    private static final String DECOY_TABLE = "ctf-partiql-decoy";
+    private static final String ALLOWED_TABLE = "partiql-allowed";
+    private static final String DECOY_TABLE = "partiql-other-table";
 
     @TestHTTPResource("/")
     java.net.URL endpoint;
@@ -32,7 +32,7 @@ class DynamoDbExecuteStatementScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-partiql-player";
+        String user = "partiql-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -42,8 +42,8 @@ class DynamoDbExecuteStatementScopedIntegrationTest {
         createTable(rootAuth, ALLOWED_TABLE);
         createTable(rootAuth, DECOY_TABLE);
 
-        putItem(rootAuth, ALLOWED_TABLE, "lab-flag", "allowed-value");
-        putItem(rootAuth, DECOY_TABLE, "decoy-flag", "decoy-value");
+        putItem(rootAuth, ALLOWED_TABLE, "allowed-item", "allowed-value");
+        putItem(rootAuth, DECOY_TABLE, "other-item", "decoy-value");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
@@ -95,7 +95,7 @@ class DynamoDbExecuteStatementScopedIntegrationTest {
                 .body("""
                         {
                           "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                          "Parameters": [{"S": "lab-flag"}]
+                          "Parameters": [{"S": "allowed-item"}]
                         }""".formatted(ALLOWED_TABLE))
                 .when().post("/")
                 .then().statusCode(200)
@@ -111,7 +111,7 @@ class DynamoDbExecuteStatementScopedIntegrationTest {
                 .body("""
                         {
                           "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                          "Parameters": [{"S": "decoy-flag"}]
+                          "Parameters": [{"S": "other-item"}]
                         }""".formatted(DECOY_TABLE))
                 .when().post("/")
                 .then().statusCode(403);

@@ -56,7 +56,7 @@ class StsGetSessionTokenIntersectionIntegrationTest {
 
         given()
                 .header("Authorization", CtfLabIamTestSupport.scopedAuth(sessionAkid, "s3"))
-                .when().get("/vault/flag.txt")
+                .when().get("/vault/denied-object.txt")
                 .then().statusCode(403);
     }
 }

@@ -324,11 +324,31 @@ public class CloudTrailEventRecorder {
         if (ctx.requestParameters() != null) {
             params.putAll(ctx.requestParameters());
         }
+        if ("sqs".equals(ctx.credentialScope())) {
+            normalizeSqsAuditParameters(params);
+        }
         if (ctx.inScopeSourceArn() != null && !ctx.inScopeSourceArn().isBlank()
                 && !params.containsKey("inScopeOf")) {
             params.put("inScopeOf", ctx.inScopeSourceArn());
         }
         return params;
+    }
+
+    private static void normalizeSqsAuditParameters(Map<String, Object> params) {
+        copyAuditParamIfAbsent(params, "QueueUrl", "queueUrl");
+        copyAuditParamIfAbsent(params, "MessageBody", "messageBody");
+        params.remove("QueueUrl");
+        params.remove("MessageBody");
+    }
+
+    private static void copyAuditParamIfAbsent(Map<String, Object> params, String sourceKey, String targetKey) {
+        if (params.containsKey(targetKey)) {
+            return;
+        }
+        Object value = params.get(sourceKey);
+        if (value != null && !value.toString().isBlank()) {
+            params.put(targetKey, value);
+        }
     }
 
     private Map<String, Object> buildInProcessUserIdentity(InProcessAuditContext ctx,

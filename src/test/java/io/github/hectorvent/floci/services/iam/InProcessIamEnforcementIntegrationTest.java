@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class InProcessIamEnforcementIntegrationTest {
 
     private static final String REGION = "us-east-1";
-    private static final String SECRET_NAME = "ctf/inprocess-apigw-secret";
+    private static final String SECRET_NAME = "test/inprocess/secret";
     private static final String ROLE_NAME = "InProcessApigwExecRole";
     private static final String ROLE_ARN =
             "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":role/" + ROLE_NAME;
@@ -73,7 +73,7 @@ class InProcessIamEnforcementIntegrationTest {
 
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", SECRET_NAME);
-        create.put("SecretString", "flag{inprocess}");
+        create.put("SecretString", "inprocess-secret-value");
         given()
                 .header("Authorization", CtfLabIamEnforcementProfile.AUTH)
                 .header("X-Amz-Target", "secretsmanager.CreateSecret")

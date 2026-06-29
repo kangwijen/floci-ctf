@@ -250,11 +250,11 @@ class Ec2ContainerManagerTest {
                 "http://floci:4566",
                 "http://floci:9169",
                 java.util.Map.of(
-                        "CHALLENGE_FLAG", "ctf-flag",
+                        "CUSTOM_APP_VAR", "sample-value",
                         "AWS_ACCESS_KEY_ID", "AKIAHIJACKED",
                         "AWS_SECRET_ACCESS_KEY", "stolen"));
 
-        assertTrue(env.contains("CHALLENGE_FLAG=ctf-flag"));
+        assertTrue(env.contains("CUSTOM_APP_VAR=sample-value"));
         assertTrue(env.stream().noneMatch(v -> v.startsWith("AWS_ACCESS_KEY_ID=")));
         assertTrue(env.stream().noneMatch(v -> v.startsWith("AWS_SECRET_ACCESS_KEY=")));
     }

@@ -11,7 +11,7 @@ import java.util.Map;
 public class CtfLabIamEnforcementProfile implements QuarkusTestProfile {
 
     public static final String ROOT_ACCESS_KEY_ID = "AKIACTFLABROOT01";
-    public static final String ROOT_SECRET = "ctf-lab-root-secret-32chars!!!!";
+    public static final String ROOT_SECRET = "emulator-test-root-secret-32chars!!!!";
     public static final String ACCOUNT = "000000000000";
     public static final String AUTH =
             "AWS4-HMAC-SHA256 Credential=" + ROOT_ACCESS_KEY_ID + "/20260227/us-east-1/iam/aws4_request";

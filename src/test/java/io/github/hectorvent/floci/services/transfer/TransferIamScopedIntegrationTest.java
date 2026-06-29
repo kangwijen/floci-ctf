@@ -38,7 +38,7 @@ class TransferIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-transfer-player";
+        String user = "transfer-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 

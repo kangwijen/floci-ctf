@@ -24,7 +24,7 @@ import static org.hamcrest.Matchers.not;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SqsListQueuesIamIntegrationTest {
 
-    private static final String QUEUE_NAME = "ctf-lab-list-queue";
+    private static final String QUEUE_NAME = "lab-list-queue";
     private static final String REGION = "us-east-1";
 
     @TestHTTPResource("/")
@@ -48,7 +48,7 @@ class SqsListQueuesIamIntegrationTest {
                 .when().post("/")
                 .then().statusCode(200);
 
-        String allowedUser = "ctf-sqs-list-allowed";
+        String allowedUser = "sqs-list-allowed";
         CtfLabIamTestSupport.createUser(allowedUser);
         allowedPlayerAkid = CtfLabIamTestSupport.createAccessKey(allowedUser);
         String allowListPolicy = """
@@ -58,7 +58,7 @@ class SqsListQueuesIamIntegrationTest {
             ]}""".formatted(REGION, CtfLabIamEnforcementProfile.ACCOUNT);
         CtfLabIamTestSupport.putUserPolicy(allowedUser, "sqs-list", allowListPolicy);
 
-        String deniedUser = "ctf-sqs-list-denied";
+        String deniedUser = "sqs-list-denied";
         CtfLabIamTestSupport.createUser(deniedUser);
         deniedPlayerAkid = CtfLabIamTestSupport.createAccessKey(deniedUser);
         String receiveOnlyPolicy = """
@@ -82,6 +82,19 @@ class SqsListQueuesIamIntegrationTest {
     }
 
     @Test
+    void listQueuesJsonAllowedWithWildcardResource() {
+        given()
+                .contentType("application/x-amz-json-1.0")
+                .header("X-Amz-Target", "AmazonSQS.ListQueues")
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(allowedPlayerAkid, "sqs"))
+                .body("{}")
+                .when().post("/")
+                .then()
+                .statusCode(200)
+                .body(containsString(QUEUE_NAME));
+    }
+
+    @Test
     void listQueuesDeniedReturnsAccessDeniedNotServiceNotAvailable() {
         given()
                 .formParam("Action", "ListQueues")
@@ -96,7 +109,7 @@ class SqsListQueuesIamIntegrationTest {
 
     @Test
     void listQueuesImplicitDenyReturnsAccessDeniedNotServiceNotAvailable() {
-        String user = "ctf-sqs-list-no-policy";
+        String user = "sqs-list-no-policy";
         CtfLabIamTestSupport.createUser(user);
         String akid = CtfLabIamTestSupport.createAccessKey(user);
 

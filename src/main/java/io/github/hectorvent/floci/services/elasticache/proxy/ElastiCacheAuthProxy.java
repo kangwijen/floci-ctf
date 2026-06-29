@@ -55,6 +55,7 @@ public class ElastiCacheAuthProxy {
 
     public void start(int proxyPort) throws IOException {
         serverSocket = new ServerSocket(proxyPort);
+        serverSocket.setReuseAddress(true);
         running = true;
         Thread.ofVirtual().name("ec-proxy-accept-" + groupId).start(this::acceptLoop);
         LOG.infov("ElastiCache proxy started for group {0} on port {1} → {2}:{3}",

@@ -912,6 +912,15 @@ public class IamService implements SessionAccountLookup {
         accessKeys.put(accessKeyId, key);
     }
 
+    /**
+     * Registers an access key with an explicit ID and secret for an existing IAM user.
+     * Used by CTF regression tests to model stale IAM secrets for a configured operator AKIA.
+     */
+    public void registerAccessKey(String userName, String accessKeyId, String secretAccessKey) {
+        getUser(userName);
+        accessKeys.put(accessKeyId, new AccessKey(accessKeyId, secretAccessKey, userName));
+    }
+
     // =========================================================================
     // Instance Profiles
     // =========================================================================

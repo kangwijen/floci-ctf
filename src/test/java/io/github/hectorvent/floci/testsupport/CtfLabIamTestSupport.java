@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.testsupport;
 
+import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
 import io.restassured.RestAssured;
 import io.restassured.response.ValidatableResponse;
@@ -48,6 +49,14 @@ public final class CtfLabIamTestSupport {
                 .then().statusCode(200)
                 .extract().xmlPath()
                 .getString("CreateAccessKeyResponse.CreateAccessKeyResult.AccessKey.AccessKeyId");
+    }
+
+    /** Registers an explicit access key ID and secret for CTF stale-secret regression tests. */
+    public static void registerAccessKey(IamService iamService,
+                                         String userName,
+                                         String accessKeyId,
+                                         String secretAccessKey) {
+        iamService.registerAccessKey(userName, accessKeyId, secretAccessKey);
     }
 
     public static void putUserPolicy(String userName, String policyName, String policyDocument) {

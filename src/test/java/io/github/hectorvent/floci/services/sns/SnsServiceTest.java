@@ -108,6 +108,40 @@ class SnsServiceTest {
     }
 
     @Test
+    void getTopicAttributes_defaultPolicyOnlyWhenIamEnforcementDisabled() {
+        RegionResolver regionResolver = new RegionResolver(REGION, ACCOUNT);
+        SnsService permissive = newSnsService(regionResolver, false);
+        SnsService hardened = newSnsService(regionResolver, true);
+
+        Topic permissiveTopic = permissive.createTopic("permissive-topic", null, null, REGION);
+        Topic hardenedTopic = hardened.createTopic("hardened-topic", null, null, REGION);
+
+        Map<String, String> permissiveAttrs =
+                permissive.getTopicAttributes(permissiveTopic.getTopicArn(), REGION);
+        Map<String, String> hardenedAttrs =
+                hardened.getTopicAttributes(hardenedTopic.getTopicArn(), REGION);
+
+        assertTrue(permissiveAttrs.containsKey("Policy"));
+        assertFalse(permissiveAttrs.get("Policy").isBlank());
+        assertFalse(hardenedAttrs.containsKey("Policy"));
+    }
+
+    private static SnsService newSnsService(RegionResolver regionResolver, boolean iamEnforcementEnabled) {
+        return new SnsService(
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                new InMemoryStorage<>(),
+                regionResolver,
+                null,
+                null,
+                BASE_URL,
+                iamEnforcementEnabled,
+                new ObjectMapper());
+    }
+
+    @Test
     void subscribe_returnsSubscription() {
         Topic topic = snsService.createTopic("my-topic", null, null, REGION);
         Subscription sub = snsService.subscribe(topic.getTopicArn(), "sqs",

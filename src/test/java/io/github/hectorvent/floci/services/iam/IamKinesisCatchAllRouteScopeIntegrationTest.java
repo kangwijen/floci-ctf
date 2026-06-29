@@ -30,7 +30,7 @@ class IamKinesisCatchAllRouteScopeIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-kinesis-catchall";
+        String user = "kinesis-catchall-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
         CtfLabIamTestSupport.putUserPolicy(user, "kinesis-only", """

@@ -16,7 +16,22 @@ class ContainerEnvHardeningTest {
     void blocksAwsAndFlociAuthKeys() {
         assertTrue(ContainerEnvHardening.isBlocked("AWS_ACCESS_KEY_ID"));
         assertTrue(ContainerEnvHardening.isBlocked("floci_auth_custom"));
-        assertFalse(ContainerEnvHardening.isBlocked("CHALLENGE_FLAG"));
+        assertFalse(ContainerEnvHardening.isBlocked("CUSTOM_VAR"));
+    }
+
+    @Test
+    void blocksSessionTokenRoleArnAndWebIdentity() {
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_SESSION_TOKEN"));
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_ROLE_ARN"));
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_WEB_IDENTITY_TOKEN_FILE"));
+        assertTrue(ContainerEnvHardening.isBlocked("AWS_WEB_IDENTITY_TOKEN"));
+    }
+
+    @Test
+    void blocksFlociAuthPrefix() {
+        assertTrue(ContainerEnvHardening.isBlocked("FLOCI_AUTH_ROOT_ACCESS_KEY_ID"));
+        assertTrue(ContainerEnvHardening.isBlocked("FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"));
+        assertTrue(ContainerEnvHardening.isBlocked("FLOCI_AUTH_VALIDATE_SIGNATURES"));
     }
 
     @Test
@@ -60,5 +75,26 @@ class ContainerEnvHardeningTest {
                 "AWS_ACCESS_KEY_ID=test",
                 "FLOCI_AUTH_ROOT_ACCESS_KEY_ID=AKIA"));
         assertEquals(List.of("PLAYER=x"), filtered);
+    }
+
+    @Test
+    void mergeUserEnvListToMapStripsBlockedAndAppliesOverrides() {
+        Map<String, String> taskDef = new LinkedHashMap<>();
+        taskDef.put("PLAYER_ROLE", "scanner");
+        taskDef.put("AWS_ACCESS_KEY_ID", "task-key");
+        taskDef.put("FLOCI_AUTH_ROOT_ACCESS_KEY_ID", "AKIA");
+
+        Map<String, String> overrides = new LinkedHashMap<>();
+        overrides.put("PLAYER_ROLE", "exfil");
+        overrides.put("AWS_SESSION_TOKEN", "task-token");
+        overrides.put("CUSTOM_VAR", "yes");
+
+        Map<String, String> merged = ContainerEnvHardening.mergeUserEnvListToMap(taskDef, overrides);
+
+        assertEquals("exfil", merged.get("PLAYER_ROLE"));
+        assertEquals("yes", merged.get("CUSTOM_VAR"));
+        assertFalse(merged.containsKey("AWS_ACCESS_KEY_ID"));
+        assertFalse(merged.containsKey("AWS_SESSION_TOKEN"));
+        assertFalse(merged.containsKey("FLOCI_AUTH_ROOT_ACCESS_KEY_ID"));
     }
 }

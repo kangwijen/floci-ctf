@@ -45,11 +45,11 @@ class StepFunctionsScopedSdkIamIntegrationTest {
     private static final String ROLE_ARN =
             "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":role/" + ROLE_NAME;
 
-    private static final String ALLOWED_SECRET = "ctf/sfn/scoped-flag";
-    private static final String DECOY_SECRET = "ctf/sfn/decoy-flag";
-    private static final String BUCKET = "ctf-sfn-scoped-bucket";
+    private static final String ALLOWED_SECRET = "test/sfn/allowed-secret";
+    private static final String DECOY_SECRET = "test/sfn/other-secret";
+    private static final String BUCKET = "sfn-scoped-bucket";
     private static final String ALLOWED_KEY = "allowed-key";
-    private static final String DECOY_KEY = "decoy-key";
+    private static final String DECOY_KEY = "other-key";
 
     @TestHTTPResource("/")
     URL endpoint;
@@ -80,8 +80,8 @@ class StepFunctionsScopedSdkIamIntegrationTest {
 
         String rootSm = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
-        createSecret(rootSm, ALLOWED_SECRET, "flag{sfn-scoped-secret}");
-        createSecret(rootSm, DECOY_SECRET, "flag{sfn-decoy-secret}");
+        createSecret(rootSm, ALLOWED_SECRET, "allowed-secret-value");
+        createSecret(rootSm, DECOY_SECRET, "other-secret-value");
 
         String rootKms = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "kms");
@@ -109,7 +109,7 @@ class StepFunctionsScopedSdkIamIntegrationTest {
 
         String rootS3 = CtfLabIamTestSupport.playerAuth(CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID);
         given().header("Authorization", rootS3).when().put("/" + BUCKET).then().statusCode(200);
-        given().header("Authorization", rootS3).body("flag{sfn-object}").when().put("/" + BUCKET + "/" + ALLOWED_KEY)
+        given().header("Authorization", rootS3).body("allowed-object-value").when().put("/" + BUCKET + "/" + ALLOWED_KEY)
                 .then().statusCode(200);
         given().header("Authorization", rootS3).body("decoy-object").when().put("/" + BUCKET + "/" + DECOY_KEY)
                 .then().statusCode(200);
@@ -158,7 +158,7 @@ class StepFunctionsScopedSdkIamIntegrationTest {
                 """.formatted(ALLOWED_SECRET));
 
         JsonNode result = objectMapper.readTree(output);
-        assertEquals("flag{sfn-scoped-secret}", result.path("SecretString").asText());
+        assertEquals("allowed-secret-value", result.path("SecretString").asText());
     }
 
     @Test
@@ -231,7 +231,7 @@ class StepFunctionsScopedSdkIamIntegrationTest {
 
         JsonNode result = objectMapper.readTree(output);
         String body = new String(Base64.getDecoder().decode(result.path("Body").asText()));
-        assertEquals("flag{sfn-object}", body);
+        assertEquals("allowed-object-value", body);
     }
 
     @Test

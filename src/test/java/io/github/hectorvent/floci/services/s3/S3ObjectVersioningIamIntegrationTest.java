@@ -24,18 +24,18 @@ class S3ObjectVersioningIamIntegrationTest {
     @TestHTTPResource("/")
     java.net.URL endpoint;
 
-    private static final String BUCKET = "ctf-version-iam-bucket";
-    private static final String WITNESS_KEY = "witness-key";
-    private static final String DECOY_KEY = "decoy-key";
+    private static final String BUCKET = "version-iam-bucket";
+    private static final String ALLOWED_KEY = "versioned-object-key";
+    private static final String OTHER_KEY = "other-key";
 
     private String playerAkid;
     private String playerAuth;
-    private String witnessVersionId;
+    private String allowedVersionId;
 
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-s3-ver-player";
+        String user = "s3-ver-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
         playerAuth = CtfLabIamTestSupport.playerAuth(playerAkid);
@@ -44,7 +44,7 @@ class S3ObjectVersioningIamIntegrationTest {
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":["s3:ListBucketVersions","s3:GetObjectVersion"],
                "Resource":["arn:aws:s3:::%s","arn:aws:s3:::%s/%s"]}
-            ]}""".formatted(BUCKET, BUCKET, WITNESS_KEY);
+            ]}""".formatted(BUCKET, BUCKET, ALLOWED_KEY);
         CtfLabIamTestSupport.putUserPolicy(user, "version-read", policy);
 
         String rootS3 = CtfLabIamTestSupport.playerAuth(CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID);
@@ -56,43 +56,43 @@ class S3ObjectVersioningIamIntegrationTest {
                 .when().put("/" + BUCKET + "?versioning")
                 .then().statusCode(200);
 
-        given().header("Authorization", rootS3).body("forged-body").when().put("/" + BUCKET + "/" + WITNESS_KEY)
+        given().header("Authorization", rootS3).body("forged-body").when().put("/" + BUCKET + "/" + ALLOWED_KEY)
                 .then().statusCode(200);
-        witnessVersionId = given()
+        allowedVersionId = given()
                 .header("Authorization", rootS3)
-                .body("flag{version-one}")
-                .when().put("/" + BUCKET + "/" + WITNESS_KEY)
+                .body("version-one-value")
+                .when().put("/" + BUCKET + "/" + ALLOWED_KEY)
                 .then().statusCode(200)
                 .extract().header("x-amz-version-id");
 
-        given().header("Authorization", rootS3).body("decoy").when().put("/" + BUCKET + "/" + DECOY_KEY)
+        given().header("Authorization", rootS3).body("other-object").when().put("/" + BUCKET + "/" + OTHER_KEY)
                 .then().statusCode(200);
     }
 
     @Test
-    void listVersionsAllowedForWitnessPrefix() {
+    void listVersionsAllowedForAllowedPrefix() {
         given()
                 .header("Authorization", playerAuth)
                 .queryParam("versions", "")
-                .queryParam("prefix", WITNESS_KEY)
+                .queryParam("prefix", ALLOWED_KEY)
                 .when().get("/" + BUCKET)
                 .then().statusCode(200)
-                .body(containsString(WITNESS_KEY));
+                .body(containsString(ALLOWED_KEY));
     }
 
     @Test
-    void getWitnessObjectVersionAllowed() {
+    void getAllowedObjectVersionAllowed() {
         given()
                 .header("Authorization", playerAuth)
-                .queryParam("versionId", witnessVersionId)
-                .when().get("/" + BUCKET + "/" + WITNESS_KEY)
+                .queryParam("versionId", allowedVersionId)
+                .when().get("/" + BUCKET + "/" + ALLOWED_KEY)
                 .then().statusCode(200)
-                .body(containsString("flag{version-one}"));
+                .body(containsString("version-one-value"));
     }
 
     @Test
     void listVersionsDeniedWhenPrefixConditionNotMet() {
-        String prefixUser = "ctf-s3-ver-prefix";
+        String prefixUser = "s3-ver-prefix";
         CtfLabIamTestSupport.createUser(prefixUser);
         String prefixAkid = CtfLabIamTestSupport.createAccessKey(prefixUser);
         String prefixAuth = CtfLabIamTestSupport.playerAuth(prefixAkid);
@@ -101,20 +101,20 @@ class S3ObjectVersioningIamIntegrationTest {
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":"arn:aws:s3:::%s",
                "Condition":{"StringLike":{"s3:prefix":["%s*"]}}}
-            ]}""".formatted(BUCKET, WITNESS_KEY);
+            ]}""".formatted(BUCKET, ALLOWED_KEY);
         CtfLabIamTestSupport.putUserPolicy(prefixUser, "prefix-list", prefixPolicy);
 
         given()
                 .header("Authorization", prefixAuth)
                 .queryParam("versions", "")
-                .queryParam("prefix", DECOY_KEY)
+                .queryParam("prefix", OTHER_KEY)
                 .when().get("/" + BUCKET)
                 .then().statusCode(403);
     }
 
     @Test
     void listVersionsAllowedWhenPrefixConditionMatches() {
-        String prefixUser = "ctf-s3-ver-prefix-ok";
+        String prefixUser = "s3-ver-prefix-ok";
         CtfLabIamTestSupport.createUser(prefixUser);
         String prefixAkid = CtfLabIamTestSupport.createAccessKey(prefixUser);
         String prefixAuth = CtfLabIamTestSupport.playerAuth(prefixAkid);
@@ -123,34 +123,34 @@ class S3ObjectVersioningIamIntegrationTest {
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":"arn:aws:s3:::%s",
                "Condition":{"StringLike":{"s3:prefix":["%s*"]}}}
-            ]}""".formatted(BUCKET, WITNESS_KEY);
+            ]}""".formatted(BUCKET, ALLOWED_KEY);
         CtfLabIamTestSupport.putUserPolicy(prefixUser, "prefix-list-ok", prefixPolicy);
 
         given()
                 .header("Authorization", prefixAuth)
                 .queryParam("versions", "")
-                .queryParam("prefix", WITNESS_KEY)
+                .queryParam("prefix", ALLOWED_KEY)
                 .when().get("/" + BUCKET)
                 .then().statusCode(200)
-                .body(containsString(WITNESS_KEY));
+                .body(containsString(ALLOWED_KEY));
     }
 
     @Test
-    void getDecoyObjectVersionDenied() {
+    void getOtherObjectVersionDenied() {
         given()
                 .header("Authorization", playerAuth)
-                .when().get("/" + BUCKET + "/" + DECOY_KEY)
+                .when().get("/" + BUCKET + "/" + OTHER_KEY)
                 .then().statusCode(403);
     }
 
     @Test
-    void listVersionsShowsWitnessNotDecoyWhenPrefixScoped() {
+    void listVersionsShowsAllowedNotOtherWhenPrefixScoped() {
         given()
                 .header("Authorization", playerAuth)
                 .queryParam("versions", "")
-                .queryParam("prefix", WITNESS_KEY)
+                .queryParam("prefix", ALLOWED_KEY)
                 .when().get("/" + BUCKET)
                 .then().statusCode(200)
-                .body(not(containsString(DECOY_KEY)));
+                .body(not(containsString(OTHER_KEY)));
     }
 }

@@ -151,11 +151,11 @@ class ResourceArnBuilderTest {
 
     @Test
     void sqsReceiveMessageBuildsArnFromHttpQueueUrl() {
-        String queueUrl = "http://localhost:4566/000000000000/ctf-lab-queue";
+        String queueUrl = "http://localhost:4566/000000000000/test-queue";
         ContainerRequestContext ctx = formBodyCtx(
                 "Action=ReceiveMessage&QueueUrl=" + java.net.URLEncoder.encode(queueUrl, java.nio.charset.StandardCharsets.UTF_8));
         String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:sqs:us-east-1:000000000000:ctf-lab-queue", arn);
+        assertEquals("arn:aws:sqs:us-east-1:000000000000:test-queue", arn);
     }
 
     @Test
@@ -611,9 +611,9 @@ class ResourceArnBuilderTest {
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/*"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod/*"}
             ]}""";
-        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod/service-a-AbCdEf";
         IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
         assertEquals(IamPolicyEvaluator.Decision.ALLOW,
                 eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
@@ -624,9 +624,9 @@ class ResourceArnBuilderTest {
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-??????"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod/service-a-??????"}
             ]}""";
-        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod/service-a-AbCdEf";
         IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
         assertEquals(IamPolicyEvaluator.Decision.ALLOW,
                 eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
@@ -637,9 +637,9 @@ class ResourceArnBuilderTest {
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live-*"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod-*"}
             ]}""";
-        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:env/prod/service-a-AbCdEf";
         IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
         assertEquals(IamPolicyEvaluator.Decision.DENY,
                 eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
@@ -755,19 +755,19 @@ class ResourceArnBuilderTest {
     @Test
     void wafV2GetWebAclBuildsScopedArnFromNameAndId() {
         ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
-                {"Scope":"REGIONAL","Name":"ctf-acl","Id":"abc12345-6789-0123-4567-890abcdef012"}
+                {"Scope":"REGIONAL","Name":"example-acl","Id":"abc12345-6789-0123-4567-890abcdef012"}
                 """, "AWSWAF_20190729.GetWebACL");
         String arn = builder.build("wafv2", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/ctf-acl/abc12345-6789-0123-4567-890abcdef012", arn);
+        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/example-acl/abc12345-6789-0123-4567-890abcdef012", arn);
     }
 
     @Test
     void wafV2CreateWebAclBuildsNameWildcardArn() {
         ContainerRequestContext ctx = jsonBodyCtxWithTarget("""
-                {"Scope":"REGIONAL","Name":"ctf-acl"}
+                {"Scope":"REGIONAL","Name":"example-acl"}
                 """, "AWSWAF_20190729.CreateWebACL");
         String arn = builder.build("wafv2", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/ctf-acl/*", arn);
+        assertEquals("arn:aws:wafv2:us-east-1:222222222222:regional/webacl/example-acl/*", arn);
     }
 
     // ── Security Hub ──────────────────────────────────────────────────────────
@@ -925,9 +925,9 @@ class ResourceArnBuilderTest {
 
     @Test
     void transcribeGetVocabularyBuildsVocabularyArn() {
-        ContainerRequestContext ctx = jsonBodyCtx("{\"VocabularyName\":\"ctf-terms\"}");
+        ContainerRequestContext ctx = jsonBodyCtx("{\"VocabularyName\":\"example-vocabulary\"}");
         String arn = builder.build("transcribe", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:transcribe:us-east-1:222222222222:vocabulary/ctf-terms", arn);
+        assertEquals("arn:aws:transcribe:us-east-1:222222222222:vocabulary/example-vocabulary", arn);
     }
 
     // ── AppConfig ───────────────────────────────────────────────────────────────
@@ -1021,6 +1021,54 @@ class ResourceArnBuilderTest {
         assertEquals(2, arns.size());
         assertEquals("arn:aws:s3:::a", arns.get(0));
         assertEquals("arn:aws:s3:::b", arns.get(1));
+    }
+
+    // ── CodeBuild ─────────────────────────────────────────────────────────────
+
+    @Test
+    void codeBuildBatchGetProjectsBuildsProjectArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"names\":[\"example-build-project\"]}");
+        String arn = builder.build("codebuild", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:codebuild:us-east-1:222222222222:project/example-build-project", arn);
+    }
+
+    // ── CodeDeploy ──────────────────────────────────────────────────────────────
+
+    @Test
+    void codeDeployGetDeploymentBuildsDeploymentGroupArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"applicationName":"MyApp","deploymentGroupName":"Production"}
+                """);
+        String arn = builder.build("codedeploy", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:codedeploy:us-east-1:222222222222:deploymentgroup:MyApp/Production", arn);
+    }
+
+    // ── ACM ─────────────────────────────────────────────────────────────────────
+
+    @Test
+    void acmDescribeCertificateUsesCertificateArn() {
+        String certArn = "arn:aws:acm:us-east-1:222222222222:certificate/abc12345-6789-0123-4567-890abcdef012";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"CertificateArn\":\"" + certArn + "\"}");
+        String arn = builder.build("acm", ctx, REGION, ACCOUNT);
+        assertEquals(certArn, arn);
+    }
+
+    // ── AWS Backup ──────────────────────────────────────────────────────────────
+
+    @Test
+    void backupDescribeBackupVaultBuildsVaultArnFromJson() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"BackupVaultName\":\"example-vault\"}");
+        String arn = builder.build("backup", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:backup:us-east-1:222222222222:backup-vault:example-vault", arn);
+    }
+
+    // ── Route 53 ────────────────────────────────────────────────────────────────
+
+    @Test
+    void route53GetHostedZoneBuildsArnFromPath() {
+        ContainerRequestContext ctx = pathCtx("/hostedzone/Z123", jsonBodyCtx("{}"));
+        String arn = builder.build("route53", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:route53:::hostedzone/Z123", arn);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

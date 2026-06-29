@@ -71,4 +71,49 @@ class AccountResolverTest {
         assertNull(resolver.extractPresignedAccessKeyId(null));
         assertNull(resolver.extractPresignedAccessKeyId(""));
     }
+
+    // --- extractAccessKeyId(String authorizationHeader) tests ---
+
+    @Test
+    void extractAccessKeyIdReturnsAkidFromValidAuthHeader() {
+        String auth = "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260617/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc";
+        assertEquals("AKIAIOSFODNN7EXAMPLE", resolver.extractAccessKeyId(auth));
+    }
+
+    @Test
+    void extractAccessKeyIdReturnsNullForMalformedAuthorization() {
+        assertNull(resolver.extractAccessKeyId("Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig"));
+        assertNull(resolver.extractAccessKeyId("AWS4-HMAC-SHA256 SignedHeaders=host, Signature=abc"));
+        assertNull(resolver.extractAccessKeyId("AWS4-HMAC-SHA256 Credential=/20260617/us-east-1/s3/aws4_request"));
+        assertNull(resolver.extractAccessKeyId("AWS4-HMAC-SHA256 Credential=, SignedHeaders=host"));
+    }
+
+    // --- extractAccessKeyIdFromCredential(String credential) tests ---
+
+    @Test
+    void extractAccessKeyIdFromCredentialParsesSlashDelimitedValue() {
+        assertEquals("AKIAIOSFODNN7EXAMPLE",
+                resolver.extractAccessKeyIdFromCredential("AKIAIOSFODNN7EXAMPLE/20260617/us-east-1/s3/aws4_request"));
+        assertEquals("000000000001",
+                resolver.extractAccessKeyIdFromCredential("000000000001/20260617/us-east-1/s3/aws4_request"));
+    }
+
+    @Test
+    void extractAccessKeyIdFromCredentialReturnsWholeValueWhenNoSlash() {
+        assertEquals("AKIAONLY", resolver.extractAccessKeyIdFromCredential("AKIAONLY"));
+    }
+
+    @Test
+    void extractAccessKeyIdFromCredentialReturnsNullWhenAbsent() {
+        assertNull(resolver.extractAccessKeyIdFromCredential(null));
+        assertNull(resolver.extractAccessKeyIdFromCredential(""));
+        assertNull(resolver.extractAccessKeyIdFromCredential("   "));
+    }
+
+    // --- defaultAccountId() tests ---
+
+    @Test
+    void defaultAccountIdReturnsConfiguredValue() {
+        assertEquals(DEFAULT_ACCOUNT, resolver.defaultAccountId());
+    }
 }

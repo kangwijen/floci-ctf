@@ -26,8 +26,8 @@ class TranscribeIamScopedIntegrationTest {
     private static final String TARGET_PREFIX = "Transcribe.";
     private static final String REGION = "us-east-1";
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
-    private static final String ALLOWED_JOB = "ctf-allowed-transcribe-job";
-    private static final String DECOY_JOB = "ctf-decoy-transcribe-job";
+    private static final String ALLOWED_JOB = "allowed-transcribe-job";
+    private static final String DECOY_JOB = "other-transcribe-job";
 
     @TestHTTPResource("/")
     URL endpoint;
@@ -37,7 +37,7 @@ class TranscribeIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-transcribe-player";
+        String user = "transcribe-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -92,7 +92,7 @@ class TranscribeIamScopedIntegrationTest {
                 .contentType(CT)
                 .body("""
                         {"TranscriptionJobName":"%s",
-                         "Media":{"MediaFileUri":"s3://ctf-bucket/audio.wav"},
+                         "Media":{"MediaFileUri":"s3://test-bucket/audio.wav"},
                          "LanguageCode":"en-US"}
                         """.formatted(jobName))
         .when()

@@ -165,6 +165,40 @@ class CloudTrailSqsAuditIntegrationTest {
     }
 
     @Test
+    void sqsJson10PurgeQueueRecordsQueueUrl() throws Exception {
+        String trailBucket = "sqs-json10-purge-audit-trail-bucket";
+        String trailName = "sqs-json10-purge-audit-trail";
+        String queueName = "sqs-json10-purge-audit-queue";
+
+        provisionLoggingTrail(trailBucket, trailName);
+
+        String queueUrl = given()
+                .contentType(SQS_JSON_CONTENT_TYPE)
+                .header("X-Amz-Target", "AmazonSQS.CreateQueue")
+                .header("Authorization", SQS_AUTH)
+                .body("{\"QueueName\":\"" + queueName + "\"}")
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("QueueUrl");
+
+        given()
+                .contentType(SQS_JSON_CONTENT_TYPE)
+                .header("X-Amz-Target", "AmazonSQS.PurgeQueue")
+                .header("Authorization", SQS_AUTH)
+                .header("X-Forwarded-For", "198.51.100.88")
+                .body("{\"QueueUrl\":\"" + queueUrl + "\"}")
+                .when().post("/")
+                .then().statusCode(200);
+
+        JsonNode purgeEvent = lookupSingleEvent("PurgeQueue");
+        assertEquals("sqs.amazonaws.com", purgeEvent.path("eventSource").asText());
+        assertEquals(queueUrl, purgeEvent.path("requestParameters").path("queueUrl").asText());
+        assertEquals("198.51.100.88", purgeEvent.path("sourceIPAddress").asText());
+        assertEquals("Management", purgeEvent.path("eventCategory").asText());
+        assertEquals(true, purgeEvent.path("managementEvent").asBoolean());
+    }
+
+    @Test
     void sqsAssumedRoleRecordsSessionContext() throws Exception {
         String trailBucket = "sqs-assume-audit-bucket";
         String trailName = "sqs-assume-audit-trail";

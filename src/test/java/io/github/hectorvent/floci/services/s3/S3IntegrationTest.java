@@ -1891,7 +1891,7 @@ class S3IntegrationTest {
                 .urlEncodingEnabled(false)
                 .pathParam("bucket", "test-bucket")
         .when()
-                .get("/{bucket}/%2e%2e/%2e%2e/secret.txt")
+                .get("/{bucket}/%2e%2e/%2e%2e/traversal-target.txt")
         .then()
                 .statusCode(400)
                 .body(equalTo(""));
@@ -1914,7 +1914,7 @@ class S3IntegrationTest {
                 .urlEncodingEnabled(false)
                 .pathParam("bucket", "test-bucket")
         .when()
-                .get("/{bucket}/%2E%2E/%2E%2E/secret.txt")
+                .get("/{bucket}/%2E%2E/%2E%2E/traversal-target.txt")
         .then()
                 .statusCode(400)
                 .body(equalTo(""));
@@ -1966,7 +1966,7 @@ class S3IntegrationTest {
             .contentType("text/plain")
             .body("safe-data")
         .when()
-            .put("/test-bucket/../../secret.txt")
+            .put("/test-bucket/../../traversal-target.txt")
         .then()
             .statusCode(400)
             .body(equalTo(""));
@@ -1980,7 +1980,7 @@ class S3IntegrationTest {
             .contentType("text/plain")
             .body("safe-data")
         .when()
-            .put("/test-bucket/%2E%2E/%2E%2E/secret.txt")
+            .put("/test-bucket/%2E%2E/%2E%2E/traversal-target.txt")
         .then()
             .statusCode(400)
             .body(equalTo(""));
@@ -1994,7 +1994,7 @@ class S3IntegrationTest {
             .contentType("text/plain")
             .body("safe-data")
         .when()
-            .put("/test-bucket/%2E%2E%2Fsecret.txt")
+            .put("/test-bucket/%2E%2E%2Ftraversal-target.txt")
         .then()
             .statusCode(400)
             .body(equalTo(""));
@@ -2040,7 +2040,7 @@ class S3IntegrationTest {
             .contentType("text/plain")
             .body("safe-data")
         .when()
-            .put("/test-bucket/../secret.txt")
+            .put("/test-bucket/../traversal-target.txt")
         .then()
             .statusCode(400)
             .body(equalTo(""));

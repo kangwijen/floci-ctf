@@ -43,7 +43,7 @@ class KmsDecryptScopedKeyIntegrationTest {
     @BeforeAll
     void provision() throws Exception {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-kms-player";
+        String user = "kms-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -105,7 +105,7 @@ class KmsDecryptScopedKeyIntegrationTest {
     void decryptViaKeyPolicyWithoutIdentityPolicy() throws Exception {
         String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/kms/aws4_request";
-        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/ctf-kms-player";
+        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/kms-test-user";
         String keyPolicy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Principal":{"AWS":"%s"},
@@ -124,7 +124,7 @@ class KmsDecryptScopedKeyIntegrationTest {
                 .when().post("/")
                 .then().statusCode(200);
 
-        CtfLabIamTestSupport.putUserPolicy("ctf-kms-player", "kms-decrypt-one", """
+        CtfLabIamTestSupport.putUserPolicy("kms-test-user", "kms-decrypt-one", """
             {"Version":"2012-10-17","Statement":[]}""");
 
         ObjectNode req = objectMapper.createObjectNode();
@@ -147,7 +147,7 @@ class KmsDecryptScopedKeyIntegrationTest {
     void decryptViaGrantWithoutIdentityPolicy() throws Exception {
         String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/kms/aws4_request";
-        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/ctf-kms-player";
+        String playerArn = "arn:aws:iam::" + CtfLabIamEnforcementProfile.ACCOUNT + ":user/kms-test-user";
 
         ObjectNode grantReq = objectMapper.createObjectNode();
         grantReq.put("KeyId", allowedKeyId);
@@ -161,7 +161,7 @@ class KmsDecryptScopedKeyIntegrationTest {
                 .when().post("/")
                 .then().statusCode(200);
 
-        CtfLabIamTestSupport.putUserPolicy("ctf-kms-player", "kms-decrypt-one", """
+        CtfLabIamTestSupport.putUserPolicy("kms-test-user", "kms-decrypt-one", """
             {"Version":"2012-10-17","Statement":[]}""");
 
         ObjectNode req = objectMapper.createObjectNode();
@@ -198,7 +198,7 @@ class KmsDecryptScopedKeyIntegrationTest {
               {"Effect":"Allow","Action":"kms:Decrypt",
                "Resource":"arn:aws:kms:us-east-1:%s:key/%s"}
             ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT, otherKeyId);
-        CtfLabIamTestSupport.putUserPolicy("ctf-kms-player", "kms-decrypt-one", narrowPolicy);
+        CtfLabIamTestSupport.putUserPolicy("kms-test-user", "kms-decrypt-one", narrowPolicy);
 
         ObjectNode req = objectMapper.createObjectNode();
         req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));

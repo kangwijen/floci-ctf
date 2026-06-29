@@ -38,10 +38,10 @@ class LambdaContainerCredentialsIamIntegrationTest {
     private static final String REGION = "us-east-1";
     private static final String ROLE_NAME = "LambdaContainerCredS3Role";
     private static final String ROLE_ARN = "arn:aws:iam::" + ACCOUNT + ":role/" + ROLE_NAME;
-    private static final String ALLOWED_BUCKET = "ctf-lambda-cred-allowed";
-    private static final String DENIED_BUCKET = "ctf-lambda-cred-denied";
-    private static final String ALLOWED_KEY = "flag.txt";
-    private static final String DENIED_KEY = "secret.txt";
+    private static final String ALLOWED_BUCKET = "lambda-cred-allowed";
+    private static final String DENIED_BUCKET = "lambda-cred-denied";
+    private static final String ALLOWED_KEY = "object-allowed.txt";
+    private static final String DENIED_KEY = "object-other.txt";
 
     @TestHTTPResource("/")
     URL endpoint;
@@ -85,7 +85,7 @@ class LambdaContainerCredentialsIamIntegrationTest {
 
         signedS3Put("/" + ALLOWED_BUCKET, "");
         signedS3Put("/" + DENIED_BUCKET, "");
-        signedS3Put("/" + ALLOWED_BUCKET + "/" + ALLOWED_KEY, "flag{lambda-container-creds}");
+        signedS3Put("/" + ALLOWED_BUCKET + "/" + ALLOWED_KEY, "sample-app-value");
         signedS3Put("/" + DENIED_BUCKET + "/" + DENIED_KEY, "denied-object");
 
         credentialToken = credentialsServer.registerFunction("cred-iam-fn", ROLE_ARN, REGION);
@@ -127,7 +127,7 @@ class LambdaContainerCredentialsIamIntegrationTest {
                 .header("x-amz-security-token", allowed.securityToken())
                 .when().get("/" + ALLOWED_BUCKET + "/" + ALLOWED_KEY)
                 .then().statusCode(200)
-                .body(containsString("flag{lambda-container-creds}"));
+                .body(containsString("sample-app-value"));
 
         SigV4HttpTestSupport.SignedRestHeaders denied = SigV4HttpTestSupport.signRestGet(
                 endpoint.getHost(),

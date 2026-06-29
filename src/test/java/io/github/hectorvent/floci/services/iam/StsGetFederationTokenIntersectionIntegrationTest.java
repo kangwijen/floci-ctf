@@ -29,7 +29,7 @@ class StsGetFederationTokenIntersectionIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-federation-parent";
+        String user = "federation-test-user";
         CtfLabIamTestSupport.createUser(user);
         parentAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -50,7 +50,7 @@ class StsGetFederationTokenIntersectionIntegrationTest {
 
         String sessionAkid = given()
                 .formParam("Action", "GetFederationToken")
-                .formParam("Name", "ctf-federated")
+                .formParam("Name", "federated-session")
                 .formParam("Policy", sessionPolicy)
                 .header("Authorization", CtfLabIamTestSupport.playerStsAuth(parentAkid))
                 .when().post("/")
@@ -60,7 +60,7 @@ class StsGetFederationTokenIntersectionIntegrationTest {
 
         given()
                 .header("Authorization", CtfLabIamTestSupport.scopedAuth(sessionAkid, "s3"))
-                .when().get("/vault/flag.txt")
+                .when().get("/vault/denied-object.txt")
                 .then().statusCode(403);
     }
 }

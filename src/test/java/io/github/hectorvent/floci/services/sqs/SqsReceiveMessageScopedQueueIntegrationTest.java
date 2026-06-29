@@ -27,8 +27,8 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
     @TestHTTPResource("/")
     java.net.URL endpoint;
 
-    private static final String ALLOWED_QUEUE = "ctf-lab-allowed-queue";
-    private static final String DECOY_QUEUE = "ctf-lab-decoy-queue";
+    private static final String ALLOWED_QUEUE = "allowed-queue";
+    private static final String DECOY_QUEUE = "other-queue";
 
     private String playerAkid;
     private String allowedQueueUrl;
@@ -37,7 +37,7 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-sqs-player";
+        String user = "sqs-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -158,11 +158,11 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
     @Test
     @Order(5)
     void receiveAllowedQueueViaJsonProtocolAfterAssumeRole() {
-        String roleName = "ctf-sqs-receive-role";
+        String roleName = "sqs-receive-role";
         String trustPolicy = """
             {"Version":"2012-10-17","Statement":[{
               "Effect":"Allow",
-              "Principal":{"AWS":"arn:aws:iam::%s:user/ctf-sqs-player"},
+              "Principal":{"AWS":"arn:aws:iam::%s:user/sqs-test-user"},
               "Action":"sts:AssumeRole"
             }]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
 
@@ -193,7 +193,7 @@ class SqsReceiveMessageScopedQueueIntegrationTest {
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"sts:AssumeRole","Resource":"%s"}
             ]}""".formatted(roleArn);
-        CtfLabIamTestSupport.putUserPolicy("ctf-sqs-player", "assume-sqs-role", assumePolicy);
+        CtfLabIamTestSupport.putUserPolicy("sqs-test-user", "assume-sqs-role", assumePolicy);
 
         String rootSqs = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/sqs/aws4_request";

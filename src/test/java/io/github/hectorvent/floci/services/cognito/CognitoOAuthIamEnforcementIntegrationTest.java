@@ -134,6 +134,23 @@ class CognitoOAuthIamEnforcementIntegrationTest {
     }
 
     @Test
+    void cognitoBearerTokenDoesNotBypassIamOnS3() {
+        String bucket = "oauth-iam-enforcement-bucket";
+        given()
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(
+                        CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "s3"))
+                .when().put("/" + bucket)
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", "Bearer " + oauthAccessToken)
+                .when().get("/" + bucket)
+                .then()
+                .statusCode(403);
+    }
+
+    @Test
     void userInfoWithoutAuthDeniedUnderStrictEnforcement() {
         given()
                 .when().get("/cognito-idp/oauth2/userInfo")

@@ -31,7 +31,7 @@ class ApiGatewayExecuteApiScopeIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-execapi-scope-player";
+        String user = "execapi-scope-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
         CtfLabIamTestSupport.putUserPolicy(user, "apigw-control-only", """

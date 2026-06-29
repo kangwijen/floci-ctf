@@ -419,15 +419,15 @@ class SecretsManagerServiceTest {
 
     @Test
     void secretNameFromArnResourceSegmentStripsSuffix() {
-        assertEquals("ctf/lab/flag", SecretsManagerService.secretNameFromArnResourceSegment("ctf/lab/flag-000000"));
+        assertEquals("test/scoped/secret-name", SecretsManagerService.secretNameFromArnResourceSegment("test/scoped/secret-name-000000"));
         assertEquals("my-secret", SecretsManagerService.secretNameFromArnResourceSegment("my-secret-ABC123"));
         assertEquals("plain-name", SecretsManagerService.secretNameFromArnResourceSegment("plain-name"));
     }
 
     @Test
     void getSecretValueByIamPlaceholderArnSucceeds() {
-        Secret secret = service.createSecret("ctf/scoped-flag", "value", null, null, null, null, REGION);
-        String placeholderArn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:ctf/scoped-flag-000000";
+        Secret secret = service.createSecret("test/scoped-secret", "value", null, null, null, null, REGION);
+        String placeholderArn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:test/scoped-secret-000000";
 
         SecretVersion version = service.getSecretValue(placeholderArn, null, null, REGION);
 
@@ -464,7 +464,7 @@ class SecretsManagerServiceTest {
                 new InMemoryStorage<>(), 30, new RegionResolver(REGION, "000000000000"), kmsSupport);
 
         String keyId = kmsService.createKey("envelope-key", REGION).getKeyId();
-        kmsServiceBacked.createSecret("kms-wrapped", "flag{envelope}", null, null, keyId, null, REGION);
+        kmsServiceBacked.createSecret("kms-wrapped", "kms-envelope-plaintext", null, null, keyId, null, REGION);
 
         SecretVersion version = kmsServiceBacked.getSecretValue("kms-wrapped", null, null, REGION);
 
@@ -473,7 +473,7 @@ class SecretsManagerServiceTest {
 
         byte[] ciphertext = Base64.getDecoder().decode(version.getSecretBinary());
         byte[] plaintext = kmsService.decrypt(ciphertext, REGION);
-        assertEquals("flag{envelope}", new String(plaintext, StandardCharsets.UTF_8));
+        assertEquals("kms-envelope-plaintext", new String(plaintext, StandardCharsets.UTF_8));
     }
 
     @Test

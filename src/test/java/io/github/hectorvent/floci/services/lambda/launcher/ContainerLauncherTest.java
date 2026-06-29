@@ -287,7 +287,7 @@ class ContainerLauncherTest {
         fn.setEnvironment(Map.of(
                 "AWS_ACCESS_KEY_ID", "user-key",
                 "AWS_SECRET_ACCESS_KEY", "user-secret",
-                "CHALLENGE_FLAG", "flag{test}"));
+                "CUSTOM_APP_VAR", "sample-value"));
 
         launcher.launch(fn);
 
@@ -295,7 +295,7 @@ class ContainerLauncherTest {
         verify(lifecycleManager).create(specCaptor.capture());
 
         List<String> env = specCaptor.getValue().env();
-        assertTrue(env.contains("CHALLENGE_FLAG=flag{test}"));
+        assertTrue(env.contains("CUSTOM_APP_VAR=sample-value"));
         assertFalse(env.stream().anyMatch(e -> e.equals("AWS_ACCESS_KEY_ID=user-key")));
         assertFalse(env.stream().anyMatch(e -> e.equals("AWS_SECRET_ACCESS_KEY=user-secret")));
     }

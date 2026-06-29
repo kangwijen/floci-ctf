@@ -21,8 +21,8 @@ import static org.hamcrest.Matchers.equalTo;
 class DynamoDbBatchExecuteStatementScopedIntegrationTest {
 
     private static final String DYNAMODB_CONTENT_TYPE = "application/x-amz-json-1.0";
-    private static final String ALLOWED_TABLE = "ctf-batch-partiql-allowed";
-    private static final String DECOY_TABLE = "ctf-batch-partiql-decoy";
+    private static final String ALLOWED_TABLE = "batch-partiql-allowed";
+    private static final String DECOY_TABLE = "batch-partiql-other-table";
 
     @TestHTTPResource("/")
     java.net.URL endpoint;
@@ -32,7 +32,7 @@ class DynamoDbBatchExecuteStatementScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-batch-partiql-player";
+        String user = "batch-partiql-player";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -42,8 +42,8 @@ class DynamoDbBatchExecuteStatementScopedIntegrationTest {
         createTable(rootAuth, ALLOWED_TABLE);
         createTable(rootAuth, DECOY_TABLE);
 
-        putItem(rootAuth, ALLOWED_TABLE, "lab-flag", "allowed-value");
-        putItem(rootAuth, DECOY_TABLE, "decoy-flag", "decoy-value");
+        putItem(rootAuth, ALLOWED_TABLE, "allowed-item", "allowed-value");
+        putItem(rootAuth, DECOY_TABLE, "other-item", "decoy-value");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
@@ -97,11 +97,11 @@ class DynamoDbBatchExecuteStatementScopedIntegrationTest {
                           "Statements": [
                             {
                               "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                              "Parameters": [{"S": "lab-flag"}]
+                              "Parameters": [{"S": "allowed-item"}]
                             },
                             {
                               "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                              "Parameters": [{"S": "lab-flag"}]
+                              "Parameters": [{"S": "allowed-item"}]
                             }
                           ]
                         }""".formatted(ALLOWED_TABLE, ALLOWED_TABLE))
@@ -122,11 +122,11 @@ class DynamoDbBatchExecuteStatementScopedIntegrationTest {
                           "Statements": [
                             {
                               "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                              "Parameters": [{"S": "lab-flag"}]
+                              "Parameters": [{"S": "allowed-item"}]
                             },
                             {
                               "Statement": "SELECT * FROM \\"%s\\" WHERE pk = ?",
-                              "Parameters": [{"S": "decoy-flag"}]
+                              "Parameters": [{"S": "other-item"}]
                             }
                           ]
                         }""".formatted(ALLOWED_TABLE, DECOY_TABLE))

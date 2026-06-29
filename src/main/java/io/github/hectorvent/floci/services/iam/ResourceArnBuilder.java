@@ -1786,7 +1786,8 @@ public class ResourceArnBuilder {
         JsonNode node = readJsonBodyNode(ctx);
         String project = firstNonBlank(
                 jsonTextFromNode(node, "projectName"),
-                jsonTextFromNode(node, "ProjectName"));
+                jsonTextFromNode(node, "ProjectName"),
+                firstJsonArrayText(node, "names"));
         if (project != null && !project.isBlank()) {
             return AwsArnUtils.Arn.of("codebuild", region, accountId, "project/" + project).toString();
         }
@@ -2258,6 +2259,20 @@ public class ResourceArnBuilder {
         }
         JsonNode field = node.get(fieldName);
         return field != null && field.isTextual() ? field.asText() : null;
+    }
+
+    private static String firstJsonArrayText(JsonNode node, String fieldName) {
+        if (node == null) {
+            return null;
+        }
+        JsonNode field = node.get(fieldName);
+        if (field != null && field.isArray() && !field.isEmpty()) {
+            JsonNode first = field.get(0);
+            if (first != null && first.isTextual()) {
+                return first.asText();
+            }
+        }
+        return null;
     }
 
     private static String jsonTargetOperation(ContainerRequestContext ctx) {

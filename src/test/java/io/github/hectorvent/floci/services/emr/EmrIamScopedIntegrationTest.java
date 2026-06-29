@@ -38,15 +38,15 @@ class EmrIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-emr-player";
+        String user = "emr-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootAuth = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "elasticmapreduce");
 
-        allowedClusterId = runJobFlow(rootAuth, "ctf-allowed-emr");
-        decoyClusterId = runJobFlow(rootAuth, "ctf-decoy-emr");
+        allowedClusterId = runJobFlow(rootAuth, "allowed-emr");
+        decoyClusterId = runJobFlow(rootAuth, "other-emr");
 
         String allowedArn = "arn:aws:elasticmapreduce:" + REGION + ":" + ACCOUNT + ":cluster/" + allowedClusterId;
         String policy = """

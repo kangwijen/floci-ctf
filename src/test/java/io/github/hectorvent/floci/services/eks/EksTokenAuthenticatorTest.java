@@ -21,11 +21,21 @@ class EksTokenAuthenticatorTest {
     }
 
     @Test
-    void strictModeAcceptsPlausiblePresignedStsUrl() {
+    void strictModeAcceptsPlausiblePresignedStsGetCallerIdentityUrl() {
         String stsUrl = "https://sts.us-east-1.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
-                + "&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abc123";
-        String token = EksTokenAuthenticator.EKS_TOKEN_PREFIX
-                + Base64.getUrlEncoder().withoutPadding().encodeToString(stsUrl.getBytes(StandardCharsets.UTF_8));
+                + "&X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                + "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20260629%2Fus-east-1%2Fsts%2Faws4_request"
+                + "&X-Amz-Date=20260629T120000Z"
+                + "&X-Amz-Expires=60"
+                + "&X-Amz-SignedHeaders=host"
+                + "&X-Amz-Signature=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        String token = k8sAwsV1Token(stsUrl);
         assertTrue(EksTokenAuthenticator.accepts(token, true));
+    }
+
+    static String k8sAwsV1Token(String presignedStsUrl) {
+        return EksTokenAuthenticator.EKS_TOKEN_PREFIX
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(presignedStsUrl.getBytes(StandardCharsets.UTF_8));
     }
 }

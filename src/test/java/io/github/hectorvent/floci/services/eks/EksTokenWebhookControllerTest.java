@@ -4,6 +4,8 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -56,6 +58,29 @@ class EksTokenWebhookControllerTest {
         when(iam.enforcementEnabled()).thenReturn(true);
         Response response = controller.review(tokenReview("k8s-aws-v1.aHR0cHM6Ly9zdHM..."));
         assertEquals(Boolean.FALSE, status(response).get("authenticated"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void plausiblePresignedStsTokenAuthenticatesWhenEnforcementOn() {
+        when(iam.enforcementEnabled()).thenReturn(true);
+        String stsUrl = "https://sts.us-east-1.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+                + "&X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                + "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20260629%2Fus-east-1%2Fsts%2Faws4_request"
+                + "&X-Amz-Date=20260629T120000Z"
+                + "&X-Amz-Expires=60"
+                + "&X-Amz-SignedHeaders=host"
+                + "&X-Amz-Signature=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        String token = EksTokenAuthenticator.EKS_TOKEN_PREFIX
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(stsUrl.getBytes(StandardCharsets.UTF_8));
+
+        Response response = controller.review(tokenReview(token));
+        Map<String, Object> status = status(response);
+        assertEquals(Boolean.TRUE, status.get("authenticated"));
+
+        Map<String, Object> user = (Map<String, Object>) status.get("user");
+        assertEquals(List.of("system:masters"), user.get("groups"));
     }
 
     @Test

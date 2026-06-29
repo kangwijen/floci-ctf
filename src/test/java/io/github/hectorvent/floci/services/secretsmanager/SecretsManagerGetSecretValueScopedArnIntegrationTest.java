@@ -30,44 +30,44 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
     ObjectMapper objectMapper;
 
     private String playerAkid;
-    private static final String ALLOWED = "ctf/lab/scoped-flag";
-    private static final String DECOY = "ctf/lab/decoy-flag";
+    private static final String ALLOWED = "test/scoped/allowed-secret";
+    private static final String DECOY = "test/scoped/other-secret";
 
     @BeforeAll
     void provision() throws Exception {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-sm-player";
+        String user = "iam-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootSm = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
-        createSecret(rootSm, ALLOWED, "flag{scoped-read}");
-        createSecret(rootSm, DECOY, "flag{decoy}");
+        createSecret(rootSm, ALLOWED, "allowed-plaintext");
+        createSecret(rootSm, DECOY, "other-plaintext");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:ctf/lab/scoped-flag-*"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:test/scoped/allowed-secret-*"}
             ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
         CtfLabIamTestSupport.putUserPolicy(user, "sm-read-one", policy);
     }
 
     @Test
     void getAllowedSecretWithPathPrefixWildcard() throws Exception {
-        String user = "ctf-sm-path-player";
+        String user = "iam-test-user-path";
         CtfLabIamTestSupport.createUser(user);
         String akid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootSm = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
-        String secretName = "app/live/deadbeef";
-        createSecret(rootSm, secretName, "flag{path-prefix}");
+        String secretName = "env/prod/service-a";
+        createSecret(rootSm, secretName, "allowed-plaintext");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:app/live/*"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:env/prod/*"}
             ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
         CtfLabIamTestSupport.putUserPolicy(user, "sm-path-prefix", policy);
 
@@ -80,7 +80,7 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
                 .body(req.toString())
                 .when().post("/")
                 .then().statusCode(200)
-                .body("SecretString", equalTo("flag{path-prefix}"));
+                .body("SecretString", equalTo("allowed-plaintext"));
     }
 
     private void createSecret(String auth, String name, String value) throws Exception {
@@ -98,14 +98,14 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
 
     @Test
     void getAllowedSecretWithAwsQuestionMarkSuffixPolicy() throws Exception {
-        String user = "ctf-sm-qmark-player";
+        String user = "iam-test-user-qmark";
         CtfLabIamTestSupport.createUser(user);
         String akid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootSm = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
-        String secretName = "app/live/qmark-test";
-        createSecret(rootSm, secretName, "flag{qmark-suffix}");
+        String secretName = "env/prod/service-b";
+        createSecret(rootSm, secretName, "sample-payload-01");
 
         String storedArn = given()
                 .header("Authorization", rootSm)
@@ -134,24 +134,24 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
                 .body(req.toString())
                 .when().post("/")
                 .then().statusCode(200)
-                .body("SecretString", equalTo("flag{qmark-suffix}"));
+                .body("SecretString", equalTo("sample-payload-01"));
     }
 
     @Test
     void getPathPrefixSecretDeniedWithHyphenWildcard() throws Exception {
-        String user = "ctf-sm-hyphen-player";
+        String user = "iam-test-user-hyphen";
         CtfLabIamTestSupport.createUser(user);
         String akid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootSm = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
-        String secretName = "app/live/hyphen-test";
-        createSecret(rootSm, secretName, "flag{hyphen-deny}");
+        String secretName = "env/prod/service-c";
+        createSecret(rootSm, secretName, "other-plaintext");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
-               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:app/live-*"}
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:env/prod-*"}
             ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
         CtfLabIamTestSupport.putUserPolicy(user, "sm-hyphen-wildcard", policy);
 
@@ -177,7 +177,7 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
                 .body(req.toString())
                 .when().post("/")
                 .then().statusCode(200)
-                .body("SecretString", equalTo("flag{scoped-read}"));
+                .body("SecretString", equalTo("allowed-plaintext"));
     }
 
     @Test

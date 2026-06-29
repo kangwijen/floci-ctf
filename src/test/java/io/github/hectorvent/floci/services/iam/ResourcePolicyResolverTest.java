@@ -46,12 +46,12 @@ class ResourcePolicyResolverTest {
     @Test
     void resolvesBucketPolicyFromObjectArn() {
         String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[]}";
-        when(s3Service.findBucketPolicyIfPresent("ctf-bucket"))
+        when(s3Service.findBucketPolicyIfPresent("example-bucket"))
                 .thenReturn(Optional.of(policy));
 
         List<String> docs = resolver.resolve(
                 "s3",
-                "arn:aws:s3:::ctf-bucket/secret/flag.txt",
+                "arn:aws:s3:::example-bucket/data/object.txt",
                 REGION);
 
         assertEquals(List.of(policy), docs);

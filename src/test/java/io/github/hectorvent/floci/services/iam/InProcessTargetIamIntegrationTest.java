@@ -29,7 +29,7 @@ class InProcessTargetIamIntegrationTest {
     private static final String REGION = "us-east-1";
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
     private static final String QUEUE_ARN =
-            "arn:aws:sqs:" + REGION + ":" + ACCOUNT + ":ctf-inprocess-pipe-target";
+            "arn:aws:sqs:" + REGION + ":" + ACCOUNT + ":inprocess-pipe-target";
     private static final String DENY_ROLE = "InProcessPipeDenyRole";
     private static final String DENY_ROLE_ARN = "arn:aws:iam::" + ACCOUNT + ":role/" + DENY_ROLE;
     private static final String ALLOW_ROLE = "InProcessPipeAllowRole";
@@ -88,7 +88,7 @@ class InProcessTargetIamIntegrationTest {
                 .formParam("PolicyDocument", """
                     {"Version":"2012-10-17","Statement":[
                       {"Effect":"Allow","Action":"sqs:SendMessage",
-                       "Resource":"arn:aws:sqs:%s:%s:ctf-inprocess-pipe-target"}
+                       "Resource":"arn:aws:sqs:%s:%s:inprocess-pipe-target"}
                     ]}""".formatted(REGION, ACCOUNT))
                 .header("Authorization", CtfLabIamEnforcementProfile.AUTH)
                 .when().post("/")
@@ -116,7 +116,7 @@ class InProcessTargetIamIntegrationTest {
 
     @Test
     void eventBridgeTargetDeniesWithoutResourcePolicyOrRole() {
-        String lambdaArn = "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:ctf-eb-no-policy";
+        String lambdaArn = "arn:aws:lambda:" + REGION + ":" + ACCOUNT + ":function:eb-no-policy";
         AwsException ex = assertThrows(AwsException.class,
                 () -> targetAuthorizer.authorizeEventBridgeTarget(null, lambdaArn, REGION));
         assertEquals("AccessDeniedException", ex.getErrorCode());

@@ -29,7 +29,7 @@ import static org.hamcrest.Matchers.equalTo;
 class PreSignedUrlCtfIntegrationTest {
 
     private static final String BUCKET = "presign-get-bucket";
-    private static final String KEY = "secret.txt";
+    private static final String KEY = "object.txt";
     private static final String BODY = "presigned under compose profile";
 
     @TestHTTPResource("/")

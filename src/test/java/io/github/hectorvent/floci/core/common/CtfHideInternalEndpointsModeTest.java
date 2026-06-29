@@ -33,8 +33,29 @@ class CtfHideInternalEndpointsModeTest {
     }
 
     @Test
+    void parseNullReturnsOff() {
+        assertEquals(CtfHideInternalEndpointsMode.OFF, CtfHideInternalEndpointsMode.parse(null));
+    }
+
+    @Test
+    void hidesAnythingOnlyWhenNotOff() {
+        assertFalse(CtfHideInternalEndpointsMode.OFF.hidesAnything());
+        assertTrue(CtfHideInternalEndpointsMode.PREFIXED.hidesAnything());
+        assertTrue(CtfHideInternalEndpointsMode.ALL.hidesAnything());
+    }
+
+    @Test
+    void offModeNeverHidesPaths() {
+        assertFalse(CtfHideInternalEndpointsMode.OFF.isPathHidden("/_floci"));
+        assertFalse(CtfHideInternalEndpointsMode.OFF.isPathHidden("/health"));
+        assertFalse(CtfHideInternalEndpointsMode.OFF.isPathHidden("/_aws/sqs"));
+    }
+
+    @Test
     void prefixedHidesFlociAndLocalstackOnly() {
         CtfHideInternalEndpointsMode mode = CtfHideInternalEndpointsMode.PREFIXED;
+        assertTrue(mode.isPathHidden("/_floci"));
+        assertTrue(mode.isPathHidden("/_localstack"));
         assertTrue(mode.isPathHidden("/_floci/health"));
         assertTrue(mode.isPathHidden("/_localstack/init"));
         assertTrue(mode.isPathHidden("/_floci/ecr/gc"));

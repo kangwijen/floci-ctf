@@ -32,7 +32,7 @@ class IamJson11CredentialScopeSplitIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-json11-scope-split";
+        String user = "json11-scope-split-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
         CtfLabIamTestSupport.putUserPolicy(user, "s3-only", """

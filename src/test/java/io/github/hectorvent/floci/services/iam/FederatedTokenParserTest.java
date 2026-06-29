@@ -139,6 +139,26 @@ class FederatedTokenParserTest {
     }
 
     @Test
+    void parseJwtWhenValidateFederatedTokensDisabledSkipsSignatureVerification() {
+        long expired = java.time.Instant.now().getEpochSecond() - 60;
+        String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user", "exp", expired), "wrong-secret");
+
+        assertNull(FederatedTokenParser.parseWebIdentityToken(
+                jwt, PROVIDER_HOST, "111122223333", STRUCTURAL_ONLY));
+
+        FederatedTrustContext ctx = FederatedTokenParser.parseWebIdentityToken(
+                jwt, PROVIDER_HOST, "111122223333", FederatedTokenValidationConfig.disabled());
+        assertNotNull(ctx);
+        assertEquals("client", ctx.conditionClaims().get("aud"));
+        assertEquals("user", ctx.conditionClaims().get("sub"));
+
+        FederatedTrustContext booleanOff = FederatedTokenParser.parseWebIdentityToken(
+                jwt, PROVIDER_HOST, "111122223333", false);
+        assertNotNull(booleanOff);
+        assertEquals("client", booleanOff.conditionClaims().get("aud"));
+    }
+
+    @Test
     void validateFederatedTokensRejectsHs256WithoutConfiguredSecret() {
         long future = java.time.Instant.now().getEpochSecond() + 3600;
         String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user", "exp", future), "secret");

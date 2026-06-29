@@ -358,15 +358,55 @@ class IamActionRegistryTest {
         assertNull(registry.resolve("apigateway", ctx));
     }
 
+    @Test
+    void resolvesCodeBuildBatchGetProjectsFromJson11Target() {
+        ContainerRequestContext ctx = json11TargetCtx(
+                "CodeBuild_20161006.BatchGetProjects",
+                MediaType.valueOf("application/x-amz-json-1.1"));
+        assertEquals("codebuild:BatchGetProjects", registry.resolve("codebuild", ctx));
+    }
+
+    @Test
+    void resolvesBackupDescribeBackupVaultFromQueryAction() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_FORM_URLENCODED_TYPE,
+                "Action=DescribeBackupVault&Version=2018-11-15&BackupVaultName=example-vault");
+        assertEquals("backup:DescribeBackupVault", registry.resolve("backup", ctx));
+    }
+
+    @Test
+    void resolvesRoute53GetHostedZoneFromQueryAction() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_FORM_URLENCODED_TYPE,
+                "Action=GetHostedZone&Version=2013-04-01&Id=Z1234567890ABC");
+        assertEquals("route53:GetHostedZone", registry.resolve("route53", ctx));
+    }
+
+    @Test
+    void resolvesAcmDescribeCertificateFromJson11Target() {
+        ContainerRequestContext ctx = json11TargetCtx(
+                "CertificateManager.DescribeCertificate",
+                MediaType.valueOf("application/x-amz-json-1.1"));
+        assertEquals("acm:DescribeCertificate", registry.resolve("acm", ctx));
+    }
+
     // -------------------------------------------------------------------------
 
     private static ContainerRequestContext dynamodbTargetCtx(String target) {
+        return json11TargetCtx(target, MediaType.valueOf("application/x-amz-json-1.0"));
+    }
+
+    private static ContainerRequestContext json11TargetCtx(String target, MediaType mediaType) {
         ContainerRequestContext ctx = Mockito.mock(ContainerRequestContext.class);
         UriInfo uriInfo = Mockito.mock(UriInfo.class);
         when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
         when(uriInfo.getPath()).thenReturn("/");
         when(ctx.getUriInfo()).thenReturn(uriInfo);
-        when(ctx.getMediaType()).thenReturn(MediaType.valueOf("application/x-amz-json-1.0"));
+        when(ctx.getMediaType()).thenReturn(mediaType);
         when(ctx.getMethod()).thenReturn("POST");
         when(ctx.getHeaderString("X-Amz-Target")).thenReturn(target);
         return ctx;

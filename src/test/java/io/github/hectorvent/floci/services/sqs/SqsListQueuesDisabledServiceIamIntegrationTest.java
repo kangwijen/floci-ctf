@@ -39,7 +39,7 @@ class SqsListQueuesDisabledServiceIamIntegrationTest {
 
     @Test
     void listQueuesDeniedWhenSqsDisabledInConfigReturnsAccessDenied() {
-        String user = "ctf-sqs-disabled-list-denied";
+        String user = "sqs-disabled-list-test-user";
         CtfLabIamTestSupport.createUser(user);
         String akid = CtfLabIamTestSupport.createAccessKey(user);
         String receiveOnlyPolicy = """

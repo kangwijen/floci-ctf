@@ -62,31 +62,50 @@ public class ElastiCacheService {
                     "Replication group " + groupId + " already exists.", 400);
         }
 
-        int proxyPort = allocateProxyPort();
         String image = config.services().elasticache().defaultImage();
-
-        LOG.infov("Creating replication group {0} with authMode={1} on proxy port {2}",
-                groupId, authMode, String.valueOf(proxyPort));
+        LOG.infov("Creating replication group {0} with authMode={1}", groupId, authMode);
 
         ElastiCacheContainerHandle handle = containerManager.start(groupId, image);
+        try {
+            String endpointHost = resolveEndpointHost();
+            RuntimeException lastProxyFailure = null;
+            for (int attempt = 0; attempt < 25; attempt++) {
+                int proxyPort = allocateProxyPort();
+                try {
+                    Endpoint endpoint = new Endpoint(endpointHost, proxyPort);
+                    ReplicationGroup group = new ReplicationGroup(
+                            groupId, description, ReplicationGroupStatus.AVAILABLE,
+                            authMode, endpoint, Instant.now(), proxyPort);
+                    group.setContainerId(handle.getContainerId());
+                    group.setContainerHost(handle.getHost());
+                    group.setContainerPort(handle.getPort());
+                    group.setAuthToken(authToken);
 
-        String endpointHost = resolveEndpointHost();
-        Endpoint endpoint = new Endpoint(endpointHost, proxyPort);
-        ReplicationGroup group = new ReplicationGroup(
-                groupId, description, ReplicationGroupStatus.AVAILABLE,
-                authMode, endpoint, Instant.now(), proxyPort);
-        group.setContainerId(handle.getContainerId());
-        group.setContainerHost(handle.getHost());
-        group.setContainerPort(handle.getPort());
-        group.setAuthToken(authToken);
+                    LOG.infov("Starting ElastiCache proxy for group {0} on port {1}", groupId, String.valueOf(proxyPort));
+                    proxyManager.startProxy(groupId, authMode, proxyPort,
+                            handle.getHost(), handle.getPort(),
+                            (username, password) -> validatePassword(groupId, username, password));
 
-        proxyManager.startProxy(groupId, authMode, proxyPort,
-                handle.getHost(), handle.getPort(),
-                (username, password) -> validatePassword(groupId, username, password));
-
-        groups.put(groupId, group);
-        LOG.infov("Replication group {0} created, endpoint={1}:{2}", groupId, endpointHost, String.valueOf(proxyPort));
-        return group;
+                    groups.put(groupId, group);
+                    LOG.infov("Replication group {0} created, endpoint={1}:{2}",
+                            groupId, endpointHost, String.valueOf(proxyPort));
+                    return group;
+                } catch (RuntimeException e) {
+                    releaseProxyPort(proxyPort);
+                    lastProxyFailure = e;
+                    LOG.warnv("Failed to start ElastiCache proxy for group {0} on port {1} (attempt {2}): {3}",
+                            groupId, String.valueOf(proxyPort), attempt + 1, e.getMessage());
+                }
+            }
+            if (lastProxyFailure != null) {
+                throw lastProxyFailure;
+            }
+            throw new AwsException("InsufficientReplicationGroupCapacity",
+                    "No available proxy ports for replication group " + groupId, 503);
+        } catch (RuntimeException e) {
+            containerManager.stop(handle);
+            throw e;
+        }
     }
 
     public ReplicationGroup getReplicationGroup(String groupId) {
@@ -235,11 +254,19 @@ public class ElastiCacheService {
     private int allocateProxyPort() {
         int base = config.services().elasticache().proxyBasePort();
         int max = config.services().elasticache().proxyMaxPort();
-        int port = PortAllocator.allocateFromRange(base, max, usedPorts, true);
+        Set<Integer> inUse = ConcurrentHashMap.newKeySet();
+        inUse.addAll(usedPorts);
+        for (ReplicationGroup group : groups.scan(k -> true)) {
+            if (group.getProxyPort() > 0) {
+                inUse.add(group.getProxyPort());
+            }
+        }
+        int port = PortAllocator.allocateFromRange(base, max, inUse, true);
         if (port < 0) {
             throw new AwsException("InsufficientReplicationGroupCapacity",
                     "No available proxy ports in range " + base + "-" + max, 503);
         }
+        usedPorts.add(port);
         return port;
     }
 

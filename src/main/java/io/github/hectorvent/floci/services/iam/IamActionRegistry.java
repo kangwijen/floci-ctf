@@ -257,7 +257,15 @@ public class IamActionRegistry {
         rule("appconfigdata", "POST", "^/configurationsessions/?$",
                 "appconfig:StartConfigurationSession"),
         rule("appconfigdata", "GET",  "^/configuration/?$",
-                "appconfig:GetLatestConfiguration")
+                "appconfig:GetLatestConfiguration"),
+
+        // ── AWS Backup (REST JSON) ────────────────────────────────────────────
+        rule("backup", "GET",    "^/backup-vaults/[^/]+/?$",  "backup:DescribeBackupVault"),
+        rule("backup", "PUT",    "^/backup-vaults/[^/]+/?$",  "backup:CreateBackupVault"),
+
+        // ── Route 53 (REST XML) ───────────────────────────────────────────────
+        rule("route53", "GET",    ".*/hostedzone/[^/]+/?$",    "route53:GetHostedZone"),
+        rule("route53", "POST",   ".*/hostedzone/?$",          "route53:CreateHostedZone")
     );
 
     private static ActionRule rule(String service, String method, String path, String action) {
@@ -440,6 +448,9 @@ public class IamActionRegistry {
                 && !normalized.startsWith("/v2/")
                 && !normalized.startsWith("/lambda")
                 && !normalized.startsWith("/2015-03-31/")
+                && !normalized.startsWith("/2013-04-01/")
+                && !normalized.startsWith("/backup-vaults")
+                && !normalized.startsWith("/backup/")
                 && !normalized.startsWith("/clusters/")
                 && !normalized.startsWith("/Execute");
     }

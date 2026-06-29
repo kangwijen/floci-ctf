@@ -48,7 +48,7 @@ class CloudForensicsIntegrationTest {
     private static final String ACCESS_LOG_BUCKET = "access-logs-bucket";
     private static final String CONFIG_BUCKET = "config-delivery-bucket";
     private static final String TRAIL_NAME = "audit-trail";
-    private static final String FORENSIC_USER = "audit-investigator";
+    private static final String FORENSIC_USER = "audit-test-user";
     private static final String ACCESS_LOG_PREFIX = "s3-access/";
     private static final String SECURITY_HUB_PRODUCT_ARN =
             "arn:aws:securityhub:us-east-1:000000000000:product/000000000000/default";

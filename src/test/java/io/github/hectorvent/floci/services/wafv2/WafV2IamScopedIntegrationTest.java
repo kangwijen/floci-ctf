@@ -38,20 +38,20 @@ class WafV2IamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-waf-player";
+        String user = "waf-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
         String rootAuth = CtfLabIamTestSupport.scopedAuth(
                 CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "wafv2");
 
-        allowedAclId = createWebAcl(rootAuth, "ctf-allowed-acl");
-        decoyAclId = createWebAcl(rootAuth, "ctf-decoy-acl");
+        allowedAclId = createWebAcl(rootAuth, "allowed-acl");
+        decoyAclId = createWebAcl(rootAuth, "other-acl");
 
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"wafv2:GetWebACL",
-               "Resource":"arn:aws:wafv2:%s:%s:regional/webacl/ctf-allowed-acl/*"}
+               "Resource":"arn:aws:wafv2:%s:%s:regional/webacl/allowed-acl/*"}
             ]}""".formatted(REGION, ACCOUNT);
         CtfLabIamTestSupport.putUserPolicy(user, "get-one-acl", policy);
     }
@@ -62,12 +62,12 @@ class WafV2IamScopedIntegrationTest {
                 .header("Authorization", playerWafAuth())
                 .header("X-Amz-Target", TARGET_PREFIX + "GetWebACL")
                 .contentType(CT)
-                .body("{\"Scope\":\"REGIONAL\",\"Id\":\"" + allowedAclId + "\",\"Name\":\"ctf-allowed-acl\"}")
+                .body("{\"Scope\":\"REGIONAL\",\"Id\":\"" + allowedAclId + "\",\"Name\":\"allowed-acl\"}")
         .when()
                 .post("/")
         .then()
                 .statusCode(200)
-                .body("WebACL.Name", equalTo("ctf-allowed-acl"));
+                .body("WebACL.Name", equalTo("allowed-acl"));
     }
 
     @Test
@@ -76,7 +76,7 @@ class WafV2IamScopedIntegrationTest {
                 .header("Authorization", playerWafAuth())
                 .header("X-Amz-Target", TARGET_PREFIX + "GetWebACL")
                 .contentType(CT)
-                .body("{\"Scope\":\"REGIONAL\",\"Id\":\"" + decoyAclId + "\",\"Name\":\"ctf-decoy-acl\"}")
+                .body("{\"Scope\":\"REGIONAL\",\"Id\":\"" + decoyAclId + "\",\"Name\":\"other-acl\"}")
         .when()
                 .post("/")
         .then()

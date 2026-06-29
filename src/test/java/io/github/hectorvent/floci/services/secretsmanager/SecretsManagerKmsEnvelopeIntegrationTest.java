@@ -52,8 +52,8 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .extract().jsonPath().getString("KeyMetadata.KeyId");
 
         ObjectNode create = objectMapper.createObjectNode();
-        create.put("Name", "ctf/kms-envelope-flag");
-        create.put("SecretString", "flag{kms-envelope}");
+        create.put("Name", "test/scoped/kms-envelope-secret");
+        create.put("SecretString", "kms-envelope-plaintext");
         create.put("KmsKeyId", keyId);
 
         given()
@@ -68,7 +68,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .header("Authorization", smAuth)
                 .header("X-Amz-Target", "secretsmanager.GetSecretValue")
                 .contentType("application/x-amz-json-1.1")
-                .body(objectMapper.createObjectNode().put("SecretId", "ctf/kms-envelope-flag").toString())
+                .body(objectMapper.createObjectNode().put("SecretId", "test/scoped/kms-envelope-secret").toString())
                 .when().post("/")
                 .then().statusCode(200)
                 .body("SecretString", nullValue())
@@ -90,7 +90,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("Plaintext");
 
-        assertEquals("flag{kms-envelope}", new String(Base64.getDecoder().decode(plaintextB64)));
+        assertEquals("kms-envelope-plaintext", new String(Base64.getDecoder().decode(plaintextB64)));
     }
 
     @Test
@@ -99,7 +99,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 + "/20260227/us-east-1/kms/aws4_request";
         String smAuth = kmsAuth.replace("/kms/", "/secretsmanager/");
 
-        String user = "ctf-sm-kms-player";
+        String user = "iam-test-user-kms";
         CtfLabIamTestSupport.createUser(user);
         String playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -132,8 +132,8 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
             {"Version":"2012-10-17","Statement":[]}""");
 
         ObjectNode create = objectMapper.createObjectNode();
-        create.put("Name", "ctf/kms-policy-envelope");
-        create.put("SecretString", "flag{kms-key-policy}");
+        create.put("Name", "test/scoped/kms-policy-envelope");
+        create.put("SecretString", "allowed-plaintext");
         create.put("KmsKeyId", keyId);
         given()
                 .header("Authorization", smAuth)
@@ -147,7 +147,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .header("Authorization", smAuth)
                 .header("X-Amz-Target", "secretsmanager.GetSecretValue")
                 .contentType("application/x-amz-json-1.1")
-                .body(objectMapper.createObjectNode().put("SecretId", "ctf/kms-policy-envelope").toString())
+                .body(objectMapper.createObjectNode().put("SecretId", "test/scoped/kms-policy-envelope").toString())
                 .when().post("/")
                 .then().statusCode(200)
                 .extract().jsonPath().getString("SecretBinary");
@@ -165,7 +165,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("Plaintext");
 
-        assertEquals("flag{kms-key-policy}", new String(Base64.getDecoder().decode(plaintextB64)));
+        assertEquals("allowed-plaintext", new String(Base64.getDecoder().decode(plaintextB64)));
     }
 
     @Test
@@ -173,7 +173,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
         String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/kms/aws4_request";
 
-        String user = "ctf-kms-sm-scoped";
+        String user = "iam-test-user-kms-scoped";
         CtfLabIamTestSupport.createUser(user);
         String playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 
@@ -186,7 +186,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("KeyMetadata.KeyId");
 
-        String secretName = "ctf/kms-scoped-envelope";
+        String secretName = "test/scoped/kms-scoped-envelope";
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow",
@@ -272,7 +272,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("CiphertextBlob");
 
-        String secretName = "ctf/kms-binary-nested-test";
+        String secretName = "test/scoped/kms-binary-nested";
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", secretName);
         create.put("SecretBinary", envelopeB64);
@@ -326,7 +326,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("KeyMetadata.KeyId");
 
-        String expectedPlaintext = "double-base64-flag";
+        String expectedPlaintext = "double-base64-payload";
         ObjectNode encryptReq = objectMapper.createObjectNode();
         encryptReq.put("KeyId", keyId);
         encryptReq.put("Plaintext", Base64.getEncoder().encodeToString(expectedPlaintext.getBytes()));
@@ -341,7 +341,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .extract().jsonPath().getString("CiphertextBlob");
 
         String doubleWrapped = Base64.getEncoder().encodeToString(envelopeB64.getBytes());
-        String secretName = "ctf/kms-double-base64-test";
+        String secretName = "test/scoped/kms-double-base64";
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", secretName);
         create.put("SecretBinary", doubleWrapped);
@@ -409,7 +409,7 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
                 .then().statusCode(200)
                 .extract().jsonPath().getString("CiphertextBlob");
 
-        String secretName = "ctf/kms-nested-test";
+        String secretName = "test/scoped/kms-nested";
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", secretName);
         create.put("SecretString", envelopeB64);

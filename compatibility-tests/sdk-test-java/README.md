@@ -1,8 +1,8 @@
 # sdk-test-java
 
-Compatibility tests for [floci-ctf](https://github.com/kangwijen/floci-ctf) using the **AWS SDK for Java v2 (2.31.8)**.
+Compatibility tests for **floci-ctf** (this repository) using the **AWS SDK for Java v2 (2.31.8)**.
 
-Aligned with upstream Floci **1.5.24** and the [floci-ctf](https://github.com/kangwijen/floci-ctf) security-hardened fork.
+Aligned with upstream Floci **1.5.24** and the **floci-ctf** security-hardened fork.
 
 Runs against a live Floci instance — no mocks.
 

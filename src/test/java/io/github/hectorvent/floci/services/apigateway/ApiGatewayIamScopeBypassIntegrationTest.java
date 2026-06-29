@@ -30,7 +30,7 @@ class ApiGatewayIamScopeBypassIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-apigw-scope-player";
+        String user = "apigw-scope-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
         CtfLabIamTestSupport.putUserPolicy(user, "iam-only", """

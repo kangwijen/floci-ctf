@@ -25,8 +25,8 @@ class TaggingIamScopedIntegrationTest {
 
     private static final String CT = CtfLabIamTestSupport.JSON_11;
     private static final String TARGET_PREFIX = "ResourceGroupsTaggingAPI_20170126.";
-    private static final String ALLOWED_BUCKET = "ctf-tagging-allowed-bucket";
-    private static final String DECOY_BUCKET = "ctf-tagging-decoy-bucket";
+    private static final String ALLOWED_BUCKET = "tagging-allowed-bucket";
+    private static final String DECOY_BUCKET = "tagging-other-bucket";
     private static final String ALLOWED_ARN = "arn:aws:s3:::" + ALLOWED_BUCKET;
     private static final String DECOY_ARN = "arn:aws:s3:::" + DECOY_BUCKET;
 
@@ -38,7 +38,7 @@ class TaggingIamScopedIntegrationTest {
     @BeforeAll
     void provision() {
         CtfLabIamTestSupport.bindRestAssured(endpoint);
-        String user = "ctf-tagging-player";
+        String user = "tagging-test-user";
         CtfLabIamTestSupport.createUser(user);
         playerAkid = CtfLabIamTestSupport.createAccessKey(user);
 

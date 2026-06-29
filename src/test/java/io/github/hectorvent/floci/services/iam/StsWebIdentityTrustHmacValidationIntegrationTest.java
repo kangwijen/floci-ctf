@@ -31,7 +31,7 @@ class StsWebIdentityTrustHmacValidationIntegrationTest {
             "AWS4-HMAC-SHA256 Credential=test/20260227/us-east-1/sts/aws4_request";
     private static final String PROVIDER_ARN =
             "arn:aws:iam::" + ACCOUNT + ":oidc-provider/accounts.google.com";
-    private static final String HMAC_SECRET = "ctf-lab-hmac-secret";
+    private static final String HMAC_SECRET = "test-hmac-secret";
 
     private static String roleArn;
 

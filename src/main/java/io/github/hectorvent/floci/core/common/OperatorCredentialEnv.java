@@ -31,13 +31,13 @@ public final class OperatorCredentialEnv {
         return creds;
     }
 
-    private static void putIfPresent(Map<String, String> env, String key, String value) {
+    static void putIfPresent(Map<String, String> env, String key, String value) {
         if (value != null && !value.isBlank()) {
             env.put(key, value);
         }
     }
 
-    private static void addIfPresent(List<String> env, String key, String value) {
+    static void addIfPresent(List<String> env, String key, String value) {
         if (value != null && !value.isBlank()) {
             env.add(key + "=" + value);
         }

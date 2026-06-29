@@ -50,6 +50,16 @@ class ElastiCacheIntegrationTest {
     static void requireDocker() {
         Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
                 "Docker daemon must be available for ElastiCache integration tests");
+        // Clear stale groups from a prior failed full-suite run before ordered tests start.
+        for (String groupId : List.of(CROSS_GROUP_ID, GROUP_ID, GROUP_ID + "-reused")) {
+            try {
+                given()
+                    .formParam("Action", "DeleteReplicationGroup")
+                    .formParam("ReplicationGroupId", groupId)
+                    .header("Authorization", AUTH_HEADER)
+                    .post("/");
+            } catch (Exception ignored) {}
+        }
     }
 
     @AfterAll

@@ -10,7 +10,7 @@ import java.util.Map;
 public class CtfComposeParityProfile implements QuarkusTestProfile {
 
     public static final String ROOT_ACCESS_KEY_ID = "AKIACTFCOMPOSE01";
-    public static final String ROOT_SECRET = "ctf-compose-root-secret-32chars!!";
+    public static final String ROOT_SECRET = "emulator-compose-root-secret-32chars!!";
 
     @Override
     public Map<String, String> getConfigOverrides() {

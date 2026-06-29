@@ -27,6 +27,7 @@ public class LambdaContainerCredentialsIamProfile extends CtfComposeParityProfil
         Map<String, String> overrides = new HashMap<>(super.getConfigOverrides());
         overrides.put("floci.services.lambda.container-credentials-port", String.valueOf(LAMBDA_CREDS_PORT));
         overrides.put("floci.services.ecs.container-credentials-port", String.valueOf(ECS_CREDS_PORT));
+        overrides.put("floci.services.ecs.mock", "false");
         overrides.put("floci.services.codebuild.container-credentials-port", String.valueOf(CODEBUILD_CREDS_PORT));
         // Host-side @QuarkusTest fetches creds via 127.0.0.1; link-local URIs are for Docker workloads.
         overrides.put("floci.ctf.container-credentials-use-link-local-uri", "false");
