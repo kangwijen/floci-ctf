@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.services.cloudtrail;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
@@ -25,6 +27,11 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CloudTrailEventStore {
     private static final int DEFAULT_MAX_RESULTS = 50;
     private static final int MAX_MAX_RESULTS = 50;
+    private static final ObjectMapper CURSOR_MAPPER = new ObjectMapper();
+    private static final Comparator<CloudTrailEvent> EVENT_ORDER = Comparator
+            .comparing(CloudTrailEvent::getEventTime, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(CloudTrailEvent::getSequence, Comparator.reverseOrder())
+            .thenComparing(CloudTrailEvent::getEventId, Comparator.nullsLast(Comparator.reverseOrder()));
     private static final Set<String> SUPPORTED_LOOKUP_KEYS = Set.of(
             "EventName", "Username", "ResourceName", "EventSource", "ReadOnly");
 
@@ -162,26 +169,20 @@ public class CloudTrailEventStore {
         validateTimeRange(startTime, endTime);
         validateLookupAttributes(lookupAttributes);
         int limit = resolveMaxResults(maxResults);
-        int offset = decodeNextToken(nextToken);
+        EventCursor cursor = decodeNextToken(nextToken);
 
-        List<CloudTrailEvent> matched = eventStore.scan(key -> key.startsWith(region + ":")).stream()
+        List<CloudTrailEvent> page = eventStore.scan(key -> key.startsWith(region + ":")).stream()
                 .filter(event -> matchesTimeRange(event, startTime, endTime))
                 .filter(event -> matchesLookupAttributes(event, lookupAttributes))
-                .sorted(Comparator
-                        .comparing(CloudTrailEvent::getEventTime,
-                                Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(CloudTrailEvent::getSequence, Comparator.reverseOrder()))
+                .filter(event -> isAfterCursor(event, cursor))
+                .sorted(EVENT_ORDER)
+                .limit(limit + 1L)
                 .toList();
 
-        if (offset < 0 || offset > matched.size()) {
-            throw new AwsException("InvalidNextTokenException",
-                    "The token provided is invalid or has expired.", 400);
-        }
-
-        int end = Math.min(matched.size(), offset + limit);
-        List<CloudTrailEvent> page = matched.subList(offset, end);
-        String token = end < matched.size() ? encodeNextToken(end) : null;
-        return new LookupEventsResult(page, token);
+        boolean hasMore = page.size() > limit;
+        List<CloudTrailEvent> events = hasMore ? page.subList(0, limit) : page;
+        String token = hasMore ? encodeNextToken(events.get(events.size() - 1)) : null;
+        return new LookupEventsResult(events, token);
     }
 
     private static void validateTimeRange(Instant startTime, Instant endTime) {
@@ -280,21 +281,70 @@ public class CloudTrailEventStore {
         return region + ":" + eventId;
     }
 
-    private static String encodeNextToken(int offset) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(Integer.toString(offset).getBytes(StandardCharsets.UTF_8));
+    private static boolean isAfterCursor(CloudTrailEvent event, EventCursor cursor) {
+        if (cursor == null) {
+            return true;
+        }
+        return EVENT_ORDER.compare(event, cursor.toEvent()) > 0;
     }
 
-    private static int decodeNextToken(String nextToken) {
+    private static String encodeNextToken(CloudTrailEvent lastEvent) {
+        if (lastEvent.getEventTime() == null || lastEvent.getEventId() == null) {
+            throw new IllegalStateException("Cannot paginate CloudTrail event without eventTime and eventId");
+        }
+        try {
+            String json = CURSOR_MAPPER.writeValueAsString(new EventCursorToken(
+                    lastEvent.getEventTime().toEpochMilli(),
+                    lastEvent.getSequence(),
+                    lastEvent.getEventId()));
+            return Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to encode LookupEvents next token", e);
+        }
+    }
+
+    private static EventCursor decodeNextToken(String nextToken) {
         if (nextToken == null || nextToken.isBlank()) {
-            return 0;
+            return null;
         }
         try {
             byte[] decoded = Base64.getUrlDecoder().decode(nextToken);
-            return Integer.parseInt(new String(decoded, StandardCharsets.UTF_8));
-        } catch (IllegalArgumentException e) {
-            return -1;
+            JsonNode node = CURSOR_MAPPER.readTree(decoded);
+            if (!node.hasNonNull("t") || !node.hasNonNull("id")) {
+                throw new AwsException("InvalidNextTokenException",
+                        "The token provided is invalid or has expired.", 400);
+            }
+            long sequence = node.hasNonNull("s") ? node.get("s").asLong() : 0L;
+            return EventCursor.fromToken(new EventCursorToken(
+                    node.get("t").asLong(), sequence, node.get("id").asText()));
+        } catch (AwsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AwsException("InvalidNextTokenException",
+                    "The token provided is invalid or has expired.", 400);
         }
+    }
+
+    private record EventCursor(long epochMillis, long sequence, String eventId) {
+        Instant eventTime() {
+            return Instant.ofEpochMilli(epochMillis);
+        }
+
+        CloudTrailEvent toEvent() {
+            CloudTrailEvent event = new CloudTrailEvent();
+            event.setEventTime(eventTime());
+            event.setSequence(sequence);
+            event.setEventId(eventId);
+            return event;
+        }
+
+        static EventCursor fromToken(EventCursorToken token) {
+            return new EventCursor(token.t(), token.s(), token.id());
+        }
+    }
+
+    private record EventCursorToken(long t, long s, String id) {
     }
 
     public record LookupAttribute(String attributeKey, String attributeValue) {

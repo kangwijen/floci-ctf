@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.cloudtrail;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.SigV4HttpTestSupport;
+import io.github.hectorvent.floci.services.cloudtrail.model.CloudTrailEvent;
 import io.github.hectorvent.floci.testsupport.CtfLabIamEnforcementProfile;
 import io.github.hectorvent.floci.testsupport.CtfLabIamTestSupport;
 import io.quarkus.test.common.http.TestHTTPResource;
@@ -17,15 +18,19 @@ import org.junit.jupiter.api.TestInstance;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 @TestProfile(CloudTrailEventInjectionIntegrationTest.Profile.class)
@@ -101,6 +106,39 @@ class CloudTrailEventInjectionIntegrationTest {
         assertEquals("CreateBucket", lookup.events().get(1).getEventName());
         assertEquals(later, CloudTrailEventRecorder.formatEventTime(lookup.events().get(0).getEventTime()));
         assertEquals(earlier, CloudTrailEventRecorder.formatEventTime(lookup.events().get(1).getEventTime()));
+    }
+
+    @Test
+    void injectedEventsPaginateWithoutDuplicateEventIds() throws Exception {
+        String sharedTime = "2026-03-10T08:00:00.000Z";
+        List<Map<String, Object>> events = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            events.add(sampleEvent("InjectedEvent" + i, sharedTime, "198.51.100." + (10 + i)));
+        }
+        String body = objectMapper.writeValueAsString(Map.of(
+                "region", REGION,
+                "preserveEventTime", true,
+                "deliverToTrails", false,
+                "events", events));
+
+        postSigned(BATCH_PATH, body)
+                .statusCode(200)
+                .body("events", hasSize(5));
+
+        Set<String> seen = new HashSet<>();
+        String nextToken = null;
+        for (int page = 0; page < 10; page++) {
+            var lookup = eventStore.lookup(REGION, null, null, null, 2, nextToken);
+            for (CloudTrailEvent event : lookup.events()) {
+                assertTrue(seen.add(event.getEventId()),
+                        () -> "Duplicate EventId during injected-event pagination: " + event.getEventId());
+            }
+            if (lookup.nextToken() == null) {
+                break;
+            }
+            nextToken = lookup.nextToken();
+        }
+        assertEquals(5, seen.size());
     }
 
     @Test

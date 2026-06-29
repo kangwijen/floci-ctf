@@ -102,7 +102,7 @@ Regression: `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailSqsAuditIntegra
 
 `LookupEvents` searches the in-memory or persisted event index populated by the audit filter and test helpers. Supported `LookupAttributes` keys: `EventName`, `Username`, `ResourceName`, `EventSource`, `ReadOnly`. Results sort most recent first (`eventTime` descending). Events sharing the same second keep insertion order (most recently recorded first within that second). Before scanning, `LookupEvents` waits for in-flight HTTP audit recordings to finish so the last event in a concurrent burst is visible on the first poll.
 
-**Pagination:** `MaxResults` defaults to 50 and is capped at 50 (values outside 1-50 return `InvalidMaxResultsException`). When more events match than fit in one page, the response includes `NextToken`; pass it on the next `LookupEvents` call to continue. Invalid or expired tokens return `InvalidNextTokenException`.
+**Pagination:** `MaxResults` defaults to 50 and is capped at 50 (values outside 1-50 return `InvalidMaxResultsException`). When more events match than fit in one page, the response includes an opaque `NextToken` cursor; pass it on the next `LookupEvents` call to continue. Each stored event appears at most once across all pages for a given query. Invalid or expired tokens return `InvalidNextTokenException`.
 
 **`eventTime`:** Indexed and delivered events use UTC with millisecond precision (`YYYY-MM-DDTHH:MM:SS.sssZ`). HTTP audit events stamp `eventTime` at request arrival (not response-filter completion). The index enforces monotonic timestamps so `ListAllMyBuckets` and later bucket-scoped calls preserve caller order in `lookup-events` even when responses complete out of order.
 
