@@ -117,7 +117,7 @@ floci:
     elasticache:
       enabled: true
       proxy-base-port: 16379
-      proxy-max-port: 16399
+      proxy-max-port: 16479
       default-image: "valkey/valkey:8"
       default-memcached-image: "memcached:1.6"
     memorydb:

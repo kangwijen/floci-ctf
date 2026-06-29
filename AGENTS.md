@@ -171,7 +171,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 | Area | Primary files |
 |------|---------------|
-| HTTP IAM + SigV4 | `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths` |
+| HTTP IAM + SigV4 | `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `OperatorCredentialEnv` |
 | Account context | `AccountResolver`, `AccountContextFilter`, `RegionResolver` (presigned `X-Amz-Credential`, 12-digit AKID, STS session keys) |
 | Identity policies | `IamPolicyEvaluator`, `IamActionRegistry`, `IamService`, `ResourceArnBuilder` |
 | Resource policies | `ResourcePolicyResolver`, `PolicyPrincipalMatcher` |
@@ -183,7 +183,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | In-process IAM | `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
 | In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder` (SQS `queueUrl` from Query form and JSON 1.0/1.1 bodies), wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
-| Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner` |
+| Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner`; regressions `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
 | Compose / image | `docker-compose.yml`, `docker/Dockerfile` (no `test`/`test`) |
 | RDS Data API | `RdsDataController`, `RdsDataService`, `RdsDataConnectionFactory`, `RdsDataResourceResolver`, `RdsDataFieldMapper` |
@@ -209,7 +209,21 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Kinesis `POST .*` catch-all mis-routing IAM on unrelated REST paths | Closed | `IamKinesisCatchAllRouteScopeIntegrationTest` |
 | APIGW path-style SQS `invokeQuery` bypassing in-process IAM | Closed | `ApiGatewaySqsQueryIamBypassIntegrationTest` |
 | EC2 Network ACL Query API handlers missing | Closed | `Ec2IntegrationTest` network ACL tests |
-| Presigned POST/GET operator root secret shadowed by stale IAM key | Closed | `S3PresignedPostIntegrationTest`, `PreSignedUrlIntegrationTest` |
+| Presigned POST/GET operator root secret shadowed by stale IAM key | Closed | `S3PresignedPostIntegrationTest`, `PreSignedUrlIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest` |
+| SigV4 validation (wrong secret, tampered auth, ASIA without session token) | Closed | `SigV4ValidationFilterIntegrationTest` |
+| `PreSignedUrlFilter` unknown AKIA and expired presigned GET | Closed | `PreSignedUrlFilterIntegrationTest` |
+| `SecurityBypassPaths` internal, OAuth, and presigned POST classification | Closed | `SecurityBypassPathsTest` |
+| `OperatorCredentialEnv` blank-skip and snapshot helpers | Closed | `OperatorCredentialEnvTest` |
+| `GetCallerIdentity` caller ARN (IAM user, assumed role, operator root) | Closed | `StsGetCallerIdentityIntegrationTest` |
+| Presigned S3 GET identity-policy deny after signature verification | Closed | `IamEnforcementPresignedS3DenyIntegrationTest` |
+| Presigned S3 GET bucket-policy deny after signature verification | Closed | `S3PresignedBucketPolicyDenyIntegrationTest` |
+| SNS no default topic policy when IAM enforcement is on | Closed | `SnsTopicNoDefaultPolicyIntegrationTest` |
+| SNS topic `:root` principal does not authorize arbitrary IAM users | Closed | `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest` |
+| SQS resource-policy-only Allow (no identity policy) | Closed | `SqsResourcePolicyOnlyAllowIntegrationTest` |
+| Secrets Manager rotation must not double-wrap KMS ciphertext | Closed | `SecretsManagerRotationKmsIntegrationTest` |
+| Scoped IAM for `codebuild`, `codedeploy`, `acm`, `backup`, `route53` | Closed | `CodeBuildIamScopedIntegrationTest`, `CodeDeployIamScopedIntegrationTest`, `AcmIamScopedIntegrationTest`, `BackupIamScopedIntegrationTest`, `Route53IamScopedIntegrationTest` |
+| ECS task container credentials IAM-scoped S3 access | Closed | `EcsContainerCredentialsIamIntegrationTest` |
+| CodeBuild container credentials server lifecycle and URIs | Closed | `CodeBuildContainerCredentialsServerTest` |
 | Lambda Runtime API port `9200` bind conflicts in full test suites | Closed | `PortAllocatorTest`, `LambdaReactiveSyncIntegrationTest` |
 | Windows Docker socket / TLS cert paths / ZIP backslash extraction | Closed | `DockerClientProducerTest`, `TlsIntegrationTest`, `ZipExtractorTest` |
 
@@ -270,15 +284,18 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `lookup-events` tail visibility under concurrent audit | Closed | `LookupEvents` awaits in-flight HTTP audit recordings; `CloudTrailAuditCoordinator` |
 | `ListAllMyBuckets` vs bucket-scoped audit ordering | Closed | Request-arrival `eventTime` plus monotonic index timestamps; `CloudTrailFieldFidelityIntegrationTest` |
 | `lookup-events` pagination, `eventTime` precision, same-second order | Closed | Millisecond `eventTime`; insertion order within same second; `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`; [LookupEvents](./docs/services/cloudtrail.md#lookupevents) |
-| Presigned GET (SigV4 query URLs) | Closed | `PreSignedUrlCtfIntegrationTest`, `SigV4RequestValidatorTest`; header fallback for signed `x-amz-*` |
+| Presigned GET (SigV4 query URLs) | Closed | `PreSignedUrlCtfIntegrationTest`, `SigV4RequestValidatorTest`, `PreSignedUrlFilterIntegrationTest`; header fallback for signed `x-amz-*` |
+| Presigned GET IAM identity deny and bucket-policy deny after sig verify | Closed | `IamEnforcementPresignedS3DenyIntegrationTest`, `S3PresignedBucketPolicyDenyIntegrationTest` |
 | Presigned POST under strict IAM | Closed | `S3PresignedPostCtfIntegrationTest`; policy expiration; no unauthenticated multipart bypass |
 | `GetSessionToken` session-policy intersection | Closed | Pure `(identity OR resource) AND session` in `IamPolicyEvaluator`; `StsGetSessionTokenIntersectionIntegrationTest`, `IamEnforcementIntegrationTest` |
 | `additionalEventData` / `tlsDetails` on HTTP audit | Closed | SigV4 auth metadata; TLS when `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` + `X-Forwarded-Proto: https`; `CloudTrailEventRecorderTest` |
 | Per-instance event index isolation | Documented | `CloudTrailEventStore` teardown in [Live audit authoring](./docs/services/cloudtrail.md#cloudtraileventstore-lifecycle-and-teardown) |
 | Operator event injection API | Closed | `CloudTrailEventInjectionIntegrationTest`; [cloudtrail.md](./docs/services/cloudtrail.md#operator-event-injection-api) |
 | SNS fan-out E2E | Closed | `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`; [sns.md](./docs/services/sns.md#ctf-fork-sns-to-sqs-fan-out-closed) |
+| SNS no default topic policy under IAM enforcement | Closed | `SnsTopicNoDefaultPolicyIntegrationTest`; `:root` principal does not authorize IAM users: `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest` |
+| SQS resource-policy-only Allow (identity policy absent) | Closed | `SqsResourcePolicyOnlyAllowIntegrationTest` |
 | `iam:CreatePolicyVersion` timing | Closed | `CreatePolicyVersionGrantsSecretReadIntegrationTest`; [iam.md](./docs/services/iam.md#managed-policy-version-timing) |
-| KMS single-layer `SecretBinary` envelope | Closed (AWS-aligned) | No double-wrap; one `kms:Decrypt` yields plaintext; pre-wrapped and accidental double-base64 normalized; `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
+| KMS single-layer `SecretBinary` envelope | Closed (AWS-aligned) | No double-wrap; one `kms:Decrypt` yields plaintext; pre-wrapped and accidental double-base64 normalized; rotation `PutSecretValue` does not re-wrap KMS ciphertext; `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest`, `SecretsManagerRotationKmsIntegrationTest`; [secrets-manager.md](./docs/services/secrets-manager.md#kms-wrapped-secretbinary) |
 | SQS JSON 1.0 `ReceiveMessage` scoped IAM | Closed (AWS-aligned) | `ResourceArnBuilder.buildSqsArn` reads JSON `QueueUrl`/`QueueName`; `SqsReceiveMessageScopedQueueIntegrationTest` |
 | Secrets Manager path-prefix IAM wildcards | Closed (AWS-aligned) | Use `secret:path/*` not `secret:path-*`; stored ARN suffix; `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `ResourceArnBuilderTest` |
 | API Gateway VTL ProcessBuilder RCE | Closed | `CtfVelocityEngineFactory` + `SecureUberspector`; `VtlProcessBuilderSandboxTest` |
@@ -310,7 +327,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | ELB / API Gateway / Cognito / CodeDeploy Lambda invoke | Yes (`elasticloadbalancing.amazonaws.com`, `apigateway.amazonaws.com`, `cognito-idp.amazonaws.com`, `codedeploy.amazonaws.com` on function resource policy) |
 | CloudTrail / Config / Firehose / VPC flow logs S3 delivery | Yes (`authorizeServiceS3Put` for CloudTrail and Config (`s3:ListBucket` for Config); Firehose stream `RoleARN` identity policy on `s3:PutObject`; VPC flow logs use `delivery.logs.amazonaws.com`) |
 | Inter-service delivery audit | CloudTrail audit when audit enabled (`invokedBy` AWSService events on Firehose, Config, flow logs, and other in-process delivery) |
-| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`) |
+| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
 
@@ -372,13 +389,13 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest,SecurityBypassPathsTest,OperatorCredentialEnvTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsGetCallerIdentityIntegrationTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**
 
 ```bash
-./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,CloudTrailSqsAuditIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,ApiGatewaySqsIntegrationTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,VtlProcessBuilderSandboxTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamEnforcementIntegrationTest,ResourceArnBuilderTest,IamActionRegistryTest,PolicyPrincipalMatcherTest,ResourcePolicyResolverTest,StsAssumeRoleTrustIntegrationTest,StsWebIdentityTrustIntegrationTest,StsWebIdentityTrustHmacValidationIntegrationTest,StsGetSessionTokenIntersectionIntegrationTest,StsGetFederationTokenIntersectionIntegrationTest,StsGetCallerIdentityIntegrationTest,CtfComposeParityIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbExecuteStatementScopedIntegrationTest,DynamoDbBatchExecuteStatementScopedIntegrationTest,S3ObjectVersioningIamIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,PreSignedUrlFilterIntegrationTest,S3PresignedPostIntegrationTest,S3PresignedBucketPolicyDenyIntegrationTest,IamEnforcementPresignedS3DenyIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,SecretsManagerRotationKmsIntegrationTest,CloudTrailSqsAuditIntegrationTest,StepFunctionsScopedSdkIamIntegrationTest,ApiGatewaySqsIntegrationTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,VtlProcessBuilderSandboxTest,CognitoOAuthIamEnforcementIntegrationTest,InProcessIamAuthorizerTest,InProcessTargetAuthorizerTest,InProcessTargetIamIntegrationTest,InProcessIamEnforcementIntegrationTest,LambdaContainerCredentialsServerTest,LambdaContainerCredentialsIamIntegrationTest,EcsContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,CodeBuildIamScopedIntegrationTest,CodeDeployIamScopedIntegrationTest,AcmIamScopedIntegrationTest,BackupIamScopedIntegrationTest,Route53IamScopedIntegrationTest,SigV4ValidationFilterIntegrationTest,SecurityBypassPathsTest,OperatorCredentialEnvTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **E2E against running instance:**

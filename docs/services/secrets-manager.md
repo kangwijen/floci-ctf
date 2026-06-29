@@ -44,14 +44,14 @@ When IAM enforcement is enabled:
 
 Secrets Manager appends six random characters to every secret name in its ARN (`secret:name-AbCdEf`). See [AWS identity-based policy examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html).
 
-| Lab policy pattern | Matches secret `app/live/deadbeef` | AWS guidance |
+| Example policy pattern | Matches secret `env/prod/service-a` | AWS guidance |
 |---|---|---|
-| `arn:...:secret:app/live/*` | Yes | Use for path-style prefixes (`TestEnv/*` in AWS docs) |
-| `arn:...:secret:app/live/deadbeef-*` | Yes | Suffix wildcard after full secret name |
-| `arn:...:secret:app/live/deadbeef-??????` | Yes | Recommended for one specific secret name |
-| `arn:...:secret:app/live-*` | **No** | Hyphen suffix matches `app/live-foo`, not `app/live/foo` |
+| `arn:...:secret:env/prod/*` | Yes | Use for path-style prefixes (`TestEnv/*` in AWS docs) |
+| `arn:...:secret:env/prod/service-a-*` | Yes | Suffix wildcard after full secret name |
+| `arn:...:secret:env/prod/service-a-??????` | Yes | Recommended for one specific secret name |
+| `arn:...:secret:env/prod-*` | **No** | Hyphen suffix matches `env/prod-foo`, not `env/prod/foo` |
 
-Regression: `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest`, `ResourceArnBuilderTest`.
+Regression: `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest`, `SecretsManagerRotationKmsIntegrationTest`, `ResourceArnBuilderTest`.
 
 ### KMS-wrapped `SecretBinary`
 
@@ -64,6 +64,12 @@ Regression: `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsMana
 - Pass **raw bytes** to SDK `SecretBinary` parameters; do not pre-base64-encode before boto3 (AWS encodes once on the wire). Floci normalizes accidental double-base64 provisioning input to a single layer on store.
 
 Players need `secretsmanager:GetSecretValue` on the secret ARN, then `kms:Decrypt` on the CMK (from `--key-id` or the key id embedded in the blob). `kms:Decrypt` IAM enforcement scopes to `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` from `KeyId` or from the `kms:v2:` blob. Regression: `SecretsManagerKmsEnvelopeIntegrationTest`.
+
+### Rotation and pre-wrapped KMS envelopes
+
+Lambda rotation hooks often call `PutSecretValue` with a value that is already a KMS `CiphertextBlob` (from `kms:Encrypt`). Floci stores that blob without re-wrapping it in a second envelope. `GetSecretValue` returns the same base64 `SecretBinary`; one `kms:Decrypt` yields the application plaintext (not nested `kms:v2:` bytes). Applies to `SecretBinary` on `PutSecretValue` and to pre-wrapped `SecretString` promoted to `AWSCURRENT` via `UpdateSecretVersionStage`.
+
+Regression: `SecretsManagerRotationKmsIntegrationTest` (`putSecretValueWithPreWrappedEnvelopeDuringRotationDoesNotDoubleWrap`, `putSecretValueWithPreWrappedSecretStringPromotesToCurrentWithoutDoubleWrap`).
 
 ```bash
 export AWS_ENDPOINT_URL=http://localhost:4566

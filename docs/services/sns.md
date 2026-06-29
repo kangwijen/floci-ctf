@@ -43,15 +43,31 @@
 | `FLOCI_STORAGE_SERVICES_SNS_MODE` | *(global default)* | Storage mode override for SNS (`memory`, `persistent`, `hybrid`, `wal`) |
 | `FLOCI_STORAGE_SERVICES_SNS_FLUSH_INTERVAL_MS` | `5000` | Flush interval for `hybrid`/`wal` storage modes (milliseconds) |
 
-## CTF fork: SNS to SQS fan-out (closed)
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is on:
+
+### No default open topic policy
+
+Upstream Floci attaches a permissive default topic policy when none is set. The CTF fork **omits** that policy when `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`. `GetTopicAttributes` returns no `Policy` attribute until the operator sets one. `sns:Publish` (and other data-plane actions) require an explicit identity policy **or** topic resource policy Allow.
+
+Regression: `SnsTopicNoDefaultPolicyIntegrationTest` (`getTopicAttributesOmitsDefaultPolicy`, `publishDeniedWithoutIdentityOrResourcePolicy`).
+
+### Account `:root` in topic resource policies
+
+A topic policy principal `arn:aws:iam::ACCOUNT:root` does **not** authorize every IAM user in the account. Participants still need an identity policy Allow on `sns:Publish` (or another principal explicitly named in the topic policy). This matches AWS: `:root` in a resource policy is not a wildcard for all IAM users.
+
+Regression: `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`.
+
+### SNS to SQS fan-out (closed)
 
 **Status:** Closed on current `floci:local`. End-to-end subscribe, operator publish with explicit resource policies, and SQS delivery under IAM enforcement is covered by `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`.
 
-When IAM enforcement is on, Floci does **not** attach an open default topic policy. Operator provisioning must set explicit resource policies:
+Operator provisioning must set explicit resource policies:
 
-1. **Topic policy** allowing operator `sns:Publish` (for example account root or a provision role).
+1. **Topic policy** allowing operator `sns:Publish` (name the operator role or user ARN; do not rely on `:root` to grant participants publish).
 2. **Queue policy** allowing `sns.amazonaws.com` to `sqs:SendMessage` with `aws:SourceArn` matching the topic ARN.
-3. Player identity policy with `sns:Subscribe` on the topic ARN and `sqs:ReceiveMessage` on the queue ARN (not `sns:Publish`).
+3. Participant identity policy with `sns:Subscribe` on the topic ARN and `sqs:ReceiveMessage` on the queue ARN (not `sns:Publish`).
 
 ```bash
 export AWS_ENDPOINT_URL=http://localhost:4566
@@ -66,11 +82,11 @@ aws sqs set-queue-attributes --queue-url "$QUEUE_URL" --attributes Policy="{\"Ve
 aws sns set-topic-attributes --topic-arn "$TOPIC_ARN" --attribute-name Policy --attribute-value \
   '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"sns:Publish","Resource":"'"$TOPIC_ARN"'"}]}'
 
-# Player: subscribe SQS endpoint, then operator publishes; player receives without sns:Publish
+# Participant: subscribe SQS endpoint, then operator publishes; participant receives without sns:Publish
 aws sns subscribe --topic-arn "$TOPIC_ARN" --protocol sqs --notification-endpoint "$QUEUE_URL"
 ```
 
-Regression: `SnsSubscribeReceiveIamIntegrationTest` (including `fanOutWithExplicitTopicAndQueueResourcePolicies` for operator topic + queue policies, player `sns:Subscribe`, publish, and queue receive).
+**Regression tests:** `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SnsSubscribeReceiveIamIntegrationTest` (including `fanOutWithExplicitTopicAndQueueResourcePolicies` for operator topic + queue policies, participant `sns:Subscribe`, publish, and queue receive).
 
 ## Examples
 

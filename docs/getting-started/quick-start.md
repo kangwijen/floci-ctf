@@ -5,7 +5,7 @@ This guide gets Floci running and verifies that AWS CLI commands work against it
 !!! warning "CTF fork (this repository)"
     **floci-ctf** is not stock [floci/floci:latest](https://hub.docker.com/r/floci/floci). There are no baked-in `test`/`test` credentials. Compose enables IAM enforcement, strict mode, and SigV4 validation. Export operator `FLOCI_AUTH_ROOT_*` on the host before `docker compose up`, then provision participant IAM access keys.
 
-    Fork docs: [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md) and [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md). IAM detail: [CTF hardening](../services/iam.md#ctf-hardening). For permissive upstream behavior, use [floci-io/floci](https://github.com/floci-io/floci).
+    Fork docs: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md). IAM detail: [CTF hardening](../services/iam.md#ctf-hardening). For permissive upstream behavior, use [floci-io/floci](https://github.com/floci-io/floci).
 
 ## Step 1 — Start Floci
 
@@ -62,7 +62,7 @@ This guide gets Floci running and verifies that AWS CLI commands work against it
 === "CTF fork (this repo)"
 
     ```bash
-    git clone https://github.com/kangwijen/floci-ctf.git
+    git clone https://github.com/YOUR_ORG/floci-ctf.git
     cd floci-ctf
     export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
     export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."
@@ -239,7 +239,7 @@ sudo ufw allow in on docker0 to any port 5000:5099 proto tcp comment 'floci ecr 
 
 ## Next Steps
 
-- [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md) and [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md) (operator workflow and CTF defaults)
+- [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md) (operator workflow and CTF defaults)
 - [Configure Docker Compose with ElastiCache and RDS ports](../configuration/docker-compose.md)
 - [Environment variables reference](../configuration/environment-variables.md)
 - [application.yml reference (source builds)](../configuration/advanced/application-yml.md)

@@ -5,7 +5,7 @@ Floci can be run three ways: as a Docker image, as a pre-built native binary, or
 !!! warning "CTF fork (this repository)"
     **floci-ctf** builds `floci:local` with no baked-in `test`/`test` credentials. Root `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation. Export operator `FLOCI_AUTH_ROOT_*` on the host before `docker compose up`.
 
-    Fork docs: [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md) and [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md).
+    Fork docs: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
 
 ## Docker (Recommended)
 
@@ -67,7 +67,7 @@ Both variants have identical startup time (~24 ms) and memory footprint (~13 MiB
 === "CTF fork (this repo)"
 
     ```bash
-    git clone https://github.com/kangwijen/floci-ctf.git
+    git clone https://github.com/YOUR_ORG/floci-ctf.git
     cd floci-ctf
     export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
     export FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="..."

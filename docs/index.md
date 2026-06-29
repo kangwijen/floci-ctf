@@ -11,7 +11,7 @@
 !!! warning "CTF fork (this repository)"
     This tree is **floci-ctf**, a security-hardened fork for CTF and security exercises. Compose enables IAM enforcement, strict mode, and SigV4 validation by default. Operator credentials use `FLOCI_AUTH_ROOT_*`; participants need IAM access keys and SigV4 on every call. `test`/`test` and legacy HMAC presign are not supported.
 
-    Repository: [github.com/kangwijen/floci-ctf](https://github.com/kangwijen/floci-ctf). Fork operator and agent docs: [README.md](https://github.com/kangwijen/floci-ctf/blob/main/README.md) and [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md). IAM detail: [CTF hardening](services/iam.md#ctf-hardening).
+    Fork operator and agent docs: [README.md](../README.md) and [AGENTS.md](../AGENTS.md). IAM detail: [CTF hardening](services/iam.md#ctf-hardening).
 
 Floci is a fast, free, and open-source local AWS service emulator built for developers who need reliable AWS services in development and CI without cost, complexity, or vendor lock-in.
 

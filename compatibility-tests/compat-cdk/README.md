@@ -1,6 +1,6 @@
 # compat-cdk
 
-AWS CDK v2 compatibility tests for [floci-ctf](https://github.com/kangwijen/floci-ctf). Deploys a small stack against the emulator and asserts resources via the AWS CLI.
+AWS CDK v2 compatibility tests for **floci-ctf** (this repository). Deploys a small stack against the emulator and asserts resources via the AWS CLI.
 
 ## Running
 

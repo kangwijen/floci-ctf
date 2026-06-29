@@ -1,6 +1,6 @@
 # compat-opentofu
 
-OpenTofu compatibility tests for [floci-ctf](https://github.com/kangwijen/floci-ctf). Same coverage as `compat-terraform`, using the OpenTofu CLI.
+OpenTofu compatibility tests for **floci-ctf** (this repository). Same coverage as `compat-terraform`, using the OpenTofu CLI.
 
 ## Running
 

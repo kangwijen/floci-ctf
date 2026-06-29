@@ -32,7 +32,7 @@ See [Docker Compose — Multi-container networking](../docker-compose.md#multi-c
 
 ## CTF fork settings
 
-**floci-ctf** ships IAM enforcement, strict mode, and SigV4 off in `application.yml` for local dev; [docker-compose.yml](https://github.com/kangwijen/floci-ctf/blob/main/docker-compose.yml) turns them on. See [README.md](../../../README.md) and [AGENTS.md](../../../AGENTS.md).
+**floci-ctf** ships IAM enforcement, strict mode, and SigV4 off in `application.yml` for local dev; [docker-compose.yml](../../../docker-compose.yml) turns them on. See [README.md](../../../README.md) and [AGENTS.md](../../../AGENTS.md).
 
 ### `floci.ctf`
 

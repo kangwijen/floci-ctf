@@ -118,7 +118,7 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 
 **REST route scope:** Catch-all rules that mis-route unrelated paths (historically Kinesis `POST .*`) are removed in favor of explicit service rules (for example `apigatewayv2` `/v2/apis`). Regression: `IamKinesisCatchAllRouteScopeIntegrationTest`.
 
-**GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`.
+**GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`. Regression: `StsGetCallerIdentityIntegrationTest`.
 
 **AssumeRole trust policies:** `AssumeRoleTrustPolicyEvaluator` checks role trust documents before credentials are issued, including `sts:ExternalId` conditions and `Principal.AWS` matching.
 
@@ -184,15 +184,24 @@ When authoring policies or lab verifiers against `floci:local` with IAM enforcem
 | Check | Why |
 |---|---|
 | `test`/`test` denied on `sts:GetCallerIdentity` | CTF hardening default |
-| Each hop: `GetCallerIdentity` account + role ARN | Assumed-role routing |
+| Invalid or missing SigV4 on HTTP API paths returns 403 | `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
+| S3 presigned GET/PUT query URLs reject bad or expired SigV4 | `PreSignedUrlFilter` under strict IAM |
+| Operator root secret wins when `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_*` | Stale IAM registration with same AKID must not shadow operator secret |
+| Each hop: `GetCallerIdentity` account + principal ARN (not `:root` for IAM users) | CTF identity fidelity |
 | Wrong `sts:ExternalId` denied on every trust hop | Trust policy fidelity |
 | SQS scoped policies use queue **ARN**; boto3 sends **QueueUrl** (Query or JSON 1.0) | [SQS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html) |
-| Secrets path prefixes: `arn:...:secret:app/live/*` | Not `secret:app/live-*` ([AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html)) |
+| SQS queue **resource policy** Allow alone can grant access (identity policy not required) | AWS `(identity OR resource) AND NOT deny` model |
+| SNS topics get **no** open default policy when IAM enforcement is on | Operators must attach explicit topic policies |
+| SNS account `:root` in topic policy does **not** authorize every IAM user | Identity Allow still required |
+| Secrets path prefixes: `arn:...:secret:env/prod/*` | Not `secret:env/prod-*` ([AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html)) |
 | Single secret: `secret:name-*` or `secret:name-??????` | Matches AWS six-character ARN suffix |
 | `GetSecretValue` + CMK: pass raw bytes to `SecretBinary`; one base64 layer on wire | See [secrets-manager.md](./secrets-manager.md#kms-wrapped-secretbinary) |
-| Operator root never given to players | Compose CTF profile |
+| Secret rotation with CMK does not re-wrap existing KMS ciphertext | `AWSPENDING` / rotation Lambda path |
+| Scoped IAM on `codebuild`, `backup`, `route53`, `codedeploy`, `acm` | Per-resource ARNs from request body or path |
+| ECS task and CodeBuild build env use container credentials URI + task/build role SigV4 | `ContainerEnvHardening` strips participant `AWS_*` |
+| Operator root never given to participants | Compose CTF profile |
 
-Regression: `SqsReceiveMessageScopedQueueIntegrationTest`, `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`.
+Regression: `SigV4ValidationFilterIntegrationTest`, `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`, `StsGetCallerIdentityIntegrationTest`, `SqsReceiveMessageScopedQueueIntegrationTest`, `SqsResourcePolicyOnlyAllowIntegrationTest`, `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `CodeBuildIamScopedIntegrationTest`, `BackupIamScopedIntegrationTest`, `Route53IamScopedIntegrationTest`, `CodeDeployIamScopedIntegrationTest`, `AcmIamScopedIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`, `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerRotationKmsIntegrationTest`.
 
 **EMR multi-cluster:** requests with more than one `JobFlowIds[]` entry (for example `TerminateJobFlows`) call `ResourceArnBuilder.buildAllEmrClusterResources`; `IamEnforcementFilter` runs policy evaluation against each cluster ARN and denies the request if any cluster hits an explicit Deny.
 
@@ -230,11 +239,11 @@ Some AWS integrations call emulated services inside the JVM without hitting `Iam
 | Firehose S3 destination flush | Delivery stream `RoleARN` identity policy | `s3:PutObject` on destination prefix | [Firehose access control](https://docs.aws.amazon.com/firehose/latest/dev/controlling-access.html) |
 | CUR / BCM Data Exports (Parquet emit) | `bcm-data-exports.amazonaws.com` or `billingreports.amazonaws.com` on destination | BCM: `s3:PutObject` only; legacy CUR: `s3:PutObject` + `s3:GetBucketPolicy` | [BCM Data Exports](https://docs.aws.amazon.com/cur/latest/userguide/dataexports-s3-bucket.html) |
 
-Unmapped pipe sources (for example Amazon MQ) and unknown target ARNs are denied when enforcement is on. Container runtime credentials (Lambda/CodeBuild/ECS on ports 9170-9172) still call `:4566` over HTTP with SigV4 and pass through `IamEnforcementFilter`.
+Unmapped pipe sources (for example Amazon MQ) and unknown target ARNs are denied when enforcement is on. Container runtime credentials (Lambda/CodeBuild/ECS on ports 9170-9172) still call `:4566` over HTTP with SigV4 and pass through `IamEnforcementFilter`. Regression: `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`.
 
-**Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
+**Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy; no open default when IAM enforcement is on), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Account `:root` in a resource policy does not authorize every IAM user without a matching identity Allow. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`. Regression: `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SqsResourcePolicyOnlyAllowIntegrationTest`.
 
-**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth, `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential. When `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the operator root secret from config (not a stale IAM registration with the same access key id) is used for signature verification.
+**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth, `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential. When `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the operator root secret from config (not a stale IAM registration with the same access key id) is used for signature verification. Regression: `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`.
 
 **API Gateway in-process IAM:** JSON-body AWS integrations and path-style integrations (`arn:...:sqs:path/...`, `arn:...:lambda:path/...`) evaluate the integration execution role via `InProcessIamAuthorizer` when enforcement is on. Path-style SQS calls use `AwsServiceRouter.invokeQuery` with `integration.credentials`. Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`.
 
@@ -272,7 +281,7 @@ Under strict enforcement:
 
 The configured root credential pair (`FLOCI_AUTH_ROOT_ACCESS_KEY_ID` and `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY`) still bypasses all enforcement checks when both match the request, including strict mode.
 
-Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound API requests must carry a valid SigV4 signature. See [CTF hardening](#ctf-hardening) for the full operator workflow.
+Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound API requests must carry a valid SigV4 signature. Regression: `SigV4ValidationFilterIntegrationTest`. See [CTF hardening](#ctf-hardening) for the full operator workflow.
 
 ### Supported policy features
 
@@ -296,7 +305,7 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 
 **Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. SigV4a presign is rejected.
 
-**Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). When the access key id matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the configured operator root secret wins over IAM lookups. Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`, `S3PresignedPostIntegrationTest`.
+**Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). When the access key id matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the configured operator root secret wins over IAM lookups. Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`, `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`, `S3PresignedPostIntegrationTest`.
 
 ### Assumed roles
 

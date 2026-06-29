@@ -20,7 +20,7 @@ Floci is configured exclusively through environment variables. Every option belo
 
 ## CTF hardening
 
-**floci-ctf** enables these in [docker-compose.yml](https://github.com/kangwijen/floci-ctf/blob/main/docker-compose.yml). Operator workflow: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
+**floci-ctf** enables these in [docker-compose.yml](../../docker-compose.yml). Operator workflow: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
 
 | Variable | Default | Description |
 |---|---|---|

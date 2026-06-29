@@ -139,7 +139,21 @@ When IAM enforcement is enabled:
 - API calls use **QueueUrl**; IAM policies use **queue ARN** (`arn:aws:sqs:REGION:ACCOUNT:queue-name`). See [Amazon SQS actions and resources](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html).
 - `ResourceArnBuilder` resolves the queue ARN from **Query** form `QueueUrl` and from **JSON 1.0** body `QueueUrl` (boto3 default). Account id is taken from the queue URL path when present (`http://host:4566/ACCOUNT/queue`).
 
-Regression: `SqsReceiveMessageScopedQueueIntegrationTest` (Query, JSON 1.0, assumed-role session).
+### Scoped `ReceiveMessage`
+
+Identity policies must scope `sqs:ReceiveMessage` to the queue ARN derived from `QueueUrl`. Regression: `SqsReceiveMessageScopedQueueIntegrationTest` (Query, JSON 1.0, assumed-role session).
+
+### Resource policy only Allow
+
+`sqs:ReceiveMessage` succeeds when the queue resource policy alone Allow the caller principal, even if the IAM user has no identity policy on that queue. Identity OR resource Allow applies (explicit Deny on either side still wins).
+
+Regression: `SqsResourcePolicyOnlyAllowIntegrationTest`.
+
+### `ListQueues` IAM
+
+`sqs:ListQueues` is a list API: identity policies use `Resource` `arn:aws:sqs:REGION:ACCOUNT:*` (service wildcard per AWS). IAM runs before the service-disabled short-circuit, so a deny or missing Allow returns Query `AccessDenied` (HTTP 403), not `ServiceNotAvailableException`. Same shape for JSON 1.0 `AmazonSQS.ListQueues`.
+
+Regression: `SqsListQueuesIamIntegrationTest` (Query and JSON 1.0 allow/deny paths, implicit deny).
 
 ## Queue URL Format
 

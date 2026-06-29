@@ -70,6 +70,8 @@ When `audit-enabled` is `true` and at least one trail is logging, `InProcessClou
 
 These events are indexed for `LookupEvents` and delivered to active trails like HTTP audit records. Firehose destination `PutObject` events are recorded as data events (`eventCategory=Data`). For AWSService identities, `sourceIPAddress` and `userAgent` echo the `invokedBy` service endpoint.
 
+In-process SQS targets (EventBridge `SendMessage`, API Gateway integrations, Step Functions aws-sdk tasks) record `requestParameters.queueUrl` even when callers pass PascalCase `QueueUrl` in JSON bodies; `CloudTrailEventRecorder.normalizeSqsAuditParameters` maps to the same lowercase keys as HTTP audit. Regression: `InProcessCloudTrailIntegrationTest` (`apigwRouterRecordsSqsSendMessageQueueUrl`, `eventBridgeInvokerRecordsSqsSendMessageQueueUrl`, `sfnStyleRecorderRecordsSqsSendMessageQueueUrl`).
+
 ## Event delivery and S3 layout
 
 Delivered log objects use the AWS key layout:
@@ -86,7 +88,7 @@ HTTP audit events follow AWS CloudTrail record semantics where practical:
 |---|---|
 | Data vs management | S3 object APIs (`PutObject`, `GetObject`, `DeleteObject`, ...) and SQS data plane (`SendMessage`, `ReceiveMessage`, ...) set `eventCategory: Data` and `managementEvent: false`. `PurgeQueue` and control-plane APIs stay `Management`. |
 | `resources` | Populated from `ResourceArnBuilder` with CloudFormation-style `type` (`AWS::S3::Object`, `AWS::SQS::Queue`, `AWS::IAM::Role`, `AWS::SecretsManager::Secret`, `AWS::CloudTrail::Trail`, ...). S3 object events also include the parent bucket ARN. |
-| `requestParameters` | SQS data-plane calls (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) include `queueUrl` on Query (`application/x-www-form-urlencoded`) and JSON 1.0 (`application/x-amz-json-1.0`) wire protocols. `SendMessage` also records `messageBody` with the submitted payload. S3 `ListObjectsV2` (`?list-type=2`) records `eventName: ListObjectsV2` (v1 list APIs remain `ListBucket`). |
+| `requestParameters` | SQS data-plane calls (`ReceiveMessage`, `SendMessage`, `PurgeQueue`) include `queueUrl` on Query (`application/x-www-form-urlencoded`) and JSON 1.0 (`application/x-amz-json-1.0`) wire protocols. JSON 1.0 `PurgeQueue` (`X-Amz-Target: AmazonSQS.PurgeQueue`, body `QueueUrl`) records `requestParameters.queueUrl` and stays `eventCategory: Management`. `SendMessage` also records `messageBody` with the submitted payload. In-process SQS audit (`InProcessCloudTrailRecorder`) normalizes PascalCase `QueueUrl` / `MessageBody` to lowercase `queueUrl` / `messageBody` for HTTP parity. S3 `ListObjectsV2` (`?list-type=2`) records `eventName: ListObjectsV2` (v1 list APIs remain `ListBucket`). |
 | `responseElements` | S3 versioned writes/deletes expose `x-amz-version-id` / `x-amz-delete-marker` from response headers. STS `AssumeRole` includes `credentials.accessKeyId` and `assumedRoleUser` (no secret key). IAM `CreateAccessKey` includes `accessKey` metadata. SQS `SendMessage` includes `messageId`. |
 | `userIdentity` | IAM users include `sessionContext.attributes` (`mfaAuthenticated`, `creationDate`). Assumed-role sessions include `sessionContext.sessionIssuer`. |
 | `additionalEventData` | SigV4 HTTP calls include `SignatureVersion` (`AWS4-HMAC-SHA256`) and `AuthenticationMethod` (`AuthHeader` or `QueryString`) when applicable. |
@@ -201,7 +203,7 @@ Request body (single):
     "eventSource": "signin.amazonaws.com",
     "eventTime": "2026-03-15T14:30:00.000Z",
     "sourceIPAddress": "203.0.113.50",
-    "userIdentity": { "type": "IAMUser", "userName": "suspicious-user" }
+    "userIdentity": { "type": "IAMUser", "userName": "example-user" }
   }
 }
 ```
@@ -224,7 +226,7 @@ Grant `cloudtrail:LookupEvents` on `arn:aws:cloudtrail:REGION:ACCOUNT:trail/*` u
 - Investigator policies should allow `cloudtrail:LookupEvents` on `arn:aws:cloudtrail:REGION:ACCOUNT:trail/*` unless an exercise policy narrows access to one trail.
 - `StopLogging` is always audited (mutating CloudTrail API bypasses the active-trail gate). Prior events remain in the index after logging stops; `StartLogging` does not wipe history.
 - See [Live audit authoring](#live-audit-authoring) for `sourceIPAddress`, `answers.json` grading, event-store teardown, injection API, and pagination detail.
-- SQS audit events include `requestParameters.queueUrl` for `ReceiveMessage`, `SendMessage`, and `PurgeQueue` on Query and JSON 1.0 wire protocols. `SendMessage` records `requestParameters.messageBody` with the actual payload. HTTP `AssumedRole` callers include `userIdentity.sessionContext.sessionIssuer`.
+- SQS audit events include `requestParameters.queueUrl` for `ReceiveMessage`, `SendMessage`, and `PurgeQueue` on Query and JSON 1.0 wire protocols (`AmazonSQS.PurgeQueue` with JSON `QueueUrl` is Management, not Data). `SendMessage` records `requestParameters.messageBody` with the actual payload. In-process SQS delivery normalizes `QueueUrl` / `MessageBody` to `queueUrl` / `messageBody`. HTTP `AssumedRole` callers include `userIdentity.sessionContext.sessionIssuer`. Regression: `CloudTrailSqsAuditIntegrationTest` (including `sqsJson10PurgeQueueRecordsQueueUrl`), `InProcessCloudTrailIntegrationTest`.
 - Trail S3 delivery honors bucket policy `aws:SourceArn` and `s3:x-amz-acl` conditions for the `cloudtrail.amazonaws.com` service principal. Delivery sets `bucket-owner-full-control` on log objects.
 - `GetEventSelectors` is supported; trails without explicit selectors return sensible defaults.
 - Audit Compose sets `FLOCI_STORAGE_MODE=hybrid` and `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true`. See [README audit profile](../../README.md#audit-and-forensics-profile) and [AGENTS.md](../../AGENTS.md#audit-services-map).

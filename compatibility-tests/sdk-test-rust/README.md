@@ -51,7 +51,7 @@ just test-rust
 | `AWS_SECRET_ACCESS_KEY` | `test`                  | Matching secret         |
 | `AWS_DEFAULT_REGION`    | `us-east-1`             | Region                  |
 
-### CTF fork ([floci-ctf](https://github.com/kangwijen/floci-ctf))
+### CTF fork (floci-ctf, this repository)
 
 Most tests default to permissive `test`/`test` credentials. Against the hardened CTF image, export operator `FLOCI_AUTH_ROOT_*` or participant IAM keys as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Cloud Map tests skip when `servicediscovery` is disabled in the emulator.
 

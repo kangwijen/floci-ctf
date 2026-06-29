@@ -45,7 +45,7 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Docker `HEALTHCHECK` | `/_floci/health` | `GET /health` (works when internal routes are hidden) |
 | Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires plausible presigned STS `GetCallerIdentity` URL (`EksTokenAuthenticator`) |
-| Secrets Manager + KMS | Returns nested/double-wrapped `SecretBinary`; hierarchical `app/live-*` IAM | Single-layer `SecretBinary`; stored secret ARN with six-char suffix for IAM; path prefixes use `secret:path/*` per [AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html); pass raw bytes to SDK `SecretBinary` |
+| Secrets Manager + KMS | Returns nested/double-wrapped `SecretBinary`; hierarchical `path-*` IAM wildcards | Single-layer `SecretBinary`; stored secret ARN with six-char suffix for IAM; path prefixes use `secret:path/*` per [AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html); pass raw bytes to SDK `SecretBinary` |
 | SQS scoped `ReceiveMessage` | JSON 1.0 `QueueUrl` ignored for IAM (scoped policies fail) | Queue ARN from Query form **and** JSON 1.0 body `QueueUrl`; account from URL path |
 | CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` and `messageBody` on Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
 | SQS `ListQueues` IAM deny | May surface as `ServiceNotAvailableException` | HTTP 403 `AccessDenied` (Query XML or JSON `AccessDeniedException`) when identity policy denies `sqs:ListQueues` |
@@ -421,7 +421,7 @@ Enable S3 access logging for data-plane evidence ([S3 access logging](./docs/ser
 Forensic regression (with CTF core tests):
 
 ```bash
-./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
+./mvnw test -Dtest=CloudForensicsIntegrationTest,CloudTrailIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailTamperingAuditIntegrationTest,CloudTrailIamScopedIntegrationTest,CloudTrailLookupEventsScopedIamIntegrationTest,CloudTrailSqsAuditIntegrationTest,InProcessCloudTrailIntegrationTest,InternalServiceCloudTrailIntegrationTest,CloudTrailLookupEventsIntegrationTest,ConfigSnapshotDeliveryIntegrationTest,S3AccessLoggingIntegrationTest,Ec2FlowLogsIntegrationTest,CloudWatchLogsSubscriptionIntegrationTest,GuardDutyIntegrationTest,SecurityHubIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,SecretsManagerRotationKmsIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,StsGetCallerIdentityIntegrationTest,CtfComposeParityIntegrationTest,IamEnforcementIntegrationTest
 ```
 
 Compatibility probes against a running instance ([compatibility-tests/README.md](./compatibility-tests/README.md)):
@@ -460,7 +460,13 @@ Canonical lists: [AGENTS.md CTF regression](./AGENTS.md#ctf-regression-tests).
 **Core CTF hardening (quick smoke):**
 
 ```bash
-./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,ResourceArnBuilderTest,CloudTrailSqsAuditIntegrationTest,ApiGatewaySqsIntegrationTest
+./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsGetCallerIdentityIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,SecretsManagerKmsSupportTest,SecretsManagerGetSecretValueScopedArnIntegrationTest,ResourceArnBuilderTest,CloudTrailSqsAuditIntegrationTest,ApiGatewaySqsIntegrationTest
+```
+
+**Scoped IAM, resource policies, and container credentials:**
+
+```bash
+./mvnw test -Dtest=SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,CodeBuildIamScopedIntegrationTest,BackupIamScopedIntegrationTest,Route53IamScopedIntegrationTest,CodeDeployIamScopedIntegrationTest,AcmIamScopedIntegrationTest,EcsContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,SecretsManagerRotationKmsIntegrationTest
 ```
 
 On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docker_engine` when the default unix socket is configured and `DOCKER_HOST` is unset. Set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` explicitly if auto-detection does not apply.
@@ -636,7 +642,7 @@ This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci
 **Post-merge regression:**
 
 ```bash
-./mvnw test -Dtest=SigV4RequestValidatorTest,IamEnforcementIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,StsAssumeRoleTrustIntegrationTest,ContainerEnvHardeningTest,ApiGatewaySqsIntegrationTest
+./mvnw test -Dtest=SigV4RequestValidatorTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,IamEnforcementIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsAssumeRoleTrustIntegrationTest,StsGetCallerIdentityIntegrationTest,SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,ContainerEnvHardeningTest,EcsContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,ApiGatewaySqsIntegrationTest
 ```
 
 ## Upstream

@@ -76,7 +76,7 @@ wip: still working on this      # not a recognised type
 
 ## Adding a New AWS Service
 
-See [AGENTS.md](https://github.com/kangwijen/floci-ctf/blob/main/AGENTS.md) for the CTF fork agent guide and architecture notes. `AGENTS.md` is the canonical agent instructions file for this repository, following the [AGENTS.md standard](https://agents.md/). If your coding agent expects a different filename, create a local symlink to `AGENTS.md` instead of copying it.
+See [AGENTS.md](../AGENTS.md) for the CTF fork agent guide and architecture notes. `AGENTS.md` is the canonical agent instructions file for this repository, following the [AGENTS.md standard](https://agents.md/). If your coding agent expects a different filename, create a local symlink to `AGENTS.md` instead of copying it.
 
 ```bash
 ln -s AGENTS.md CLAUDE.md

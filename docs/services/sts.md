@@ -38,7 +38,7 @@ aws sts assume-role \
 aws sts get-session-token --endpoint-url $AWS_ENDPOINT_URL
 ```
 
-`GetCallerIdentity` is commonly used in CI pipelines and integration tests as a quick connectivity check before running more complex tests.
+`GetCallerIdentity` is commonly used in CI pipelines and integration tests as a quick connectivity check before running more complex tests. Under CTF hardening, participant IAM user keys return the user ARN from `sts:GetCallerIdentity`, not `arn:aws:iam::ACCOUNT:root` (see [CTF fork](#ctf-fork)).
 
 ## CTF fork {#ctf-fork}
 
@@ -46,6 +46,7 @@ When IAM enforcement is enabled:
 
 | Action | CTF behavior |
 |---|---|
+| `GetCallerIdentity` | Returns the **calling principal ARN**, not account `:root` for IAM user access keys (`arn:aws:iam::ACCOUNT:user/name`) or temporary assumed-role sessions (`arn:aws:sts::ACCOUNT:assumed-role/role/session`). Operator requests signed with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` still return `arn:aws:iam::ACCOUNT:root`. Policy-exempt like AWS (no Allow required; explicit Deny does not block). Regression: `StsGetCallerIdentityIntegrationTest` |
 | `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy; session policy alone cannot expand permissions. Parent user permission boundaries apply. Regression: `StsGetSessionTokenIntersectionIntegrationTest` |
 | `AssumeRole` / `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` | Role trust policies are evaluated (`Principal`, `:root`, federated conditions); WebIdentity and SAML assertions are parsed for claim-based trust (no external IdP crypto validation). Unresolved caller credentials fall back to account root for trust evaluation, matching `GetCallerIdentity` |
 | `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |

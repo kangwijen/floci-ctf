@@ -1,6 +1,6 @@
 # compat-terraform
 
-Terraform compatibility tests for [floci-ctf](https://github.com/kangwijen/floci-ctf). Provisions S3/DynamoDB remote state backends and applies a sample configuration against the emulator.
+Terraform compatibility tests for **floci-ctf** (this repository). Provisions S3/DynamoDB remote state backends and applies a sample configuration against the emulator.
 
 ## Running
 

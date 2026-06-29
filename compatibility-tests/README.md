@@ -1,6 +1,6 @@
 # floci-compatibility-tests
 
-Compatibility test suite for [floci-ctf](https://github.com/kangwijen/floci-ctf) — a security-hardened local AWS emulator fork (upstream **1.5.24** + 20 post-release commits merged **2026-06-13**).
+Compatibility test suite for **floci-ctf** (this repository) — a security-hardened local AWS emulator fork (upstream **1.5.24** + 20 post-release commits merged **2026-06-13**).
 
 Verifies that standard AWS tooling (SDKs, CDK, OpenTofu/Terraform) works correctly against the emulator without modification. Tests run against a live Floci instance and use real AWS SDK clients — no mocks.
 
