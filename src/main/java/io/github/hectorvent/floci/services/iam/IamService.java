@@ -4,6 +4,8 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.core.common.SessionAccountLookup;
+import io.github.hectorvent.floci.core.storage.AccountAwareStorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.iam.model.AccessKey;
@@ -17,6 +19,7 @@ import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.iam.model.SessionCredential;
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -34,9 +37,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Core IAM business logic — users, groups, roles, policies, access keys, instance profiles.
  * IAM is a global service: resources are not region-scoped and storage keys have no region prefix.
+ *
+ * <p>Eagerly initialized at startup so AWS-managed policies (and the optional deployer principal)
+ * are seeded under the default account before any request runs. Seeding is account-namespaced via
+ * the request context, so deferring it to the first request would otherwise bind the seed data to
+ * whichever account happened to make that call — a real hazard now that {@code AccountContextFilter}
+ * resolves the request account through this service.
  */
+@Startup
 @ApplicationScoped
-public class IamService {
+public class IamService implements SessionAccountLookup {
 
     private static final Logger LOG = Logger.getLogger(IamService.class);
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -373,7 +383,15 @@ public class IamService {
         if (!resource.startsWith("role/")) {
             throw new AwsException("ValidationError", "Invalid role ARN: " + roleArn, 400);
         }
-        return getRole(resource.substring("role/".length()));
+        String roleName = resource.substring("role/".length());
+        String accountId = parsed.accountId();
+        if (roles instanceof AccountAwareStorageBackend<IamRole> aware
+                && accountId != null && !accountId.isBlank()) {
+            return aware.getForAccount(accountId, roleName)
+                    .orElseThrow(() -> new AwsException("NoSuchEntity",
+                            "The role with name " + roleName + " cannot be found.", 404));
+        }
+        return getRole(roleName);
     }
 
     /**
@@ -973,13 +991,13 @@ public class IamService {
         if (userSecret.isPresent()) {
             return userSecret;
         }
-        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
         if (sessionOpt.isEmpty()) {
             return Optional.empty();
         }
         SessionCredential session = sessionOpt.get();
         if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
-            sessions.delete(accessKeyId);
+            deleteSessionAnyAccount(accessKeyId);
             return Optional.empty();
         }
         String secret = session.getSecretAccessKey();
@@ -997,7 +1015,7 @@ public class IamService {
      * Stores an assumed-role session so the enforcement filter can resolve its policies.
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration) {
-        registerSession(sessionAccessKeyId, roleArn, expiration, null, null, null, null);
+        registerSession(sessionAccessKeyId, roleArn, expiration, null, null, null, null, null, null, null);
     }
 
     /**
@@ -1006,7 +1024,7 @@ public class IamService {
     public void registerSession(String sessionAccessKeyId, String secretAccessKey, String roleArn,
                                 java.time.Instant expiration, String sessionPolicyDocument) {
         registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     /**
@@ -1014,7 +1032,7 @@ public class IamService {
      */
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument) {
-        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, null, null, null);
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, null, null, null, null, null, null);
     }
 
     /**
@@ -1023,7 +1041,7 @@ public class IamService {
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument, String secretAccessKey) {
         registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
-                null, null);
+                null, null, null, null, null);
     }
 
     /**
@@ -1033,7 +1051,7 @@ public class IamService {
                                 String sessionPolicyDocument, String secretAccessKey,
                                 String callerIdentityUserId, String callerIdentityArn) {
         registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
-                callerIdentityUserId, callerIdentityArn, null);
+                callerIdentityUserId, callerIdentityArn, null, null, null);
     }
 
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
@@ -1041,13 +1059,21 @@ public class IamService {
                                 String callerIdentityUserId, String callerIdentityArn,
                                 String parentAccessKeyId) {
         registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
-                callerIdentityUserId, callerIdentityArn, parentAccessKeyId, null);
+                callerIdentityUserId, callerIdentityArn, parentAccessKeyId, null, null);
     }
 
     public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
                                 String sessionPolicyDocument, String secretAccessKey,
                                 String callerIdentityUserId, String callerIdentityArn,
                                 String parentAccessKeyId, String sessionToken) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                callerIdentityUserId, callerIdentityArn, parentAccessKeyId, sessionToken, null);
+    }
+
+    public void registerSession(String sessionAccessKeyId, String roleArn, java.time.Instant expiration,
+                                String sessionPolicyDocument, String secretAccessKey,
+                                String callerIdentityUserId, String callerIdentityArn,
+                                String parentAccessKeyId, String sessionToken, String originAccountId) {
         SessionCredential session = new SessionCredential(
                 sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument);
         session.setSecretAccessKey(secretAccessKey);
@@ -1055,7 +1081,14 @@ public class IamService {
         session.setCallerIdentityArn(callerIdentityArn);
         session.setParentAccessKeyId(parentAccessKeyId);
         session.setSessionToken(sessionToken);
-        sessions.put(sessionAccessKeyId, session);
+        session.setOriginAccountId(originAccountId);
+        String storageAccount = AwsArnUtils.accountOrDefault(roleArn, originAccountId);
+        if (sessions instanceof AccountAwareStorageBackend<SessionCredential> aware
+                && storageAccount != null && !storageAccount.isBlank()) {
+            aware.putForAccount(storageAccount, sessionAccessKeyId, session);
+        } else {
+            sessions.put(sessionAccessKeyId, session);
+        }
     }
 
     public static boolean isTemporaryAccessKey(String accessKeyId) {
@@ -1064,13 +1097,13 @@ public class IamService {
 
     public Optional<String> findSessionToken(String accessKeyId) {
         maybePurgeExpiredSessions();
-        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
         if (sessionOpt.isEmpty()) {
             return Optional.empty();
         }
         SessionCredential session = sessionOpt.get();
         if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
-            sessions.delete(accessKeyId);
+            deleteSessionAnyAccount(accessKeyId);
             return Optional.empty();
         }
         String token = session.getSessionToken();
@@ -1127,11 +1160,11 @@ public class IamService {
             String account = accountFromArn(user.getArn(), defaultAccountId);
             return java.util.Optional.of(new CallerIdentity(user.getUserId(), account, user.getArn()));
         }
-        java.util.Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        java.util.Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
         if (sessionOpt.isPresent()) {
             SessionCredential session = sessionOpt.get();
             if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
-                sessions.delete(accessKeyId);
+                deleteSessionAnyAccount(accessKeyId);
                 return java.util.Optional.empty();
             }
             if (session.getCallerIdentityUserId() != null && session.getCallerIdentityArn() != null) {
@@ -1172,6 +1205,71 @@ public class IamService {
     }
 
     /**
+     * Stores an assumed-role session and records {@code originAccountId} — the account of the
+     * caller that minted it. The origin lets {@link #resolveAccountId(String)} route temporary
+     * credentials that carry no role ARN (e.g. GetSessionToken) back to the caller's account.
+     */
+    public void registerSession(String sessionAccessKeyId, String secretAccessKey, String roleArn,
+                                java.time.Instant expiration, String sessionPolicyDocument,
+                                String originAccountId) {
+        registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicyDocument, secretAccessKey,
+                null, null, null, null, originAccountId);
+    }
+
+    /**
+     * Resolves the account a temporary access key belongs to: the account encoded in the
+     * session's role (or federated-user) ARN when present, otherwise the caller account captured
+     * at mint time. Returns empty for unknown or expired sessions so callers fall back to the
+     * default account.
+     */
+    @Override
+    public Optional<String> resolveAccountId(String accessKeyId) {
+        // STS issues only ASIA-prefixed temporary keys, so anything else cannot be a session.
+        // Short-circuit here to keep the per-request hot path off the session-store scan below.
+        if (accessKeyId == null || !accessKeyId.startsWith("ASIA")) {
+            return Optional.empty();
+        }
+        Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        SessionCredential session = sessionOpt.get();
+        if (session.getExpiration() != null && session.getExpiration().isBefore(Instant.now())) {
+            return Optional.empty();
+        }
+        String account = AwsArnUtils.accountOrDefault(session.getRoleArn(), session.getOriginAccountId());
+        return account == null || account.isBlank() ? Optional.empty() : Optional.of(account);
+    }
+
+    /**
+     * Looks up a session by its temporary access key ID independent of the request's account.
+     *
+     * <p>Sessions are keyed by a globally-unique access key (e.g. {@code ASIA...}) but stored in
+     * the minting account's namespace. Account routing must resolve the session <em>before</em> the
+     * request's account is known, so a normal account-scoped {@code get} would miss it. This scans
+     * across all accounts; the access key's global uniqueness keeps the result unambiguous.
+     */
+    private Optional<SessionCredential> findSessionAnyAccount(String accessKeyId) {
+        if (sessions instanceof AccountAwareStorageBackend<SessionCredential> aware) {
+            return Optional.ofNullable(aware.scanAllAccountsAsMap().get(accessKeyId));
+        }
+        return sessions.get(accessKeyId);
+    }
+
+    private void deleteSessionAnyAccount(String accessKeyId) {
+        findSessionAnyAccount(accessKeyId).ifPresent(session -> {
+            if (sessions instanceof AccountAwareStorageBackend<SessionCredential> aware) {
+                String account = AwsArnUtils.accountOrDefault(session.getRoleArn(), session.getOriginAccountId());
+                if (account != null && !account.isBlank()) {
+                    aware.deleteForAccount(account, accessKeyId);
+                    return;
+                }
+            }
+            sessions.delete(accessKeyId);
+        });
+    }
+
+    /**
      * Resolves the full caller context for the given access key, including identity policies,
      * optional session policy, and optional permission boundary.
      *
@@ -1188,11 +1286,11 @@ public class IamService {
         }
 
         // Check assumed-role sessions
-        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
         if (sessionOpt.isPresent()) {
             SessionCredential session = sessionOpt.get();
             if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
-                sessions.delete(accessKeyId);
+                deleteSessionAnyAccount(accessKeyId);
                 return null; // expired — unknown key → bypass
             }
             if (session.getRoleArn() == null) {
@@ -1239,11 +1337,11 @@ public class IamService {
             return users.get(userName).map(IamUser::getArn);
         }
 
-        Optional<SessionCredential> sessionOpt = sessions.get(accessKeyId);
+        Optional<SessionCredential> sessionOpt = findSessionAnyAccount(accessKeyId);
         if (sessionOpt.isPresent()) {
             SessionCredential session = sessionOpt.get();
             if (session.getExpiration() != null && session.getExpiration().isBefore(java.time.Instant.now())) {
-                sessions.delete(accessKeyId);
+                deleteSessionAnyAccount(accessKeyId);
                 return Optional.empty();
             }
             String roleArn = session.getRoleArn();

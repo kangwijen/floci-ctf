@@ -34,3 +34,4 @@ test-results
 .cursor/
 FLOCI.md
 scripts/node_modules/
+.local/

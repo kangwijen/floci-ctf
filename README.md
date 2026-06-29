@@ -389,7 +389,9 @@ For more detail, see the [Storage Configuration documentation](https://floci.io/
 
 ## Multi-Account Isolation
 
-Floci supports per-account resource isolation with no extra setup. If `AWS_ACCESS_KEY_ID` is exactly 12 digits, Floci uses it as the account ID. Inbound S3 presigned URLs can also carry a 12-digit account id in `X-Amz-Credential` (`AccountContextFilter`). Resources created by one account are invisible to another. CTF presigned URL **generation** still uses the operator root access key id for SigV4 signing.
+Floci supports per-account resource isolation with no extra setup. If `AWS_ACCESS_KEY_ID` is exactly 12 digits, Floci uses it as the account ID. Inbound S3 presigned URLs can also carry a 12-digit account id in `X-Amz-Credential` (`AccountContextFilter`). STS temporary credentials route to the assumed role's account (or the minting caller's account for `GetSessionToken`); resolution precedence is 12-digit AKID, temporary-session lookup, then `FLOCI_DEFAULT_ACCOUNT_ID`. Resources created by one account are invisible to another. CTF presigned URL **generation** still uses the operator root access key id for SigV4 signing.
+
+See [docs/configuration/multi-account.md](./docs/configuration/multi-account.md).
 
 ## Audit and forensics profile
 
@@ -477,6 +479,14 @@ On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker
 Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localstack/init` and `/_localstack/health` endpoints are still served. Once the emulator is up, the log also ends with a LocalStack-style `Ready.` line, so tooling that watches the log for it, such as the default wait strategy of Testcontainers' `LocalStackContainer`, works unchanged. Set `LOCALSTACK_PARITY=false` to opt out of automatic translation.
 
 ## Upstream highlights
+
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (3 commits through **`f52b9209`**, merged 2026-06-28):
+
+| Area | Change |
+|---|---|
+| AppSync | VTL engine Phase 4: `#if`, `#foreach`, `#set`, `$util.error` / `$util.appendError` |
+| ELBv2 | Resolvable local ALB DNS names (`EmbeddedDnsServer`) |
+| IAM / STS | Assumed-role temporary credentials route to target account (`SessionAccountLookup`) |
 
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (+52 commits through **`aeb11d77`**, merged 2026-06-28; releases **1.5.27** and **1.5.28**):
 
