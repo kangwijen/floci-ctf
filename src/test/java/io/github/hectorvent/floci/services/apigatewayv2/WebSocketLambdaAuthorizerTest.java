@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for Lambda REQUEST authorizer on $connect route.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketLambdaAuthorizerTest {
 
@@ -48,11 +51,22 @@ class WebSocketLambdaAuthorizerTest {
     private static String echoAuthorizerId;
     private static String identitySourceAuthorizerId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupWebSocketApi();
+            setupLambdaFunctions();
+            prewarmLambdaFunctions();
+            setupIntegrationAndRoute();
+            setupAuthorizers();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupWebSocketApi() {
+    private void setupWebSocketApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -76,9 +90,7 @@ class WebSocketLambdaAuthorizerTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupLambdaFunctions() throws Exception {
+    private void setupLambdaFunctions() throws Exception {
         // Authorizer that returns Allow policy
         String allowZip = WebSocketTestSupport.createLambdaZip("""
                 exports.handler = async (event) => ({
@@ -184,9 +196,7 @@ class WebSocketLambdaAuthorizerTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(3)
-    void prewarmLambdaFunctions() {
+    private void prewarmLambdaFunctions() {
         given().contentType(ContentType.JSON).body("{}")
                 .when().post("/2015-03-31/functions/" + allowAuthFnName + "/invocations")
                 .then().statusCode(200);
@@ -207,9 +217,7 @@ class WebSocketLambdaAuthorizerTest {
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(4)
-    void setupIntegrationAndRoute() {
+    private void setupIntegrationAndRoute() {
         // Create integration for the $connect Lambda
         integrationId = given()
                 .contentType(ContentType.JSON)
@@ -233,9 +241,7 @@ class WebSocketLambdaAuthorizerTest {
                 .extract().path("routeId");
     }
 
-    @Test
-    @Order(5)
-    void setupAuthorizers() {
+    private void setupAuthorizers() {
         // Allow authorizer
         allowAuthorizerId = given()
                 .contentType(ContentType.JSON)

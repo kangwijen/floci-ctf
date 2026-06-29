@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.memorydb;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
@@ -52,7 +53,7 @@ class MemoryDbIntegrationTest {
     @BeforeAll
     static void setup() {
         RestAssuredJsonUtils.configureAwsContentTypes();
-        Assumptions.assumeTrue(isDockerAvailable(),
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
                 "Docker daemon must be available for MemoryDB integration tests");
     }
 
@@ -221,17 +222,6 @@ class MemoryDbIntegrationTest {
 
     private static Response deleteCluster(String name) {
         return memorydb("DeleteCluster", "{\"ClusterName\":\"" + name + "\"}");
-    }
-
-    private static boolean isDockerAvailable() {
-        try {
-            Process process = new ProcessBuilder("docker", "version", "--format", "{{.Server.Version}}")
-                    .redirectErrorStream(true)
-                    .start();
-            return process.waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private static Socket openSocket(int port) throws IOException {

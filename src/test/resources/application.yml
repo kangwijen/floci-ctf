@@ -97,6 +97,9 @@ floci:
     lambda:
       enabled: true
       # aws-config-path:
+      runtime-api-base-port: 29200
+      runtime-api-max-port: 29299
+      container-credentials-port: 29171
       hot-reload:
         enabled: true
     apigateway:
@@ -113,8 +116,8 @@ floci:
       default-image: "redpandadata/redpanda:latest"
     elasticache:
       enabled: true
-      proxy-base-port: 6379
-      proxy-max-port: 6399
+      proxy-base-port: 16379
+      proxy-max-port: 16399
       default-image: "valkey/valkey:8"
       default-memcached-image: "memcached:1.6"
     memorydb:
@@ -212,6 +215,7 @@ floci:
       mock: true
     codebuild:
       enabled: true
+      container-credentials-port: 29172
       # docker-network: floci-network
     batch:
       enabled: true

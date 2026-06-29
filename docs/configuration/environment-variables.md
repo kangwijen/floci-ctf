@@ -110,7 +110,7 @@ See [Storage Modes](./storage.md) for a full explanation of each mode.
 
 | Variable | Default | Description |
 |---|---|---|
-| `FLOCI_DOCKER_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket path or TCP address |
+| `FLOCI_DOCKER_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket path or TCP address. On Windows, when unset and the default unix socket is configured, Floci auto-falls back to `npipe:////./pipe/docker_engine` unless host `DOCKER_HOST` is set |
 | `FLOCI_DOCKER_DOCKER_CONFIG_PATH` | _(none)_ | Path to a directory containing Docker's `config.json` for registry auth |
 | `FLOCI_DOCKER_LOG_MAX_SIZE` | `10m` | Log rotation max size for spawned containers (e.g. `10m`, `1g`) |
 | `FLOCI_DOCKER_LOG_MAX_FILE` | `3` | Number of rotated log files to keep for spawned containers |

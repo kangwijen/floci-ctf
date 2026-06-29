@@ -177,7 +177,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Resource policies | `ResourcePolicyResolver`, `PolicyPrincipalMatcher` |
 | STS / federated trust | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `FederatedTokenParser`, `PolicyPrincipalMatcher` |
 | S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator.validatePresignedUrl` |
-| API Gateway integrations | `ApiGatewayExecuteController`, `AwsServiceRouter` (JSON credentials for IAM; query-protocol SQS path-style from upstream 1.5.26) |
+| API Gateway integrations | `ApiGatewayExecuteController`, `AwsServiceRouter` (JSON credentials for IAM; path-style SQS query `invokeQuery` + Lambda path invoke; CloudTrail audit on query integrations) |
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
 | KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
 | In-process IAM | `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
@@ -194,12 +194,24 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- Presigned POST, SigV4a, SSE query params in S3 presign
+- SigV4a presign, SSE query params in S3 presign
 - Federated JWT/SAML full crypto validation (structural parse only unless `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`)
 - OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
 - Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
 - In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
 - Operator event injection API for CloudTrail is implemented (`CloudTrailEventInjectionController`, `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`)
+
+**Recently closed (CTF security / test stability):**
+
+| Gap | Status | Regression |
+|-----|--------|------------|
+| JSON 1.1 SigV4 credential scope vs `X-Amz-Target` service split | Closed | `IamJson11CredentialScopeSplitIntegrationTest` |
+| Kinesis `POST .*` catch-all mis-routing IAM on unrelated REST paths | Closed | `IamKinesisCatchAllRouteScopeIntegrationTest` |
+| APIGW path-style SQS `invokeQuery` bypassing in-process IAM | Closed | `ApiGatewaySqsQueryIamBypassIntegrationTest` |
+| EC2 Network ACL Query API handlers missing | Closed | `Ec2IntegrationTest` network ACL tests |
+| Presigned POST/GET operator root secret shadowed by stale IAM key | Closed | `S3PresignedPostIntegrationTest`, `PreSignedUrlIntegrationTest` |
+| Lambda Runtime API port `9200` bind conflicts in full test suites | Closed | `PortAllocatorTest`, `LambdaReactiveSyncIntegrationTest` |
+| Windows Docker socket / TLS cert paths / ZIP backslash extraction | Closed | `DockerClientProducerTest`, `TlsIntegrationTest`, `ZipExtractorTest` |
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
@@ -324,7 +336,7 @@ Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merges):
 - Auth/account: `AccountResolver`, `AccountContextFilter`, auth filters, `ContainerEnvHardening`, `OperatorCredentialEnv`
 - S3 presign: `PreSignedUrlGenerator` (keep SigV4 + root AKIA; do not take upstream account-id signing)
 - IAM/STS: `StsQueryHandler`, `IamService`, `SessionCredential` (merge CTF caller-identity + `originAccountId`), `ResourcePolicyResolver`, `ResourceArnBuilder`, `PolicyPrincipalMatcher`, `IamActionRegistry`
-- APIGW: `ApiGatewayExecuteController`, `AwsServiceRouter` (keep JSON `integration.credentials` + CloudTrail audit)
+- APIGW: `ApiGatewayExecuteController`, `AwsServiceRouter` (keep JSON `integration.credentials`, query `invokeQuery` IAM, Lambda path routing, and CloudTrail audit)
 - Cognito: `CognitoService`, `CognitoAuthFlowHandler` (keep `InProcessTargetAuthorizer` on delivery paths; preserve revoked-token checks on global sign-out)
 - EC2: `Ec2Service`, `Ec2QueryHandler`, `Ec2ContainerManager`, `Ec2MetadataServer` (flow logs + persisted spot requests; Network ACL storage; empty `stateReason` omission)
 - APIGW v2: `ApiGatewayV2Service` (cascade delete)
@@ -358,7 +370,7 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
+./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**
@@ -374,7 +386,7 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 cd compatibility-tests && just test-forensic-java
 ```
 
-On Windows with Docker Desktop, set `DOCKER_HOST` so Maven can reach Docker before container tests (for example `npipe:////./pipe/docker_engine` in PowerShell). Default `floci.docker.docker-host` is `unix:///var/run/docker.sock`.
+On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docker_engine` when the configured default is `unix:///var/run/docker.sock` and `DOCKER_HOST` is unset. You can still set `DOCKER_HOST` explicitly before container tests if needed.
 
 ---
 

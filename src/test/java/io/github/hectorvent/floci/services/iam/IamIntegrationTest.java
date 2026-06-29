@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.iam;
 
 import io.github.hectorvent.floci.core.common.AwsQueryController;
 import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -22,8 +23,18 @@ import static org.hamcrest.Matchers.*;
 class IamIntegrationTest {
 
     private static final String TRUST_POLICY =
+            "{\"Version\":\"2012-10-17\",\"Statement\":["
+            + "{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"},"
+            + "{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::000000000000:root\"},\"Action\":\"sts:AssumeRole\"}"
+            + "]}";
+
+    private static final String TENANT_ROOT_TRUST_POLICY =
             "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
-            + "\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}";
+            + "\"Principal\":{\"AWS\":\"arn:aws:iam::123456789012:root\"},\"Action\":\"sts:AssumeRole\"}]}";
+
+    private static final String CROSS_ACCOUNT_TRUST_POLICY =
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
+            + "\"Principal\":{\"AWS\":\"arn:aws:iam::123456789012:root\"},\"Action\":\"sts:AssumeRole\"}]}";
 
     private static final String POLICY_DOCUMENT =
             "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
@@ -34,6 +45,51 @@ class IamIntegrationTest {
             + "\"Action\":\"ec2:RunInstances\",\"Resource\":\"*\"}]}";
 
     private static String createdPolicyArn;
+
+    @BeforeEach
+    void ensureAssumeRoleRolesExist() {
+        createRoleIfAbsent("TestRole", TRUST_POLICY,
+                "AWS4-HMAC-SHA256 Credential=test/20260227/us-east-1/iam/aws4_request",
+                "Integration test role");
+        createRoleIfAbsent("TestRole", TENANT_ROOT_TRUST_POLICY,
+                "AWS4-HMAC-SHA256 Credential=123456789012/20260227/us-east-1/iam/aws4_request",
+                null);
+        createRoleIfAbsent("CrossAccountRole", CROSS_ACCOUNT_TRUST_POLICY,
+                "AWS4-HMAC-SHA256 Credential=222222222222/20260227/us-east-1/iam/aws4_request",
+                null);
+    }
+
+    private static void createUserIfAbsent(String userName) {
+        int status = given()
+            .formParam("Action", "CreateUser")
+            .formParam("UserName", userName)
+            .formParam("Path", "/")
+            .header("Authorization",
+                    "AWS4-HMAC-SHA256 Credential=test/20260227/us-east-1/iam/aws4_request")
+        .when()
+            .post("/")
+            .statusCode();
+        if (status != 200 && status != 409) {
+            throw new AssertionError("CreateUser for " + userName + " failed with status " + status);
+        }
+    }
+
+    private static void createRoleIfAbsent(String roleName, String trustPolicy, String authorization,
+                                           String description) {
+        var request = given()
+            .formParam("Action", "CreateRole")
+            .formParam("RoleName", roleName)
+            .formParam("Path", "/")
+            .formParam("AssumeRolePolicyDocument", trustPolicy)
+            .header("Authorization", authorization);
+        if (description != null) {
+            request.formParam("Description", description);
+        }
+        int status = request.when().post("/").statusCode();
+        if (status != 200 && status != 409) {
+            throw new AssertionError("CreateRole for " + roleName + " failed with status " + status);
+        }
+    }
 
     // =========================================================================
     // STS
@@ -116,7 +172,7 @@ class IamIntegrationTest {
     }
 
     @Test
-    @Order(6)
+    @Order(5)
     void stsAssumeRoleUsesAccountFromRoleArnForCrossAccount() {
         given()
             .formParam("Action", "AssumeRole")
@@ -138,7 +194,7 @@ class IamIntegrationTest {
     // =========================================================================
 
     @Test
-    @Order(5)
+    @Order(6)
     void getManagedPolicy() {
         given()
             .formParam("Action", "GetPolicy")
@@ -438,6 +494,7 @@ class IamIntegrationTest {
     @Test
     @Order(13)
     void listUsers() {
+        createUserIfAbsent("test-user");
         given()
             .formParam("Action", "ListUsers")
             .header("Authorization",
@@ -446,8 +503,7 @@ class IamIntegrationTest {
             .post("/")
         .then()
             .statusCode(200)
-            .body("ListUsersResponse.ListUsersResult.Users.member.UserName",
-                    hasItem("test-user"));
+            .body(containsString("<UserName>test-user</UserName>"));
     }
 
     @Test
@@ -483,28 +539,6 @@ class IamIntegrationTest {
 
     @Test
     @Order(20)
-    void createRole() {
-        given()
-            .formParam("Action", "CreateRole")
-            .formParam("RoleName", "TestRole")
-            .formParam("Path", "/")
-            .formParam("AssumeRolePolicyDocument", TRUST_POLICY)
-            .formParam("Description", "Integration test role")
-            .header("Authorization",
-                    "AWS4-HMAC-SHA256 Credential=test/20260227/us-east-1/iam/aws4_request")
-        .when()
-            .post("/")
-        .then()
-            .statusCode(200)
-            .body("CreateRoleResponse.CreateRoleResult.Role.RoleName", equalTo("TestRole"))
-            .body("CreateRoleResponse.CreateRoleResult.Role.RoleId", startsWith("AROA"))
-            .body("CreateRoleResponse.CreateRoleResult.Role.Arn",
-                    equalTo("arn:aws:iam::000000000000:role/TestRole"))
-            .body("CreateRoleResponse.CreateRoleResult.Role.Description", equalTo("Integration test role"));
-    }
-
-    @Test
-    @Order(21)
     void getRole() {
         given()
             .formParam("Action", "GetRole")
@@ -515,11 +549,15 @@ class IamIntegrationTest {
             .post("/")
         .then()
             .statusCode(200)
-            .body("GetRoleResponse.GetRoleResult.Role.RoleName", equalTo("TestRole"));
+            .body("GetRoleResponse.GetRoleResult.Role.RoleName", equalTo("TestRole"))
+            .body("GetRoleResponse.GetRoleResult.Role.RoleId", startsWith("AROA"))
+            .body("GetRoleResponse.GetRoleResult.Role.Arn",
+                    equalTo("arn:aws:iam::000000000000:role/TestRole"))
+            .body("GetRoleResponse.GetRoleResult.Role.Description", equalTo("Integration test role"));
     }
 
     @Test
-    @Order(22)
+    @Order(21)
     void listRoles() {
         given()
             .formParam("Action", "ListRoles")
@@ -534,7 +572,7 @@ class IamIntegrationTest {
     }
 
     @Test
-    @Order(23)
+    @Order(22)
     void iamCreateRoleHonoursTwelveDigitAccessKey() {
         given()
             .formParam("Action", "CreateRole")
@@ -553,7 +591,7 @@ class IamIntegrationTest {
     }
 
     @Test
-    @Order(24)
+    @Order(23)
     void iamGetRoleHonoursTwelveDigitAccessKey() {
         given()
             .formParam("Action", "GetRole")

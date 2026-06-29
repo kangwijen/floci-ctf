@@ -2,9 +2,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for WebSocket route response selection expression.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketRouteResponseTest {
 
@@ -33,11 +36,21 @@ class WebSocketRouteResponseTest {
     private static String routeWithResponseId;
     private static String routeWithoutResponseId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupApi();
+            setupLambdaFunction();
+            prewarmLambdaFunction();
+            setupIntegrationsAndRoutes();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupApi() {
+    private void setupApi() {
         // Create a WEBSOCKET API with routeSelectionExpression: $request.body.action
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -61,9 +74,7 @@ class WebSocketRouteResponseTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupLambdaFunction() throws Exception {
+    private void setupLambdaFunction() throws Exception {
         // Lambda that returns {"statusCode": 200, "body": "extracted-body"}
         String zip = WebSocketTestSupport.createLambdaZip(
                 "exports.handler = async (event) => ({ statusCode: 200, body: 'extracted-body' });");
@@ -77,17 +88,13 @@ class WebSocketRouteResponseTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(3)
-    void prewarmLambdaFunction() {
+    private void prewarmLambdaFunction() {
         given().contentType(ContentType.JSON).body("{}")
                 .when().post("/2015-03-31/functions/" + lambdaFnName + "/invocations")
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(4)
-    void setupIntegrationsAndRoutes() {
+    private void setupIntegrationsAndRoutes() {
         // Create integration pointing to the Lambda function
         integrationId = given()
                 .contentType(ContentType.JSON)

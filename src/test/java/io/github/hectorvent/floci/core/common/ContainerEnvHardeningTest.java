@@ -37,7 +37,10 @@ class ContainerEnvHardeningTest {
                 "AWS_SECRET_ACCESS_KEY", "player-secret"));
 
         assertEquals("scanner", env.get("PLAYER_ROLE"));
-        assertFalse(env.containsKey("AWS_SECRET_ACCESS_KEY"));
+        assertFalse("player-secret".equals(env.get("AWS_SECRET_ACCESS_KEY")),
+                "user-supplied secret must not survive merge");
+        assertFalse("player-key".equals(env.get("AWS_ACCESS_KEY_ID")),
+                "user-supplied access key must not survive merge");
     }
 
     @Test

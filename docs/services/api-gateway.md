@@ -47,6 +47,18 @@ These management-plane operations have no handler in v1. Calls will return `404`
 
 The execute plane (actual proxied HTTP traffic via `/restapis/{id}/{stage}/_user_request_/…`) is implemented separately and is not counted as management-plane operations.
 
+### CTF fork (execute plane IAM)
+
+When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`:
+
+| Integration style | IAM evaluation |
+|---|---|
+| `AWS` / `AWS_PROXY` with JSON body | `InProcessIamAuthorizer` uses `integration.credentials` (execution role ARN) |
+| Path-style SQS (`arn:...:sqs:path/...`) | `AwsServiceRouter.invokeQuery` with execution role; CloudTrail audit when audit is enabled |
+| Path-style Lambda (`arn:...:lambda:path/2015-03-31/functions/...`) | Direct `lambda:InvokeFunction` via execution role |
+
+Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`, `ApiGatewaySqsIntegrationTest`.
+
 ### Examples
 
 ```bash

@@ -2,9 +2,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for WebSocket connection lifecycle.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketConnectionLifecycleTest {
 
@@ -43,11 +46,22 @@ class WebSocketConnectionLifecycleTest {
     private static String connectRouteId;
     private static String disconnectRouteId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupWebSocketApi();
+            setupHttpApi();
+            setupLambdaFunctions();
+            setupIntegrations();
+            prewarmLambdaFunctions();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupWebSocketApi() {
+    private void setupWebSocketApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -71,9 +85,7 @@ class WebSocketConnectionLifecycleTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupHttpApi() {
+    private void setupHttpApi() {
         // Create an HTTP API (non-WebSocket) for negative test
         httpApiId = given()
                 .contentType(ContentType.JSON)
@@ -96,9 +108,7 @@ class WebSocketConnectionLifecycleTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(3)
-    void setupLambdaFunctions() throws Exception {
+    private void setupLambdaFunctions() throws Exception {
         // Create Lambda function that returns 200 (allow connection)
         String allowZip = WebSocketTestSupport.createLambdaZip("exports.handler = async (event) => ({ statusCode: 200, body: 'connected' });");
         given()
@@ -144,9 +154,7 @@ class WebSocketConnectionLifecycleTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(5)
-    void prewarmLambdaFunctions() {
+    private void prewarmLambdaFunctions() {
         // Pre-warm Lambda containers by invoking them directly.
         // This ensures containers are ready before WebSocket tests run.
         given()
@@ -179,9 +187,7 @@ class WebSocketConnectionLifecycleTest {
                 .statusCode(200);
     }
 
-    @Test
-    @Order(4)
-    void setupIntegrations() {
+    private void setupIntegrations() {
         // Create integration for allow function
         integrationIdAllow = given()
                 .contentType(ContentType.JSON)

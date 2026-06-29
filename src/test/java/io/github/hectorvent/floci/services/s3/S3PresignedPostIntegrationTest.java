@@ -1,7 +1,9 @@
 package io.github.hectorvent.floci.services.s3;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -22,9 +24,10 @@ import static org.hamcrest.Matchers.*;
 class S3PresignedPostIntegrationTest {
 
     private static final String BUCKET = "presigned-post-bucket";
-    private static final String ACCESS_KEY_ID = "AKIATESTPRESIGN01";
-    private static final String SECRET_KEY = "test-presign-root-secret-32chars!!";
     private static final String REGION = "us-east-1";
+
+    @Inject
+    EmulatorConfig emulatorConfig;
     private static final DateTimeFormatter AMZ_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
 
@@ -597,12 +600,16 @@ class S3PresignedPostIntegrationTest {
     }
 
     private PostSigFields signPost(String policyBase64, Instant when) {
+        String accessKeyId = emulatorConfig.auth().rootAccessKeyId()
+                .orElseThrow(() -> new IllegalStateException("root access key ID not configured"));
+        String secretKey = emulatorConfig.auth().resolveRootSecretAccessKey()
+                .orElseThrow(() -> new IllegalStateException("root secret access key not configured"));
         String amzDate = AMZ_DATE_FORMAT.format(when);
         String dateStamp = amzDate.substring(0, 8);
-        String credential = ACCESS_KEY_ID + "/" + dateStamp + "/" + REGION + "/s3/aws4_request";
+        String credential = accessKeyId + "/" + dateStamp + "/" + REGION + "/s3/aws4_request";
         try {
             String signature = SigV4RequestValidator.computePresignedPostSignature(
-                    policyBase64, credential, SECRET_KEY);
+                    policyBase64, credential, secretKey);
             return new PostSigFields(credential, amzDate, signature);
         } catch (Exception e) {
             throw new RuntimeException("Failed to sign presigned POST policy", e);

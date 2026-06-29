@@ -165,10 +165,10 @@ class DockerClientProducerTest {
      */
     @Test
     void resolveEffectiveDockerHost_noEnvVar_usesDefault() {
-        String result = DockerClientProducer.resolveEffectiveDockerHost(
-                "unix:///var/run/docker.sock", null);
-        assertEquals("unix:///var/run/docker.sock", result,
-                "Default unix socket should be used when DOCKER_HOST env var is not set");
+        String configured = "unix:///var/run/docker.sock";
+        String result = DockerClientProducer.resolveEffectiveDockerHost(configured, null);
+        assertEquals(expectedDefaultDockerHost(configured), result,
+                "Platform default should be used when DOCKER_HOST env var is not set");
     }
 
     /**
@@ -176,9 +176,17 @@ class DockerClientProducerTest {
      */
     @Test
     void resolveEffectiveDockerHost_blankEnvVar_usesDefault() {
-        String result = DockerClientProducer.resolveEffectiveDockerHost(
-                "unix:///var/run/docker.sock", "");
-        assertEquals("unix:///var/run/docker.sock", result,
-                "Default unix socket should be used when DOCKER_HOST env var is blank");
+        String configured = "unix:///var/run/docker.sock";
+        String result = DockerClientProducer.resolveEffectiveDockerHost(configured, "");
+        assertEquals(expectedDefaultDockerHost(configured), result,
+                "Platform default should be used when DOCKER_HOST env var is blank");
+    }
+
+    private static String expectedDefaultDockerHost(String configuredUnixDefault) {
+        if (System.getProperty("os.name", "").toLowerCase().contains("win")
+                && "unix:///var/run/docker.sock".equals(configuredUnixDefault)) {
+            return "npipe:////./pipe/docker_engine";
+        }
+        return configuredUnixDefault;
     }
 }

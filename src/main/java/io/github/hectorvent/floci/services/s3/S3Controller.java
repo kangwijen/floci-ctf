@@ -2400,16 +2400,16 @@ public class S3Controller {
     }
 
     private Optional<String> resolvePresignSecret(String accessKeyId) {
-        if (accessKeyId != null) {
-            Optional<String> fromIam = iamService.findSecretKey(accessKeyId);
-            if (fromIam.isPresent()) {
-                return fromIam;
-            }
-            if (emulatorConfig.auth().rootAccessKeyId().filter(accessKeyId::equals).isPresent()) {
-                return emulatorConfig.auth().resolveRootSecretAccessKey();
-            }
+        if (accessKeyId == null) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        Optional<String> rootSecret = emulatorConfig.auth().rootAccessKeyId()
+                .filter(accessKeyId::equals)
+                .flatMap(ignored -> emulatorConfig.auth().resolveRootSecretAccessKey());
+        if (rootSecret.isPresent()) {
+            return rootSecret;
+        }
+        return iamService.findSecretKey(accessKeyId);
     }
 
     private void validatePolicyConditions(String policyBase64, String bucket,

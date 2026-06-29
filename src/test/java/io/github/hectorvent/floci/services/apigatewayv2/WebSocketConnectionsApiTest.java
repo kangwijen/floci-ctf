@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for the @connections REST API (POST, GET, DELETE).
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketConnectionsApiTest {
 
@@ -43,11 +46,20 @@ class WebSocketConnectionsApiTest {
     // Track the connectionId from the WebSocket connection
     private static String activeConnectionId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupWebSocketApi();
+            setupLambdaFunctions();
+            setupIntegrationAndRoutes();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupWebSocketApi() {
+    private void setupWebSocketApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -71,9 +83,7 @@ class WebSocketConnectionsApiTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupLambdaFunctions() throws Exception {
+    private void setupLambdaFunctions() throws Exception {
         // $connect Lambda that returns 200
         String connectZip = WebSocketTestSupport.createLambdaZip(
                 "exports.handler = async (event) => ({ statusCode: 200, body: 'connected' });");
@@ -107,9 +117,7 @@ class WebSocketConnectionsApiTest {
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(3)
-    void setupIntegrationAndRoutes() {
+    private void setupIntegrationAndRoutes() {
         // Create integration for $connect
         integrationId = given()
                 .contentType(ContentType.JSON)

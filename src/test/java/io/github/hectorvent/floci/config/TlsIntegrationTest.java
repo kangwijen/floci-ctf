@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.config;
 import io.github.hectorvent.floci.services.acm.CertificateGenerator;
 import io.github.hectorvent.floci.services.acm.model.KeyAlgorithm;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
+import io.github.hectorvent.floci.testing.TlsTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -113,9 +114,10 @@ class TlsIntegrationTest {
 
     public static final class TlsEnabledProfile implements QuarkusTestProfile {
 
-        private static final Path CERT_DIR = Path.of("/tmp/floci-tls-integration-test");
+        private static final Path CERT_DIR = TlsTestSupport.tempDir("floci-tls-integration-test");
         private static final Path CERT_FILE = CERT_DIR.resolve("test.crt");
         private static final Path KEY_FILE = CERT_DIR.resolve("test.key");
+        private static final Path DATA_DIR = TlsTestSupport.tempDir("floci-tls-integration-test-data");
 
         static {
             generateCertIfNeeded();
@@ -145,11 +147,11 @@ class TlsIntegrationTest {
             return Map.of(
                     "floci.tls.enabled", "true",
                     "floci.tls.self-signed", "false",
-                    "floci.tls.cert-path", CERT_FILE.toAbsolutePath().toString(),
-                    "floci.tls.key-path", KEY_FILE.toAbsolutePath().toString(),
-                    "floci.storage.persistent-path", "/tmp/floci-tls-integration-test-data",
-                    "quarkus.http.ssl.certificate.files", CERT_FILE.toAbsolutePath().toString(),
-                    "quarkus.http.ssl.certificate.key-files", KEY_FILE.toAbsolutePath().toString(),
+                    "floci.tls.cert-path", TlsTestSupport.configPath(CERT_FILE),
+                    "floci.tls.key-path", TlsTestSupport.configPath(KEY_FILE),
+                    "floci.storage.persistent-path", TlsTestSupport.configPath(DATA_DIR),
+                    "quarkus.http.ssl.certificate.files", TlsTestSupport.configPath(CERT_FILE),
+                    "quarkus.http.ssl.certificate.key-files", TlsTestSupport.configPath(KEY_FILE),
                     "quarkus.http.insecure-requests", "enabled"
             );
         }

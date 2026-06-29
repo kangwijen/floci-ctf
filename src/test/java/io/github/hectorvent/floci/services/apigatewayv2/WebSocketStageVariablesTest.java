@@ -2,9 +2,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Multiple stage variable references in a single URI are all substituted.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketStageVariablesTest {
 
@@ -34,11 +37,19 @@ class WebSocketStageVariablesTest {
     private static String wsApiId;
     private static String stageVarFnName = "ws-stage-var-fn";
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupLambdaFunction();
+            setupWebSocketApi();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupLambdaFunction() throws Exception {
+    private void setupLambdaFunction() throws Exception {
         // Create a Lambda function that returns a fixed response to verify it was invoked
         String zip = WebSocketTestSupport.createLambdaZip(
                 "exports.handler = async (event) => ({ statusCode: 200, body: JSON.stringify({handler:'stage-var-success', routeKey: (event.requestContext || {}).routeKey || 'none'}) });");
@@ -57,9 +68,7 @@ class WebSocketStageVariablesTest {
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(2)
-    void setupWebSocketApi() {
+    private void setupWebSocketApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)

@@ -46,7 +46,7 @@ cross-resource references.
 | SSM | `Parameter` |
 | KMS | `Key`, `Alias` |
 | Secrets Manager | `Secret` |
-| ECR | `Repository` |
+| ECR | `Repository` (auto-generated and explicit names normalized to lowercase for AWS ECR naming rules) |
 | ECS | `Cluster`, `TaskDefinition`, `Service` |
 | EKS | `Cluster`, `Nodegroup` |
 | RDS | `DBInstance`, `DBCluster`, `DBSubnetGroup`, `DBParameterGroup`, `DBClusterParameterGroup` (DBInstance/DBCluster start real containers) |

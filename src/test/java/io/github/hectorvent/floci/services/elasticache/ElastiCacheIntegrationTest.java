@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.elasticache;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -47,7 +48,8 @@ class ElastiCacheIntegrationTest {
 
     @BeforeAll
     static void requireDocker() {
-        Assumptions.assumeTrue(isDockerAvailable(), "Docker daemon must be available for ElastiCache integration tests");
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for ElastiCache integration tests");
     }
 
     @AfterAll
@@ -334,18 +336,6 @@ class ElastiCacheIntegrationTest {
             .statusCode(200)
             .body("DeleteReplicationGroupResponse.DeleteReplicationGroupResult.ReplicationGroup.ReplicationGroupId",
                     equalTo(GROUP_ID + "-reused"));
-    }
-
-    private static boolean isDockerAvailable() {
-        try {
-            Process process = new ProcessBuilder("docker", "version", "--format", "{{.Server.Version}}")
-                    .redirectErrorStream(true)
-                    .start();
-            int exit = process.waitFor();
-            return exit == 0;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private static Socket openSocket(int port) throws IOException {

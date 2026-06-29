@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -20,6 +21,25 @@ import java.util.zip.ZipOutputStream;
 public final class WebSocketTestSupport {
 
     private WebSocketTestSupport() {}
+
+    /**
+     * Runs a setup block at most once per JVM for a test class.
+     * Use from {@code @BeforeEach} so Quarkus HTTP is up before RestAssured calls.
+     */
+    public static final class RunOnce {
+        private final AtomicBoolean done = new AtomicBoolean();
+
+        public void run(SetupAction action) throws Exception {
+            if (done.compareAndSet(false, true)) {
+                action.run();
+            }
+        }
+
+        @FunctionalInterface
+        public interface SetupAction {
+            void run() throws Exception;
+        }
+    }
 
     // ──────────────────────────── Lambda ZIP creation ────────────────────────────
 
@@ -48,8 +68,15 @@ public final class WebSocketTestSupport {
      * @return the WebSocket URL (e.g. ws://localhost:8081/ws/{apiId}/{stageName})
      */
     public static String buildWsUrl(URI baseUri, String apiId, String stageName) {
-        String wsUrl = baseUri.toString().replaceFirst("^http", "ws") + "ws/" + apiId + "/" + stageName;
-        return wsUrl.replace("//ws/", "/ws/");
+        String host = baseUri.getHost();
+        if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
+            host = "127.0.0.1";
+        }
+        int port = baseUri.getPort();
+        if (port < 0) {
+            port = "https".equalsIgnoreCase(baseUri.getScheme()) ? 443 : 80;
+        }
+        return "ws://" + host + ":" + port + "/ws/" + apiId + "/" + stageName;
     }
 
     // ──────────────────────────── WebSocket connection helpers ────────────────────────────

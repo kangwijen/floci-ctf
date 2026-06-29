@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.s3;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.MethodOrderer;
@@ -26,6 +27,9 @@ class PreSignedUrlIntegrationTest {
 
     @Inject
     PreSignedUrlGenerator presignGenerator;
+
+    @Inject
+    EmulatorConfig emulatorConfig;
 
     @Test
     @Order(1)
@@ -83,7 +87,9 @@ class PreSignedUrlIntegrationTest {
                 ? url.substring(credStart + "X-Amz-Credential=".length(), credEnd)
                 : url.substring(credStart + "X-Amz-Credential=".length());
         String credential = URLDecoder.decode(encodedCredential, StandardCharsets.UTF_8);
-        assertTrue(credential.startsWith("AKIATESTPRESIGN01/"),
+        String expectedAccessKeyId = emulatorConfig.auth().rootAccessKeyId()
+                .orElseThrow(() -> new AssertionError("root access key ID must be configured"));
+        assertTrue(credential.startsWith(expectedAccessKeyId + "/"),
                 "X-Amz-Credential should start with operator root access key ID, got: " + credential);
     }
 

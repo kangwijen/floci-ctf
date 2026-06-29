@@ -1,7 +1,9 @@
 package io.github.hectorvent.floci.services.ecr;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
 import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -29,8 +31,10 @@ class EcrIntegrationTest {
     private static final String REPO = "floci-it/integration";
 
     @BeforeAll
-    static void configureRestAssured() {
+    void configureRestAssured() {
         RestAssuredJsonUtils.configureAwsContentTypes();
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for ECR integration tests");
     }
 
     @Test

@@ -1,6 +1,9 @@
 package io.github.hectorvent.floci.services.neptune;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,12 @@ class NeptuneIntegrationTest {
     private static final String AUTH =
             "AWS4-HMAC-SHA256 Credential=test/20260516/us-east-1/neptune/aws4_request, " +
             "SignedHeaders=content-type;host, Signature=test";
+
+    @BeforeAll
+    static void requireDocker() {
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for Neptune integration tests");
+    }
 
     @Test
     @Order(1)

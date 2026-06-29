@@ -114,6 +114,10 @@ No other Floci-emulated service (S3, EC2, IAM, DynamoDB, Lambda, ...) has an AWS
 
 Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforcementFilter` after `IamActionRegistry` resolves the action.
 
+**JSON 1.1 credential scope:** For `POST /` requests with `X-Amz-Target`, `IamActionRegistry` resolves the IAM action from the **target service** in the header (for example `secretsmanager.ListSecrets`), not only from the SigV4 credential scope service. When the credential scope service and target service differ, strict enforcement returns HTTP 403. Regression: `IamJson11CredentialScopeSplitIntegrationTest`.
+
+**REST route scope:** Catch-all rules that mis-route unrelated paths (historically Kinesis `POST .*`) are removed in favor of explicit service rules (for example `apigatewayv2` `/v2/apis`). Regression: `IamKinesisCatchAllRouteScopeIntegrationTest`.
+
 **GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`.
 
 **AssumeRole trust policies:** `AssumeRoleTrustPolicyEvaluator` checks role trust documents before credentials are issued, including `sts:ExternalId` conditions and `Principal.AWS` matching.
@@ -213,7 +217,9 @@ Unmapped pipe sources (for example Amazon MQ) and unknown target ARNs are denied
 
 **Resource-based policies:** `ResourcePolicyResolver` loads policy documents for **S3** (bucket policy), **Lambda** (function permissions), **SQS** (queue `Policy` attribute), **SNS** (topic policy, including the default topic policy), **KMS** (key policy), and **Secrets Manager** (secret resource policy). `IamEnforcementFilter` passes them to `IamPolicyEvaluator` Phase 2: an Allow from identity **or** resource is required; explicit Deny in either wins. Resource statements match `Principal` / `NotPrincipal` (AWS account id, `:root` as any principal in that account, ARN globs, `*`) via `PolicyPrincipalMatcher`. Condition context includes `aws:principalarn`, `aws:principalaccount`, `aws:sourceaccount`, `aws:sourcearn`, `aws:userid`, and `aws:sourceip`.
 
-**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth (secret from the registered IAM access key or operator root pair), `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential.
+**Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth, `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential. When `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the operator root secret from config (not a stale IAM registration with the same access key id) is used for signature verification.
+
+**API Gateway in-process IAM:** JSON-body AWS integrations and path-style integrations (`arn:...:sqs:path/...`, `arn:...:lambda:path/...`) evaluate the integration execution role via `InProcessIamAuthorizer` when enforcement is on. Path-style SQS calls use `AwsServiceRouter.invokeQuery` with `integration.credentials`. Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`.
 
 ### Bypass rules
 
@@ -273,7 +279,7 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 
 **Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. SigV4a presign is rejected.
 
-**Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`.
+**Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). When the access key id matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the configured operator root secret wins over IAM lookups. Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`, `S3PresignedPostIntegrationTest`.
 
 ### Assumed roles
 

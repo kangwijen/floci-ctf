@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **iam:** JSON 1.1 credential-scope enforcement uses the `X-Amz-Target` service for IAM action resolution and SigV4 scope-mismatch checks (`IamJson11CredentialScopeSplitIntegrationTest`, `IamKinesisCatchAllRouteScopeIntegrationTest`)
+- **apigateway:** in-process IAM on path-style SQS query integrations and Lambda path integrations (`ApiGatewaySqsQueryIamBypassIntegrationTest`); `AwsServiceRouter.invokeQuery` records CloudTrail audit when audit is enabled
+
+### Fixed
+
+- **iam:** removed the Kinesis `POST .*` catch-all route rule that mis-scoped IAM for unrelated REST paths (for example `POST /v2/apis`); added explicit `apigatewayv2` and narrowed Lambda path rules
+- **ec2:** wired Network ACL Query API actions in `Ec2QueryHandler` (`CreateNetworkAcl`, `DescribeNetworkAcls`, entry CRUD, `ReplaceNetworkAclAssociation`)
+- **s3:** presigned URL and presigned POST signature validation prefers the configured operator root secret when `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, even if the same access key id exists in IAM state
+- **sts:** `AssumeRole` caller resolution falls back to account root for unresolved credentials, matching `GetCallerIdentity`
+- **cloudformation:** normalize auto-generated and explicit `AWS::ECR::Repository` names to lowercase before `CreateRepository`
+- **lambda:** Runtime API port allocation probes host availability, retries on bind failure, and falls back to ephemeral ports when `9200-9299` is busy; factory stops orphaned servers on shutdown
+- **elasticache / memorydb / rds / neptune:** proxy port allocation skips host-bound ports and can fall back to ephemeral ports
+- **docker:** on Windows, auto-fallback from `unix:///var/run/docker.sock` to `npipe:////./pipe/docker_engine` when `DOCKER_HOST` is unset
+- **lambda:** `ZipExtractor` treats backslash ZIP entry names as literal filenames on Windows (AWS Lambda parity)
+- **tls:** Windows-safe certificate path handling in tests; skip dual-protocol TLS proxy startup in Quarkus test mode
+- **core:** `TlsProxyServer` and container credential HTTP servers use `SO_REUSEADDR` for faster port reuse in test suites
+
+### Changed
+
+- **tests:** WebSocket integration tests provision APIs via `@BeforeEach` so filtered single-method runs work; test `application.yml` uses dedicated Lambda runtime API (`29200-29299`) and credential ports (`29171`/`29172`); ElastiCache test proxy range moved to `16379-16399` to avoid local Redis on `6379`
+
 ## [1.5.28] - 2026-06-26
 
 ### Added

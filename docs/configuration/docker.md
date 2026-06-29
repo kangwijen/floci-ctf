@@ -12,7 +12,9 @@ floci:
     docker-host: unix:///var/run/docker.sock
 ```
 
-Environment variable: `FLOCI_DOCKER_DOCKER_HOST`
+Environment variable: `FLOCI_DOCKER_DOCKER_HOST` (or host `DOCKER_HOST` when `floci.docker.docker-host` is unset).
+
+**Windows (Docker Desktop):** When the configured default is `unix:///var/run/docker.sock` and `DOCKER_HOST` is not set, Floci auto-falls back to `npipe:////./pipe/docker_engine`. Set `DOCKER_HOST` explicitly if you use a non-default daemon.
 
 When running Floci inside Docker Compose, mount the host socket:
 

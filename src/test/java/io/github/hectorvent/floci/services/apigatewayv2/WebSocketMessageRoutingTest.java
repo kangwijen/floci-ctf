@@ -2,9 +2,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for WebSocket message routing.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketMessageRoutingTest {
 
@@ -42,11 +45,21 @@ class WebSocketMessageRoutingTest {
     private static String typeRouteId;
     private static String typeDefaultRouteId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupApis();
+            setupLambdaFunctions();
+            prewarmLambdaFunctions();
+            setupIntegrationsAndRoutes();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupApis() {
+    private void setupApis() {
         // Create a WEBSOCKET API with routeSelectionExpression: $request.body.action
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -92,9 +105,7 @@ class WebSocketMessageRoutingTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupLambdaFunctions() throws Exception {
+    private void setupLambdaFunctions() throws Exception {
         // Lambda for sendMessage route — returns a fixed identifier "sendMessage-handler"
         String sendMsgZip = WebSocketTestSupport.createLambdaZip(
                 "exports.handler = async (event) => ({ statusCode: 200, body: JSON.stringify({handler:'sendMessage-handler', routeKey: (event.requestContext || {}).routeKey || 'none'}) });");
@@ -120,9 +131,7 @@ class WebSocketMessageRoutingTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(3)
-    void prewarmLambdaFunctions() {
+    private void prewarmLambdaFunctions() {
         given().contentType(ContentType.JSON).body("{}")
                 .when().post("/2015-03-31/functions/" + sendMessageFnName + "/invocations")
                 .then().statusCode(200);
@@ -131,9 +140,7 @@ class WebSocketMessageRoutingTest {
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(4)
-    void setupIntegrationsAndRoutes() {
+    private void setupIntegrationsAndRoutes() {
         // Integration for sendMessage function
         integrationIdSendMessage = given()
                 .contentType(ContentType.JSON)

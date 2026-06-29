@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.elasticache;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.port.PortAllocator;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheContainerHandle;
@@ -234,13 +235,12 @@ public class ElastiCacheService {
     private int allocateProxyPort() {
         int base = config.services().elasticache().proxyBasePort();
         int max = config.services().elasticache().proxyMaxPort();
-        for (int port = base; port <= max; port++) {
-            if (usedPorts.add(port)) {
-                return port;
-            }
+        int port = PortAllocator.allocateFromRange(base, max, usedPorts, true);
+        if (port < 0) {
+            throw new AwsException("InsufficientReplicationGroupCapacity",
+                    "No available proxy ports in range " + base + "-" + max, 503);
         }
-        throw new AwsException("InsufficientReplicationGroupCapacity",
-                "No available proxy ports in range " + base + "-" + max, 503);
+        return port;
     }
 
     private void releaseProxyPort(int port) {

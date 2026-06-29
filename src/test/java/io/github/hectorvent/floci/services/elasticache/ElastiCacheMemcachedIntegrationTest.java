@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.elasticache;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -35,7 +36,8 @@ class ElastiCacheMemcachedIntegrationTest {
 
     @BeforeAll
     static void requireDocker() {
-        Assumptions.assumeTrue(isDockerAvailable(), "Docker daemon must be available for Memcached integration tests");
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for Memcached integration tests");
     }
 
     @AfterAll
@@ -176,16 +178,5 @@ class ElastiCacheMemcachedIntegrationTest {
             sb.append((char) b);
         }
         return sb.toString();
-    }
-
-    private static boolean isDockerAvailable() {
-        try {
-            Process process = new ProcessBuilder("docker", "version", "--format", "{{.Server.Version}}")
-                    .redirectErrorStream(true)
-                    .start();
-            return process.waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
     }
 }

@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -31,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * the full event.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketProxyEventFormatTest {
 
@@ -45,11 +48,21 @@ class WebSocketProxyEventFormatTest {
     private static String defaultRouteId;
     private static String connectRouteId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupApi();
+            setupLambdaFunction();
+            prewarmLambdaFunction();
+            setupIntegrationsAndRoutes();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupApi() {
+    private void setupApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -73,9 +86,7 @@ class WebSocketProxyEventFormatTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupLambdaFunction() throws Exception {
+    private void setupLambdaFunction() throws Exception {
         // Echo Lambda: wraps the event in a wrapper to avoid body field collision.
         // The handler extracts "body" from Lambda response, parses it as JSON,
         // and since the wrapper has no "body" field, sends the raw string to the client.
@@ -94,17 +105,13 @@ class WebSocketProxyEventFormatTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(3)
-    void prewarmLambdaFunction() {
+    private void prewarmLambdaFunction() {
         given().contentType(ContentType.JSON).body("{}")
                 .when().post("/2015-03-31/functions/" + echoFnName + "/invocations")
                 .then().statusCode(200);
     }
 
-    @Test
-    @Order(4)
-    void setupIntegrationsAndRoutes() {
+    private void setupIntegrationsAndRoutes() {
         // Create integration pointing to the echo Lambda
         integrationId = given()
                 .contentType(ContentType.JSON)

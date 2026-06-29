@@ -101,8 +101,8 @@ public class TlsConfigSource implements ConfigSource {
                             + "Set FLOCI_TLS_CERT_PATH + FLOCI_TLS_KEY_PATH, or enable FLOCI_TLS_SELF_SIGNED.");
         }
 
-        properties.put("quarkus.http.ssl.certificate.files", certPath);
-        properties.put("quarkus.http.ssl.certificate.key-files", keyPath);
+        properties.put("quarkus.http.ssl.certificate.files", toConfigPath(certPath));
+        properties.put("quarkus.http.ssl.certificate.key-files", toConfigPath(keyPath));
         // When TLS is enabled, Quarkus HTTP and HTTPS run on internal ports.
         // A TlsProxyServer (NetServer) listens on the public Floci port (4566)
         // and does protocol detection to route HTTP and HTTPS to the correct backend.
@@ -195,6 +195,11 @@ public class TlsConfigSource implements ConfigSource {
             throw new IllegalStateException(
                     description + " file not found or not readable: " + path);
         }
+    }
+
+    /** Forward slashes avoid backslash escape mangling in config property values on Windows. */
+    private static String toConfigPath(String path) {
+        return Path.of(path).toAbsolutePath().normalize().toString().replace('\\', '/');
     }
 
     /**

@@ -1,6 +1,9 @@
 package io.github.hectorvent.floci.services.docdb;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -27,6 +30,12 @@ class DocDbIntegrationTest {
     private static final String AUTH_RDS_SCOPE =
             "AWS4-HMAC-SHA256 Credential=test/20260615/us-east-1/rds/aws4_request, " +
             "SignedHeaders=content-type;host, Signature=test";
+
+    @BeforeAll
+    static void requireDocker() {
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for DocumentDB integration tests");
+    }
 
     @Test
     @Order(1)

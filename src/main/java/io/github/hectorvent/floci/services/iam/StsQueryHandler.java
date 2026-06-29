@@ -6,8 +6,6 @@ import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
-
-import java.util.Optional;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.AwsQueryController;
 import io.github.hectorvent.floci.core.common.AwsQueryResponse;
@@ -316,16 +314,12 @@ public class StsQueryHandler {
         }
         String accessKeyId = accountResolver.extractAccessKeyId(authorization);
         String defaultAccountId = accountResolver.resolve(authorization);
-        Optional<CallerIdentity> caller = iamService.resolveCallerIdentity(
-                accessKeyId, defaultAccountId, config.auth().rootAccessKeyId());
-        if (caller.isEmpty()) {
-            return AwsQueryResponse.error("AccessDenied",
-                    "User is not authorized to perform: " + stsAction + " on resource: " + roleArn,
-                    AwsNamespaces.STS, 403);
-        }
+        CallerIdentity caller = iamService.resolveCallerIdentity(
+                accessKeyId, defaultAccountId, config.auth().rootAccessKeyId())
+                .orElseGet(() -> CallerIdentity.root(defaultAccountId));
         try {
             iamService.validateAssumeRoleTrust(
-                    roleArn, caller.get().arn(), getParam(params, "ExternalId"), stsAction);
+                    roleArn, caller.arn(), getParam(params, "ExternalId"), stsAction);
         } catch (AwsException e) {
             return AwsQueryResponse.error(e.getErrorCode(), e.getMessage(), AwsNamespaces.STS, e.getHttpStatus());
         }

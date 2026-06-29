@@ -148,16 +148,16 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
     }
 
     private Optional<String> resolvePresignSecret(String accessKeyId) {
-        if (accessKeyId != null) {
-            Optional<String> fromIam = iamService.findSecretKey(accessKeyId);
-            if (fromIam.isPresent()) {
-                return fromIam;
-            }
-            if (config.auth().rootAccessKeyId().filter(accessKeyId::equals).isPresent()) {
-                return config.auth().resolveRootSecretAccessKey();
-            }
+        if (accessKeyId == null) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        Optional<String> rootSecret = config.auth().rootAccessKeyId()
+                .filter(accessKeyId::equals)
+                .flatMap(ignored -> config.auth().resolveRootSecretAccessKey());
+        if (rootSecret.isPresent()) {
+            return rootSecret;
+        }
+        return iamService.findSecretKey(accessKeyId);
     }
 
     private Response expiredResponse(Instant signedAt, int expiresSeconds) {

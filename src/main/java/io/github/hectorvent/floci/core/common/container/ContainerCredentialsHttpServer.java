@@ -6,6 +6,7 @@ import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
@@ -99,7 +100,7 @@ public final class ContainerCredentialsHttpServer {
         router.get("/v2/credentials/:token").handler(this::handleCredentials);
 
         String bindHost = uriBuilder.resolveBindHost();
-        httpServer = vertx.createHttpServer();
+        httpServer = vertx.createHttpServer(new HttpServerOptions().setReuseAddress(true));
         httpServer.requestHandler(router).listen(port, bindHost, result -> {
             if (result.succeeded()) {
                 log.infof("%s container credentials server listening on %s:%d", label, bindHost, port);

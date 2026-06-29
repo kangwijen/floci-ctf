@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.docker.ContainerStorageHelper;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
+import io.github.hectorvent.floci.core.common.port.PortAllocator;
 import io.github.hectorvent.floci.core.storage.AccountAwareStorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
@@ -900,13 +901,12 @@ public class RdsService {
     private int allocateProxyPort() {
         int base = config.services().rds().proxyBasePort();
         int max = config.services().rds().proxyMaxPort();
-        for (int port = base; port <= max; port++) {
-            if (usedPorts.add(port)) {
-                return port;
-            }
+        int port = PortAllocator.allocateFromRange(base, max, usedPorts, true);
+        if (port < 0) {
+            throw new AwsException("InsufficientDBInstanceCapacity",
+                    "No available proxy ports in range " + base + "-" + max, 503);
         }
-        throw new AwsException("InsufficientDBInstanceCapacity",
-                "No available proxy ports in range " + base + "-" + max, 503);
+        return port;
     }
 
     private void releaseProxyPort(int port) {

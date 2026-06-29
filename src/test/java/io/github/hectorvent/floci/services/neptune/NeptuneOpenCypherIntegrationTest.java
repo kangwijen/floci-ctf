@@ -55,7 +55,10 @@ class NeptuneOpenCypherIntegrationTest {
         int boltPort = parsePort(createResponse);
 
         try (Driver driver = GraphDatabase.driver(
-                "bolt://localhost:" + boltPort, AuthTokens.none())) {
+                "bolt://127.0.0.1:" + boltPort, AuthTokens.none(),
+                org.neo4j.driver.Config.builder()
+                        .withConnectionTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                        .build())) {
             driver.verifyConnectivity();
             try (Session session = driver.session()) {
                 long one = session.run("RETURN 1 AS n").single().get("n").asLong();

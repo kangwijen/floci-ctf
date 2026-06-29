@@ -134,7 +134,7 @@ public final class AmiImageTool {
             staged.virtualizationType = image.aws.virtualizationType;
             staged.guestRuntime = image.guest.runtime;
             staged.cloudInit = image.guest.cloudInit;
-            staged.provenance = contextDir(outputRoot, image).resolve("provenance.yaml").toString();
+            staged.provenance = catalogRelativePath(contextDir(outputRoot, image).resolve("provenance.yaml"));
             if (write) {
                 YAML.writerWithDefaultPrettyPrinter().writeValue(catalogPath.toFile(), catalog);
             }
@@ -185,6 +185,11 @@ public final class AmiImageTool {
 
     static Path contextDir(Path outputRoot, ImageSpec image) {
         return outputRoot.resolve(image.id);
+    }
+
+    /** Catalog provenance paths use forward slashes for cross-platform YAML stability. */
+    static String catalogRelativePath(Path path) {
+        return path.toString().replace('\\', '/');
     }
 
     private static ImageSpec findImage(Metadata metadata, String id) {

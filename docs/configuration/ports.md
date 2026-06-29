@@ -52,6 +52,8 @@ aws lambda list-functions --endpoint-url http://localhost:4566
 
 When you create an ElastiCache replication group, Floci starts a Valkey/Redis Docker container and creates a TCP proxy on the next available port in the `6379–6399` range. The proxy runs inside the Floci container, so this range must be mapped in `docker-compose.yml`.
 
+Proxy ports are probed on the host before assignment. If a port in the configured range is already bound (for example by a local Redis instance), Floci skips it or falls back to an ephemeral port.
+
 ```bash
 # Create a replication group
 aws elasticache create-replication-group \
@@ -108,6 +110,8 @@ psql -h localhost -p 7001 -U admin
 ## Ports 9200–9299 — Lambda Runtime API (internal)
 
 Floci binds a Runtime API port in `9200–9299` for each warm Lambda container to poll. These ports are consumed by containers on the shared Docker network only — they are never accessed from the host and must **not** be mapped in `docker-compose.yml`.
+
+The allocator probes each candidate port on the host before assignment. When the configured range is exhausted or ports are already bound (for example by a prior test run or another service), Floci falls back to an OS ephemeral port so Lambda containers can still start.
 
 Configure the range with `FLOCI_SERVICES_LAMBDA_RUNTIME_API_BASE_PORT` and `FLOCI_SERVICES_LAMBDA_RUNTIME_API_MAX_PORT`.
 

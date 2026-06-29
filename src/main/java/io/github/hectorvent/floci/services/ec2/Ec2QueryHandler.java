@@ -110,6 +110,14 @@ public class Ec2QueryHandler {
                 case "DisassociateRouteTable" -> handleDisassociateRouteTable(params, region);
                 case "CreateRoute" -> handleCreateRoute(params, region);
                 case "DeleteRoute" -> handleDeleteRoute(params, region);
+                // Network ACLs
+                case "CreateNetworkAcl" -> handleCreateNetworkAcl(params, region);
+                case "DescribeNetworkAcls" -> handleDescribeNetworkAcls(params, region);
+                case "DeleteNetworkAcl" -> handleDeleteNetworkAcl(params, region);
+                case "CreateNetworkAclEntry" -> handleCreateNetworkAclEntry(params, region);
+                case "ReplaceNetworkAclEntry" -> handleReplaceNetworkAclEntry(params, region);
+                case "DeleteNetworkAclEntry" -> handleDeleteNetworkAclEntry(params, region);
+                case "ReplaceNetworkAclAssociation" -> handleReplaceNetworkAclAssociation(params, region);
                 // NAT Gateways
                 case "CreateNatGateway" -> handleCreateNatGateway(params, region);
                 case "DescribeNatGateways" -> handleDescribeNatGateways(params, region);
@@ -1206,6 +1214,80 @@ public class Ec2QueryHandler {
         return booleanResponse("DeleteRoute");
     }
 
+    // ─── Network ACL handlers ───────────────────────────────────────────────────
+
+    private Response handleCreateNetworkAcl(MultivaluedMap<String, String> p, String region) {
+        NetworkAcl acl = service.createNetworkAcl(region, p.getFirst("VpcId"));
+        XmlBuilder xml = new XmlBuilder()
+                .start("CreateNetworkAclResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString())
+                .start("networkAcl").raw(networkAclXml(acl)).end("networkAcl")
+                .end("CreateNetworkAclResponse");
+        return xmlResponse(xml.build());
+    }
+
+    private Response handleDescribeNetworkAcls(MultivaluedMap<String, String> p, String region) {
+        List<String> ids = getList(p, "NetworkAclId");
+        Map<String, List<String>> filters = getFilters(p);
+        List<NetworkAcl> acls = service.describeNetworkAcls(region, ids, filters);
+        XmlBuilder xml = new XmlBuilder()
+                .start("DescribeNetworkAclsResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString())
+                .start("networkAclSet");
+        for (NetworkAcl acl : acls) {
+            xml.start("item").raw(networkAclXml(acl)).end("item");
+        }
+        xml.end("networkAclSet").end("DescribeNetworkAclsResponse");
+        return xmlResponse(xml.build());
+    }
+
+    private Response handleDeleteNetworkAcl(MultivaluedMap<String, String> p, String region) {
+        service.deleteNetworkAcl(region, p.getFirst("NetworkAclId"));
+        return booleanResponse("DeleteNetworkAcl");
+    }
+
+    private void applyNetworkAclEntry(MultivaluedMap<String, String> p, String region, boolean replace) {
+        String fromStr = p.getFirst("PortRange.From");
+        String toStr = p.getFirst("PortRange.To");
+        Integer from = fromStr != null ? Integer.parseInt(fromStr) : null;
+        Integer to = toStr != null ? Integer.parseInt(toStr) : null;
+        service.createNetworkAclEntry(region, p.getFirst("NetworkAclId"),
+                Integer.parseInt(p.getFirst("RuleNumber")),
+                p.getFirst("Protocol"),
+                p.getFirst("RuleAction"),
+                Boolean.parseBoolean(p.getFirst("Egress")),
+                p.getFirst("CidrBlock"),
+                from, to, replace);
+    }
+
+    private Response handleCreateNetworkAclEntry(MultivaluedMap<String, String> p, String region) {
+        applyNetworkAclEntry(p, region, false);
+        return booleanResponse("CreateNetworkAclEntry");
+    }
+
+    private Response handleReplaceNetworkAclEntry(MultivaluedMap<String, String> p, String region) {
+        applyNetworkAclEntry(p, region, true);
+        return booleanResponse("ReplaceNetworkAclEntry");
+    }
+
+    private Response handleDeleteNetworkAclEntry(MultivaluedMap<String, String> p, String region) {
+        service.deleteNetworkAclEntry(region, p.getFirst("NetworkAclId"),
+                Integer.parseInt(p.getFirst("RuleNumber")),
+                Boolean.parseBoolean(p.getFirst("Egress")));
+        return booleanResponse("DeleteNetworkAclEntry");
+    }
+
+    private Response handleReplaceNetworkAclAssociation(MultivaluedMap<String, String> p, String region) {
+        NetworkAclAssociation assoc = service.replaceNetworkAclAssociation(region,
+                p.getFirst("AssociationId"), p.getFirst("NetworkAclId"));
+        XmlBuilder xml = new XmlBuilder()
+                .start("ReplaceNetworkAclAssociationResponse", AwsNamespaces.EC2)
+                .elem("requestId", UUID.randomUUID().toString())
+                .elem("newAssociationId", assoc.getNetworkAclAssociationId())
+                .end("ReplaceNetworkAclAssociationResponse");
+        return xmlResponse(xml.build());
+    }
+
     // ─── NAT Gateway handlers ─────────────────────────────────────────────────
 
     private Response handleCreateNatGateway(MultivaluedMap<String, String> p, String region) {
@@ -1876,6 +1958,41 @@ public class Ec2QueryHandler {
         }
         xml.end("associationSet")
                 .raw(tagSetXml(rt.getTags()));
+        return xml.build();
+    }
+
+    private String networkAclXml(NetworkAcl acl) {
+        XmlBuilder xml = new XmlBuilder()
+                .elem("networkAclId", acl.getNetworkAclId())
+                .elem("vpcId", acl.getVpcId())
+                .elem("ownerId", acl.getOwnerId())
+                .elem("isDefault", String.valueOf(acl.isDefault()))
+                .start("entrySet");
+        for (NetworkAclEntry entry : acl.getEntries()) {
+            xml.start("item")
+                    .elem("ruleNumber", String.valueOf(entry.getRuleNumber()))
+                    .elem("protocol", entry.getProtocol())
+                    .elem("ruleAction", entry.getRuleAction())
+                    .elem("egress", String.valueOf(entry.isEgress()))
+                    .elem("cidrBlock", entry.getCidrBlock());
+            if (entry.getPortRangeFrom() != null && entry.getPortRangeTo() != null) {
+                xml.start("portRange")
+                        .elem("from", String.valueOf(entry.getPortRangeFrom()))
+                        .elem("to", String.valueOf(entry.getPortRangeTo()))
+                        .end("portRange");
+            }
+            xml.end("item");
+        }
+        xml.end("entrySet").start("associationSet");
+        for (NetworkAclAssociation assoc : acl.getAssociations()) {
+            xml.start("item")
+                    .elem("networkAclAssociationId", assoc.getNetworkAclAssociationId())
+                    .elem("networkAclId", assoc.getNetworkAclId())
+                    .elem("subnetId", assoc.getSubnetId())
+                    .end("item");
+        }
+        xml.end("associationSet")
+                .raw(tagSetXml(acl.getTags()));
         return xml.build();
     }
 

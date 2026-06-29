@@ -49,7 +49,7 @@ public class ZipExtractor {
                     continue;
                 }
 
-                Path targetPath = absTarget.resolve(entryName).normalize();
+                Path targetPath = resolveEntryPath(absTarget, entryName);
                 if (!targetPath.startsWith(absTarget)) {
                     LOG.warnv("Skipping out-of-bounds ZIP entry: {0}", entryName);
                     zis.closeEntry();
@@ -69,5 +69,20 @@ public class ZipExtractor {
         }
 
         LOG.debugv("Extracted ZIP to: {0}", absTarget);
+    }
+
+    /**
+     * Resolves a ZIP entry to a path under {@code targetDir}. Forward slashes are path
+     * separators; backslashes are literal filename bytes (PowerShell 5 / AWS Lambda Linux).
+     */
+    static Path resolveEntryPath(Path targetDir, String entryName) {
+        if (entryName.indexOf(BACKSLASH) < 0) {
+            return targetDir.resolve(entryName).normalize();
+        }
+        // getPath(first, more...) treats each argument as a single name element, so '\'
+        // is not interpreted as a separator (matches AWS Lambda on Linux).
+        Path relative = targetDir.getFileSystem().getPath(".", entryName).getFileName();
+        // Do not normalize(): on Windows normalize() treats '\' as a separator.
+        return targetDir.resolve(relative);
     }
 }

@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.config;
 
+import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.net.NetClient;
@@ -55,6 +56,10 @@ public class TlsProxyServer {
 
     private void startIfTlsEnabled() {
         if (!config.tls().enabled()) {
+            return;
+        }
+        if (LaunchMode.current() == LaunchMode.TEST) {
+            LOG.debug("TLS proxy: skipped in Quarkus test launch mode");
             return;
         }
 

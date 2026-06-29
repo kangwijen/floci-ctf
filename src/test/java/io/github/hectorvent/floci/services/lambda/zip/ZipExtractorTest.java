@@ -38,7 +38,7 @@ class ZipExtractorTest {
         extractor.extractTo(zip, target);
 
         // AWS-congruent: the backslashed entry lands as a literal filename, not nested.
-        Path flat = target.resolve("wwwroot\\_framework\\blazor.web.js");
+        Path flat = ZipExtractor.resolveEntryPath(target, "wwwroot\\_framework\\blazor.web.js");
         assertTrue(Files.isRegularFile(flat),
                 "backslashed entry must extract as a literal filename (matching AWS Lambda)");
         assertEquals("// js", Files.readString(flat));

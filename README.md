@@ -31,7 +31,7 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Strict IAM mode | Off by default | On: denies unregistered keys and unknown action mappings |
 | SigV4 on API calls | Off by default | On: validates `Authorization` signatures |
 | Operator bypass | N/A | `FLOCI_AUTH_ROOT_*` pair bypasses enforcement for provisioning |
-| S3 pre-signed URLs | Default HMAC secret or 12-digit account id in credential | SigV4 query auth; **generated** URLs signed with operator root AKIA; **inbound** presigned requests resolve account from `X-Amz-Credential` |
+| S3 pre-signed URLs | Default HMAC secret or 12-digit account id in credential | SigV4 query auth; **generated** URLs signed with operator root AKIA; **inbound** presigned requests resolve account from `X-Amz-Credential`; operator root secret takes precedence over IAM when AKID matches `FLOCI_AUTH_ROOT_*` |
 | Docker image defaults | `test`/`test` baked in; optional `floci`/`floci` deployer | No default credentials in `docker/Dockerfile`; deployer principal not seeded when IAM enforcement is on |
 | Payload hashing | N/A | SigV4 validator hashes request bodies when `x-amz-content-sha256` is absent |
 | `sts:GetCallerIdentity` / `GetSessionToken` | Evaluated like any action | Policy-exempt (AWS parity): no Allow required; SigV4 and registered keys still apply |
@@ -459,10 +459,10 @@ Canonical lists: [AGENTS.md CTF regression](./AGENTS.md#ctf-regression-tests).
 **Core CTF hardening (quick smoke):**
 
 ```bash
-./mvnw test -Dtest=HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,ApiGatewaySqsIntegrationTest
+./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,SqsReceiveMessageScopedQueueIntegrationTest,SqsListQueuesIamIntegrationTest,SecretsManagerKmsEnvelopeIntegrationTest,CloudTrailSqsAuditIntegrationTest,ApiGatewaySqsIntegrationTest
 ```
 
-On Windows with Docker Desktop, set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` before tests that spawn containers.
+On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docker_engine` when the default unix socket is configured and `DOCKER_HOST` is unset. Set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` explicitly if auto-detection does not apply.
 
 ## Documentation in this repo
 
@@ -633,7 +633,7 @@ This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci
 **Post-merge regression:**
 
 ```bash
-./mvnw test -Dtest=SigV4RequestValidatorTest,IamEnforcementIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,StsAssumeRoleTrustIntegrationTest,ContainerEnvHardeningTest,ApiGatewaySqsIntegrationTest
+./mvnw test -Dtest=SigV4RequestValidatorTest,IamEnforcementIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,StsAssumeRoleTrustIntegrationTest,ContainerEnvHardeningTest,ApiGatewaySqsIntegrationTest
 ```
 
 ## Upstream

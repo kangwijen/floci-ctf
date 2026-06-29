@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.core.common.port.PortAllocator;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.neptune.container.NeptuneContainerHandle;
@@ -260,13 +261,12 @@ public class NeptuneService {
     private int allocateProxyPort() {
         int base = config.services().neptune().proxyBasePort();
         int max = config.services().neptune().proxyMaxPort();
-        for (int port = base; port <= max; port++) {
-            if (usedPorts.add(port)) {
-                return port;
-            }
+        int port = PortAllocator.allocateFromRange(base, max, usedPorts, true);
+        if (port < 0) {
+            throw new AwsException("InsufficientNeptuneCapacity",
+                    "No available proxy ports in range " + base + "-" + max, 503);
         }
-        throw new AwsException("InsufficientNeptuneCapacity",
-                "No available proxy ports in range " + base + "-" + max, 503);
+        return port;
     }
 
     private void releaseProxyPort(int port) {

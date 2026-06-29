@@ -147,6 +147,7 @@ public class RuntimeApiServer {
     private void tryListen(CompletableFuture<Void> started, Router router, long deadline) {
         if (started.isDone()) return;
         httpServer = vertx.createHttpServer(new HttpServerOptions()
+                .setReuseAddress(true)
                 .setMaxFormAttributeSize(-1));
         httpServer.requestHandler(router).listen(port, "0.0.0.0", result -> {
             if (result.succeeded()) {

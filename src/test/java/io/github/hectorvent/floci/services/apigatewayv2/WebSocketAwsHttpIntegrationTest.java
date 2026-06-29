@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -28,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketAwsHttpIntegrationTest {
 
@@ -53,11 +56,22 @@ class WebSocketAwsHttpIntegrationTest {
     private static String stageVarHttpApiId;
     private static String stageVarHttpFnName = "ws-sv-http-connect-fn";
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupLambdaFunctions();
+            setupAwsIntegrationApi();
+            setupHttpProxyIntegrationApi();
+            setupHttpIntegrationApi();
+            setupStageVariableHttpApi();
+        });
+    }
+
     // ──────────────────────────── Setup: Lambda Functions ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupLambdaFunctions() throws Exception {
+    private void setupLambdaFunctions() throws Exception {
         // Lambda for AWS integration: echoes the received payload wrapped in a response
         String awsZip = WebSocketTestSupport.createLambdaZip("""
                 exports.handler = async (event) => {
@@ -123,9 +137,7 @@ class WebSocketAwsHttpIntegrationTest {
 
     // ──────────────────────────── AWS Integration Type Tests ────────────────────────────
 
-    @Test
-    @Order(10)
-    void setupAwsIntegrationApi() {
+    private void setupAwsIntegrationApi() {
         awsApiId = given()
                 .contentType(ContentType.JSON)
                 .body("""
@@ -220,9 +232,7 @@ class WebSocketAwsHttpIntegrationTest {
 
     // ──────────────────────────── HTTP_PROXY Integration Type Tests ────────────────────────────
 
-    @Test
-    @Order(20)
-    void setupHttpProxyIntegrationApi() {
+    private void setupHttpProxyIntegrationApi() {
         httpProxyApiId = given()
                 .contentType(ContentType.JSON)
                 .body("""
@@ -319,9 +329,7 @@ class WebSocketAwsHttpIntegrationTest {
 
     // ──────────────────────────── HTTP Integration Type Tests ────────────────────────────
 
-    @Test
-    @Order(30)
-    void setupHttpIntegrationApi() {
+    private void setupHttpIntegrationApi() {
         httpApiId = given()
                 .contentType(ContentType.JSON)
                 .body("""
@@ -418,9 +426,7 @@ class WebSocketAwsHttpIntegrationTest {
 
     // ──────────────────────────── Stage Variable Substitution in HTTP URI ────────────────────────────
 
-    @Test
-    @Order(40)
-    void setupStageVariableHttpApi() {
+    private void setupStageVariableHttpApi() {
         stageVarHttpApiId = given()
                 .contentType(ContentType.JSON)
                 .body("""

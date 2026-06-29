@@ -2,9 +2,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.net.URI;
@@ -26,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * MOCK integration on $connect with 200 allows upgrade; non-2xx denies upgrade.
  */
 @QuarkusTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WebSocketMockIntegrationTest {
 
@@ -38,11 +41,19 @@ class WebSocketMockIntegrationTest {
     private static String connectRouteId;
     private static String defaultRouteId;
 
+    private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+
+    @BeforeEach
+    void ensureResources() throws Exception {
+        SETUP.run(() -> {
+            setupWebSocketApi();
+            setupMockIntegrations();
+        });
+    }
+
     // ──────────────────────────── Setup ────────────────────────────
 
-    @Test
-    @Order(1)
-    void setupWebSocketApi() {
+    private void setupWebSocketApi() {
         // Create a WEBSOCKET API
         wsApiId = given()
                 .contentType(ContentType.JSON)
@@ -66,9 +77,7 @@ class WebSocketMockIntegrationTest {
                 .statusCode(201);
     }
 
-    @Test
-    @Order(2)
-    void setupMockIntegrations() {
+    private void setupMockIntegrations() {
         // Create a MOCK integration with default behavior (no templateSelectionExpression → returns 200)
         mockIntegrationIdDefault = given()
                 .contentType(ContentType.JSON)
@@ -205,8 +214,7 @@ class WebSocketMockIntegrationTest {
     // ──────────────────────────── Helpers ────────────────────────────
 
     private WebSocket connectWebSocket(String apiId, String stageName) throws Exception {
-        String wsUrl = baseUri.toString().replaceFirst("^http", "ws") + "ws/" + apiId + "/" + stageName;
-        wsUrl = wsUrl.replace("//ws/", "/ws/");
+        String wsUrl = WebSocketTestSupport.buildWsUrl(baseUri, apiId, stageName);
 
         HttpClient client = HttpClient.newHttpClient();
         CompletableFuture<WebSocket> wsFuture = client.newWebSocketBuilder()
@@ -236,8 +244,7 @@ class WebSocketMockIntegrationTest {
     }
 
     private void assertWebSocketConnectionFails(String apiId, String stageName, int expectedStatus) throws Exception {
-        String wsUrl = baseUri.toString().replaceFirst("^http", "ws") + "ws/" + apiId + "/" + stageName;
-        wsUrl = wsUrl.replace("//ws/", "/ws/");
+        String wsUrl = WebSocketTestSupport.buildWsUrl(baseUri, apiId, stageName);
 
         HttpClient client = HttpClient.newHttpClient();
         CompletableFuture<WebSocket> wsFuture = client.newWebSocketBuilder()
