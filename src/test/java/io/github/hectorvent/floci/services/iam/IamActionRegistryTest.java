@@ -1,5 +1,7 @@
 package io.github.hectorvent.floci.services.iam;
 
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedHashMap;
@@ -24,9 +26,11 @@ import static org.mockito.Mockito.when;
  * {@code Action} extraction. The HTTP filter path is covered by SDK
  * compatibility tests; these tests pin the resolver behavior directly.
  */
+@QuarkusTest
 class IamActionRegistryTest {
 
-    private final IamActionRegistry registry = new IamActionRegistry();
+    @Inject
+    IamActionRegistry registry;
 
     @Test
     void resolvesActionFromFormEncodedBody() {
@@ -273,9 +277,31 @@ class IamActionRegistryTest {
     }
 
     @Test
-    void resolveRestRouteScope_nullForJson11AtRoot() {
+    void resolveRestRouteScope_json11TargetReturnsTargetServiceScope() {
         ContainerRequestContext ctx = dynamodbTargetCtx("DynamoDB_20120810.PutItem");
-        assertNull(registry.resolveRestRouteScope(ctx));
+        assertEquals("dynamodb", registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolvesJson11ActionFromTargetServiceNotCredentialScope() {
+        ContainerRequestContext ctx = Mockito.mock(ContainerRequestContext.class);
+        UriInfo uriInfo = Mockito.mock(UriInfo.class);
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(uriInfo.getPath()).thenReturn("/");
+        when(ctx.getUriInfo()).thenReturn(uriInfo);
+        when(ctx.getMethod()).thenReturn("POST");
+        when(ctx.getHeaderString("X-Amz-Target")).thenReturn("secretsmanager.ListSecrets");
+        assertEquals("secretsmanager:ListSecrets", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_apigatewayV2CreateApi() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/v2/apis",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"name\":\"demo\",\"protocolType\":\"HTTP\"}");
+        assertEquals("apigatewayv2", registry.resolveRestRouteScope(ctx));
     }
 
     @Test

@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -129,6 +130,16 @@ public class ResourceArnBuilder {
             case "tagging"              -> buildTaggingArn(ctx);
             default                    -> "*";
         };
+    }
+
+    public String buildFromQueryParams(String credentialScope,
+                                       MultivaluedMap<String, String> params,
+                                       String region,
+                                       String accountId) {
+        if ("sqs".equals(credentialScope)) {
+            return sqsArnFromParams(params, region, accountId);
+        }
+        return "*";
     }
 
     /**
@@ -452,19 +463,35 @@ public class ResourceArnBuilder {
     // ── SQS ─────────────────────────────────────────────────────────────────────
 
     private String buildSqsArn(ContainerRequestContext ctx, String region, String accountId) {
-        String queueUrl = firstNonBlank(
-                readFormParam(ctx, "QueueUrl"),
-                readJsonStringField(ctx, "QueueUrl"));
+        return sqsArnFromParams(
+                readFormParamMap(ctx),
+                region,
+                accountId);
+    }
+
+    private MultivaluedMap<String, String> readFormParamMap(ContainerRequestContext ctx) {
+        MultivaluedMap<String, String> params = new jakarta.ws.rs.core.MultivaluedHashMap<>();
+        String queueUrl = readFormParam(ctx, "QueueUrl");
+        if (queueUrl != null) {
+            params.add("QueueUrl", queueUrl);
+        }
+        String queueName = readFormParam(ctx, "QueueName");
+        if (queueName != null) {
+            params.add("QueueName", queueName);
+        }
+        return params;
+    }
+
+    private String sqsArnFromParams(MultivaluedMap<String, String> params, String region, String accountId) {
+        String queueUrl = params == null ? null : params.getFirst("QueueUrl");
         if (queueUrl != null && queueUrl.startsWith("arn:aws:sqs:")) {
             return queueUrl.trim();
         }
         String queueName = parseSqsQueueName(queueUrl);
         String queueAccount = parseSqsAccountFromQueueUrl(queueUrl);
         String effectiveAccount = queueAccount != null ? queueAccount : accountId;
-        if (queueName == null) {
-            queueName = firstNonBlank(
-                    readFormParam(ctx, "QueueName"),
-                    readJsonStringField(ctx, "QueueName"));
+        if (queueName == null && params != null) {
+            queueName = params.getFirst("QueueName");
         }
         if (queueName != null && !queueName.isBlank()) {
             return AwsArnUtils.Arn.of("sqs", region, effectiveAccount, queueName).toString();

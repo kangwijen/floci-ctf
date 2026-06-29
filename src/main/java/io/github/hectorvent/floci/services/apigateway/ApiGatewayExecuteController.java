@@ -901,8 +901,33 @@ public class ApiGatewayExecuteController {
         String errorMessage = null;
         try {
             if (target.action() == null) {
+                if ("lambda".equals(target.service())) {
+                    String functionName = functionNameFromUri(integration.getUri());
+                    if (functionName == null) {
+                        return Response.status(500)
+                                .entity(jsonMessage("Cannot resolve function from URI: " + integration.getUri()))
+                                .type(MediaType.APPLICATION_JSON).build();
+                    }
+                    try {
+                        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+                        byte[] payload = transformedBody != null
+                                ? transformedBody.getBytes(StandardCharsets.UTF_8)
+                                : new byte[0];
+                        InvokeResult result = lambdaService.invoke(region, functionName, payload,
+                                InvocationType.RequestResponse);
+                        return buildProxyResponse(result);
+                    } catch (AwsException e) {
+                        if (e.getHttpStatus() == 404) {
+                            return Response.status(404)
+                                    .entity(jsonMessage("Function not found: " + functionName))
+                                    .type(MediaType.APPLICATION_JSON).build();
+                        }
+                        throw e;
+                    }
+                }
                 MultivaluedMap<String, String> formParams = parseFormUrlEncoded(transformedBody);
-                serviceResponse = serviceRouter.invokeQuery(target.service(), formParams, region);
+                serviceResponse = serviceRouter.invokeQuery(
+                        target.service(), formParams, region, integration.getCredentials());
             } else {
                 JsonNode requestJson = objectMapper.readTree(transformedBody);
                 serviceResponse = serviceRouter.invoke(target.service(), target.action(), requestJson, region,

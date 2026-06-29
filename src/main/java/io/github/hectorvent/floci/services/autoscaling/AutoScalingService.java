@@ -486,7 +486,8 @@ public class AutoScalingService {
                 .filter(r -> region.equals(r.getRegion()))
                 .filter(r -> asgName.equals(r.getAutoScalingGroupName()))
                 .filter(r -> requestedIds == null || requestedIds.contains(r.getInstanceRefreshId()))
-                .sorted(Comparator.comparing(InstanceRefresh::getStartTime).reversed())
+                .sorted(Comparator.comparing(InstanceRefresh::getStartTime).reversed()
+                        .thenComparing(InstanceRefresh::getInstanceRefreshId, Comparator.reverseOrder()))
                 .collect(Collectors.toList());
         if (offset > matches.size()) {
             throw new AwsException("InvalidNextToken", "The NextToken value is not valid.", 400);

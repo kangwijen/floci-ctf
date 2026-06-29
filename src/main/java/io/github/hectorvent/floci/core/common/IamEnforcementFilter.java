@@ -259,9 +259,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        String resource = arnBuilder.build(credentialScope, ctx, region, accountId);
-        List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+        String serviceScope = routeScope != null ? routeScope : credentialScope;
+        String resource = arnBuilder.build(serviceScope, ctx, region, accountId);
+        List<String> resourcePolicies = resourcePolicyResolver.resolve(serviceScope, resource, region);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, ctx);
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
         if (decision == Decision.DENY
@@ -281,11 +282,11 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     }
 
     private static boolean isDynamoDbBatchExecuteStatement(String credentialScope, ContainerRequestContext ctx) {
-        if (!"dynamodb".equals(credentialScope)) {
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || !target.endsWith(".BatchExecuteStatement")) {
             return false;
         }
-        String target = ctx.getHeaderString("X-Amz-Target");
-        return target != null && target.endsWith(".BatchExecuteStatement");
+        return "dynamodb".equals(credentialScope);
     }
 
     private void evaluateDynamoDbBatchAndAbortIfDenied(ContainerRequestContext ctx,

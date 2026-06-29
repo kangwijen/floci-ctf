@@ -16,9 +16,12 @@ import java.util.regex.Pattern;
 
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
+import io.github.hectorvent.floci.core.common.ResolvedServiceCatalog;
+import io.github.hectorvent.floci.core.common.ServiceDescriptor;
 import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MediaType;
 
@@ -36,6 +39,13 @@ public class IamActionRegistry {
     private static final Logger LOG = Logger.getLogger(IamActionRegistry.class);
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private final ResolvedServiceCatalog catalog;
+
+    @Inject
+    public IamActionRegistry(ResolvedServiceCatalog catalog) {
+        this.catalog = catalog;
+    }
 
     private record ActionRule(String service, String method, Pattern pathPattern, String action) {}
 
@@ -70,29 +80,29 @@ public class IamActionRegistry {
         rule("s3", "DELETE", "^/[^/]+/.+",                       "s3:DeleteObject"),
         rule("s3", "HEAD",   "^/[^/]+/.+",                       "s3:GetObject"),
 
-        // ── Lambda ──────────────────────────────────────────────────────────────
-        rule("lambda", "GET",    ".*/functions$",                          "lambda:ListFunctions"),
-        rule("lambda", "POST",   ".*/functions$",                          "lambda:CreateFunction"),
-        rule("lambda", "GET",    ".*/functions/[^/]+$",                    "lambda:GetFunction"),
-        rule("lambda", "PUT",    ".*/functions/[^/]+/code$",               "lambda:UpdateFunctionCode"),
-        rule("lambda", "PUT",    ".*/functions/[^/]+/configuration$",      "lambda:UpdateFunctionConfiguration"),
-        rule("lambda", "DELETE", ".*/functions/[^/]+$",                    "lambda:DeleteFunction"),
-        rule("lambda", "POST",   ".*/functions/[^/]+/invocations$",        "lambda:InvokeFunction"),
-        rule("lambda", "GET",    ".*/functions/[^/]+/aliases$",            "lambda:ListAliases"),
-        rule("lambda", "POST",   ".*/functions/[^/]+/aliases$",            "lambda:CreateAlias"),
-        rule("lambda", "GET",    ".*/functions/[^/]+/aliases/[^/]+$",      "lambda:GetAlias"),
-        rule("lambda", "PUT",    ".*/functions/[^/]+/aliases/[^/]+$",      "lambda:UpdateAlias"),
-        rule("lambda", "DELETE", ".*/functions/[^/]+/aliases/[^/]+$",      "lambda:DeleteAlias"),
-        rule("lambda", "GET",    ".*/functions/[^/]+/policy$",             "lambda:GetPolicy"),
-        rule("lambda", "POST",   ".*/functions/[^/]+/policy$",             "lambda:AddPermission"),
-        rule("lambda", "DELETE", ".*/functions/[^/]+/policy/.+",           "lambda:RemovePermission"),
-        rule("lambda", "GET",    ".*/event-source-mappings$",              "lambda:ListEventSourceMappings"),
-        rule("lambda", "POST",   ".*/event-source-mappings$",              "lambda:CreateEventSourceMapping"),
-        rule("lambda", "DELETE", ".*/event-source-mappings/[^/]+$",        "lambda:DeleteEventSourceMapping"),
-        rule("lambda", "GET",    ".*/functions/[^/]+/url$",                "lambda:GetFunctionUrlConfig"),
-        rule("lambda", "POST",   ".*/functions/[^/]+/url$",                "lambda:CreateFunctionUrlConfig"),
-        rule("lambda", "PUT",    ".*/functions/[^/]+/url$",                "lambda:UpdateFunctionUrlConfig"),
-        rule("lambda", "DELETE", ".*/functions/[^/]+/url$",                "lambda:DeleteFunctionUrlConfig"),
+        // ── Lambda (REST host prefix /2015-03-31) ───────────────────────────────
+        rule("lambda", "GET",    "^/2015-03-31/functions/?$",                          "lambda:ListFunctions"),
+        rule("lambda", "POST",   "^/2015-03-31/functions/?$",                          "lambda:CreateFunction"),
+        rule("lambda", "GET",    "^/2015-03-31/functions/[^/]+/?$",                    "lambda:GetFunction"),
+        rule("lambda", "PUT",    "^/2015-03-31/functions/[^/]+/code/?$",               "lambda:UpdateFunctionCode"),
+        rule("lambda", "PUT",    "^/2015-03-31/functions/[^/]+/configuration/?$",      "lambda:UpdateFunctionConfiguration"),
+        rule("lambda", "DELETE", "^/2015-03-31/functions/[^/]+/?$",                    "lambda:DeleteFunction"),
+        rule("lambda", "POST",   "^/2015-03-31/functions/[^/]+/invocations/?$",        "lambda:InvokeFunction"),
+        rule("lambda", "GET",    "^/2015-03-31/functions/[^/]+/aliases/?$",            "lambda:ListAliases"),
+        rule("lambda", "POST",   "^/2015-03-31/functions/[^/]+/aliases/?$",            "lambda:CreateAlias"),
+        rule("lambda", "GET",    "^/2015-03-31/functions/[^/]+/aliases/[^/]+/?$",      "lambda:GetAlias"),
+        rule("lambda", "PUT",    "^/2015-03-31/functions/[^/]+/aliases/[^/]+/?$",      "lambda:UpdateAlias"),
+        rule("lambda", "DELETE", "^/2015-03-31/functions/[^/]+/aliases/[^/]+/?$",      "lambda:DeleteAlias"),
+        rule("lambda", "GET",    "^/2015-03-31/functions/[^/]+/policy/?$",             "lambda:GetPolicy"),
+        rule("lambda", "POST",   "^/2015-03-31/functions/[^/]+/policy/?$",             "lambda:AddPermission"),
+        rule("lambda", "DELETE", "^/2015-03-31/functions/[^/]+/policy/.+",           "lambda:RemovePermission"),
+        rule("lambda", "GET",    "^/2015-03-31/event-source-mappings/?$",              "lambda:ListEventSourceMappings"),
+        rule("lambda", "POST",   "^/2015-03-31/event-source-mappings/?$",              "lambda:CreateEventSourceMapping"),
+        rule("lambda", "DELETE", "^/2015-03-31/event-source-mappings/[^/]+/?$",        "lambda:DeleteEventSourceMapping"),
+        rule("lambda", "GET",    "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:GetFunctionUrlConfig"),
+        rule("lambda", "POST",   "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:CreateFunctionUrlConfig"),
+        rule("lambda", "PUT",    "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:UpdateFunctionUrlConfig"),
+        rule("lambda", "DELETE", "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:DeleteFunctionUrlConfig"),
 
         // ── DynamoDB (JSON 1.1, action from X-Amz-Target handled separately) ──
         // Handled via Query-style action extraction in the filter
@@ -116,8 +126,21 @@ public class IamActionRegistry {
         rule("apigateway", "DELETE", APIGW_CONTROL_REST_PATH,               "apigateway:DELETE"),
         rule("apigateway", "POST",   APIGW_CONTROL_REST_PATH,               "apigateway:POST"),
 
-        // ── Kinesis ────────────────────────────────────────────────────────────
-        rule("kinesis", "POST", ".*", "kinesis:*"),
+        // ── API Gateway v2 (REST JSON /v2/apis) ─────────────────────────────────
+        rule("apigatewayv2", "POST",   "^/v2/apis/?$",                                    "apigatewayv2:CreateApi"),
+        rule("apigatewayv2", "GET",    "^/v2/apis/?$",                                    "apigatewayv2:GetApis"),
+        rule("apigatewayv2", "GET",    "^/v2/apis/[^/]+/?$",                              "apigatewayv2:GetApi"),
+        rule("apigatewayv2", "PATCH",  "^/v2/apis/[^/]+/?$",                              "apigatewayv2:UpdateApi"),
+        rule("apigatewayv2", "DELETE", "^/v2/apis/[^/]+/?$",                              "apigatewayv2:DeleteApi"),
+        rule("apigatewayv2", "POST",   "^/v2/apis/[^/]+/.+",                              "apigatewayv2:POST"),
+        rule("apigatewayv2", "GET",    "^/v2/apis/[^/]+/.+",                              "apigatewayv2:GET"),
+        rule("apigatewayv2", "PUT",    "^/v2/apis/[^/]+/.+",                              "apigatewayv2:PUT"),
+        rule("apigatewayv2", "PATCH",  "^/v2/apis/[^/]+/.+",                              "apigatewayv2:PATCH"),
+        rule("apigatewayv2", "DELETE", "^/v2/apis/[^/]+/.+",                              "apigatewayv2:DELETE"),
+        rule("apigatewayv2", "POST",   "^/v2/vpclinks/?$",                                 "apigatewayv2:CreateVpcLink"),
+        rule("apigatewayv2", "GET",    "^/v2/vpclinks/?$",                                 "apigatewayv2:GetVpcLinks"),
+        rule("apigatewayv2", "GET",    "^/v2/vpclinks/[^/]+/?$",                           "apigatewayv2:GetVpcLink"),
+        rule("apigatewayv2", "DELETE", "^/v2/vpclinks/[^/]+/?$",                           "apigatewayv2:DeleteVpcLink"),
 
         // ── AppSync (REST JSON) ────────────────────────────────────────────────
         rule("appsync", "POST",   "^/v1/apis/?$",                              "appsync:CreateGraphqlApi"),
@@ -138,6 +161,11 @@ public class IamActionRegistry {
         rule("appsync", "POST",   "^/v1/apis/[^/]+/schemacreation/?$",         "appsync:StartSchemaCreation"),
         rule("appsync", "GET",    "^/v1/apis/[^/]+/schemacreation/?$",         "appsync:GetSchemaCreationStatus"),
         rule("appsync", "GET",    "^/v1/apis/[^/]+/schema/?$",                 "appsync:GetIntrospectionSchema"),
+        rule("appsync", "POST",   "^/v1/apis/[^/]+/functions/?$",              "appsync:CreateFunction"),
+        rule("appsync", "GET",    "^/v1/apis/[^/]+/functions/?$",              "appsync:ListFunctions"),
+        rule("appsync", "GET",    "^/v1/apis/[^/]+/functions/[^/]+/?$",        "appsync:GetFunction"),
+        rule("appsync", "PUT",    "^/v1/apis/[^/]+/functions/[^/]+/?$",        "appsync:UpdateFunction"),
+        rule("appsync", "DELETE", "^/v1/apis/[^/]+/functions/[^/]+/?$",        "appsync:DeleteFunction"),
 
         // ── EKS (REST JSON) ────────────────────────────────────────────────────
         rule("eks", "POST",   "^/clusters/?$",                                    "eks:CreateCluster"),
@@ -298,17 +326,21 @@ public class IamActionRegistry {
             return credentialScope + ":" + operation;
         }
 
-        // JSON 1.1: X-Amz-Target → service:OperationName
+        // JSON 1.1: X-Amz-Target → targetService:OperationName (not SigV4 credential scope).
         String target = ctx.getHeaderString("X-Amz-Target");
         if (target != null && target.contains(".")) {
             String operationName = target.substring(target.lastIndexOf('.') + 1);
-            if ("dynamodb".equals(credentialScope)) {
+            String targetScope = resolveJson11TargetCredentialScope(target);
+            if (targetScope == null) {
+                targetScope = credentialScope;
+            }
+            if ("dynamodb".equals(targetScope)) {
                 String partiqlAction = resolveDynamoDbPartiQLAction(operationName, ctx);
                 if (partiqlAction != null) {
                     return partiqlAction;
                 }
             }
-            return IamUnrestrictedActions.canonicalAction(credentialScope + ":" + operationName);
+            return IamUnrestrictedActions.canonicalAction(targetScope + ":" + operationName);
         }
 
         // S3: query params disambiguate versioning APIs (AWS IAM action names).
@@ -340,13 +372,14 @@ public class IamActionRegistry {
      * Returns the SigV4 credential scope implied by a REST route (method + path),
      * independent of the Authorization header scope.
      *
-     * <p>Returns {@code null} for query-protocol POST {@code /} (STS, IAM, JSON 1.1),
-     * requests with {@code X-Amz-Target}, and paths with no REST rule match.
+     * <p>Returns JSON 1.1 target service scope from {@code X-Amz-Target}, query-protocol
+     * POST {@code /} without a target, and paths with no REST rule match as {@code null}
+     * where noted below.
      */
     public String resolveRestRouteScope(ContainerRequestContext ctx) {
-        String target = ctx.getHeaderString("X-Amz-Target");
-        if (target != null && !target.isBlank()) {
-            return null;
+        String jsonScope = resolveJson11TargetCredentialScope(ctx);
+        if (jsonScope != null) {
+            return jsonScope;
         }
 
         String method = ctx.getMethod().toUpperCase();
@@ -370,6 +403,29 @@ public class IamActionRegistry {
     }
 
     /**
+     * SigV4 credential scope implied by {@code X-Amz-Target}, independent of Authorization.
+     */
+    public String resolveJson11TargetCredentialScope(ContainerRequestContext ctx) {
+        return resolveJson11TargetCredentialScope(ctx.getHeaderString("X-Amz-Target"));
+    }
+
+    public String resolveJson11TargetCredentialScope(String target) {
+        if (target == null || target.isBlank() || !target.contains(".")) {
+            return null;
+        }
+        return catalog.matchTarget(target)
+                .map(match -> primaryCredentialScope(match.descriptor()))
+                .orElse(null);
+    }
+
+    private static String primaryCredentialScope(ServiceDescriptor descriptor) {
+        if (descriptor.credentialScopes().isEmpty()) {
+            return descriptor.externalKey();
+        }
+        return descriptor.credentialScopes().iterator().next();
+    }
+
+    /**
      * S3 REST rules use {@code /{bucket}/key} shapes that also match other services (e.g.
      * {@code /restapis/{id}/resources}). Restrict S3 route inference to real bucket paths.
      */
@@ -381,6 +437,7 @@ public class IamActionRegistry {
         return !normalized.startsWith("/restapis")
                 && !normalized.startsWith("/execute-api")
                 && !normalized.startsWith("/v1/")
+                && !normalized.startsWith("/v2/")
                 && !normalized.startsWith("/lambda")
                 && !normalized.startsWith("/2015-03-31/")
                 && !normalized.startsWith("/clusters/")

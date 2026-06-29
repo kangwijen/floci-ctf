@@ -349,7 +349,7 @@ class ElastiCacheIntegrationTest {
     }
 
     private static Socket openSocket(int port) throws IOException {
-        Socket socket = new Socket("localhost", port);
+        Socket socket = new Socket("127.0.0.1", port);
         socket.setSoTimeout(SOCKET_TIMEOUT_MS);
         return socket;
     }

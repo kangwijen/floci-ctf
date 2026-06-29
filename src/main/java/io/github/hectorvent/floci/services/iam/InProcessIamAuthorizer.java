@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.MultivaluedMap;
 import org.jboss.logging.Logger;
 
 import java.util.HashMap;
@@ -120,6 +121,35 @@ public class InProcessIamAuthorizer {
             return;
         }
         evaluateRoleAccess(roleArn, caller, credentialScope, action, resourceArn, region);
+    }
+
+    /**
+     * Authorizes query-protocol in-process integrations (API Gateway path-style URIs).
+     */
+    public void authorizeQuery(String roleArn,
+                               String credentialScope,
+                               String queryAction,
+                               MultivaluedMap<String, String> params,
+                               String region) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (roleArn == null || roleArn.isBlank()) {
+            deny(credentialScope, queryAction, roleArn, "missing execution role");
+            return;
+        }
+        CallerContext caller = iamService.resolveCallerContextFromRoleArn(roleArn);
+        if (caller == null) {
+            deny(credentialScope, queryAction, roleArn, "unknown execution role");
+            return;
+        }
+        String iamAction = toIamAction(credentialScope, queryAction);
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(iamAction)) {
+            return;
+        }
+        String accountId = accountFromRoleArn(roleArn);
+        String resource = arnBuilder.buildFromQueryParams(credentialScope, params, region, accountId);
+        evaluateRoleAccess(roleArn, caller, credentialScope, queryAction, resource, region);
     }
 
     /**

@@ -66,7 +66,18 @@ public class DockerClientProducer {
                 && normalizedEnvHost != null && !normalizedEnvHost.isBlank()) {
             return normalizedEnvHost;
         }
-        return normalizeDockerHost(configuredHost);
+        String normalizedConfigured = normalizeDockerHost(configuredHost);
+        if ("unix:///var/run/docker.sock".equals(normalizedConfigured)
+                && isWindows()
+                && (normalizedEnvHost == null || normalizedEnvHost.isBlank())) {
+            return "npipe:////./pipe/docker_engine";
+        }
+        return normalizedConfigured;
+    }
+
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name");
+        return os != null && os.toLowerCase().contains("win");
     }
 
     private static DefaultDockerClientConfig.Builder createDockerConfigBuilder() {

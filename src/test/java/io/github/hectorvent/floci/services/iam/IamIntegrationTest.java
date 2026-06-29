@@ -447,7 +447,7 @@ class IamIntegrationTest {
         .then()
             .statusCode(200)
             .body("ListUsersResponse.ListUsersResult.Users.member.UserName",
-                    equalTo("test-user"));
+                    hasItem("test-user"));
     }
 
     @Test

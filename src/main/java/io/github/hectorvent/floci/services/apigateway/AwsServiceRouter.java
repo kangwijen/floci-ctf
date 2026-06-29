@@ -245,20 +245,18 @@ public class AwsServiceRouter {
         return objectMapper.convertValue(requestBody, new TypeReference<Map<String, Object>>() {});
     }
 
-    /**
-     * Dispatches an AWS query-protocol (form-encoded) integration request.
-     *
-     * <p>Used for {@code path/}-style integration URIs whose VTL request template renders an
-     * {@code application/x-www-form-urlencoded} body in the AWS query protocol, e.g.
-     * {@code Action=SendMessage&QueueUrl=...&MessageBody=...}. The {@code Action} parameter
-     * selects the operation, mirroring {@link io.github.hectorvent.floci.core.common.AwsQueryController}.
-     *
-     * @param service the AWS service name from the URI (e.g., "sqs")
-     * @param params  the parsed form parameters, including {@code Action}
-     * @param region  the AWS region
-     * @return the service response (query-protocol XML)
-     */
     public Response invokeQuery(String service, MultivaluedMap<String, String> params, String region) {
+        return invokeQuery(service, params, region, null);
+    }
+
+    /**
+     * Dispatches an AWS query-protocol (form-encoded) integration request with optional
+     * execution-role IAM checks.
+     */
+    public Response invokeQuery(String service,
+                                MultivaluedMap<String, String> params,
+                                String region,
+                                String roleArn) {
         String action = params.getFirst("Action");
         LOG.debugv("AWS query integration dispatch: {0}:{1} in {2}", service, action, region);
 
@@ -267,17 +265,68 @@ public class AwsServiceRouter {
                     "The request must contain the parameter Action", 400);
         }
 
+        inProcessIamAuthorizer.authorizeQuery(roleArn, service, action, params, region);
+
         try {
-            return switch (service) {
+            Response response = switch (service) {
                 case "sqs" -> sqsQueryHandler.handle(action, params, region);
                 default -> throw new AwsException("UnknownService",
                         "Unsupported AWS query-protocol service integration: " + service, 400);
             };
+            recordApigwQueryCall(service, action, params, region, roleArn, response);
+            return response;
         } catch (AwsException e) {
+            recordApigwQueryCall(service, action, params, region, roleArn, e.getErrorCode());
             throw e;
         } catch (Exception e) {
+            recordApigwQueryCall(service, action, params, region, roleArn, "InternalError");
             throw new AwsException("InternalError",
                     e.getMessage() != null ? e.getMessage() : "Service invocation failed", 500);
         }
+    }
+
+    private void recordApigwQueryCall(String service,
+                                      String action,
+                                      MultivaluedMap<String, String> params,
+                                      String region,
+                                      String roleArn,
+                                      Response response) {
+        String errorCode = null;
+        if (response.getStatus() >= 400) {
+            errorCode = "ServiceException";
+        }
+        recordApigwQueryCall(service, action, params, region, roleArn, errorCode);
+    }
+
+    private void recordApigwQueryCall(String service,
+                                      String action,
+                                      MultivaluedMap<String, String> params,
+                                      String region,
+                                      String roleArn,
+                                      String errorCode) {
+        Map<String, Object> requestParams = new java.util.LinkedHashMap<>();
+        if (params != null) {
+            params.forEach((key, values) -> {
+                if (values != null && !values.isEmpty()) {
+                    requestParams.put(key, values.getFirst());
+                }
+            });
+        }
+        String pascalAction = action != null && !action.isEmpty()
+                ? Character.toUpperCase(action.charAt(0)) + action.substring(1)
+                : action;
+        InProcessAuditContext.Builder builder = InProcessAuditContext.builder()
+                .region(region)
+                .eventName(pascalAction)
+                .credentialScope(service)
+                .requestParameters(requestParams)
+                .errorCode(errorCode)
+                .invokedBy("apigateway.amazonaws.com")
+                .executionRoleArn(roleArn);
+        String eventSource = CloudTrailEventRecorder.toEventSource(service);
+        if (CloudTrailEventRecorder.isDataEvent(eventSource, pascalAction, null)) {
+            builder.managementEvent(false).eventCategory("Data");
+        }
+        inProcessCloudTrailRecorder.record(builder.build());
     }
 }
