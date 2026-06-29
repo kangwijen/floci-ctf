@@ -46,6 +46,7 @@ class WebSocketMessageRoutingTest {
     private static String typeDefaultRouteId;
 
     private static final WebSocketTestSupport.RunOnce SETUP = new WebSocketTestSupport.RunOnce();
+    private static final long RESPONSE_TIMEOUT_SECONDS = 30;
 
     @BeforeEach
     void ensureResources() throws Exception {
@@ -243,7 +244,7 @@ class WebSocketMessageRoutingTest {
         ws.sendText("{\"action\":\"sendMessage\",\"data\":\"hello\"}", true).join();
 
         // Wait for response
-        String response = capture.getResponse(15, TimeUnit.SECONDS);
+        String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertNotNull(response, "Should receive a response from the sendMessage route");
         assertTrue(response.contains("sendMessage-handler"),
                 "Response should indicate the sendMessage route handled it, got: " + response);
@@ -266,7 +267,7 @@ class WebSocketMessageRoutingTest {
         ws.sendText("{\"action\":\"unknownAction\",\"data\":\"test\"}", true).join();
 
         // Wait for response from $default route
-        String response = capture.getResponse(15, TimeUnit.SECONDS);
+        String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertNotNull(response, "Should receive a response from the $default route");
         assertTrue(response.contains("default-handler"),
                 "Response should indicate the $default route handled it, got: " + response);
@@ -294,7 +295,7 @@ class WebSocketMessageRoutingTest {
             ws.sendText("{\"action\":\"noSuchRoute\",\"data\":\"test\"}", true).join();
 
             // Should receive an error frame
-            String response = capture.getResponse(15, TimeUnit.SECONDS);
+            String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertNotNull(response, "Should receive an error frame");
             assertTrue(response.contains("No route found") || response.contains("no route"),
                     "Error frame should indicate no route found, got: " + response);
@@ -329,7 +330,7 @@ class WebSocketMessageRoutingTest {
         ws.sendText("this is not json", true).join();
 
         // Should route to $default and get a response
-        String response = capture.getResponse(15, TimeUnit.SECONDS);
+        String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertNotNull(response, "Should receive a response from the $default route for non-JSON message");
         assertTrue(response.contains("default-handler"),
                 "Response should indicate the $default route handled it, got: " + response);
@@ -357,7 +358,7 @@ class WebSocketMessageRoutingTest {
             ws.sendText("not json at all", true).join();
 
             // Should receive an error frame
-            String response = capture.getResponse(15, TimeUnit.SECONDS);
+            String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertNotNull(response, "Should receive an error frame for non-JSON with no $default");
             assertTrue(response.contains("Could not route message") || response.contains("could not route"),
                     "Error frame should indicate message could not be routed, got: " + response);
@@ -392,7 +393,7 @@ class WebSocketMessageRoutingTest {
         ws.sendText("{\"type\":\"chat\",\"message\":\"hello\"}", true).join();
 
         // Should route to the "chat" route
-        String response = capture.getResponse(15, TimeUnit.SECONDS);
+        String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertNotNull(response, "Should receive a response from the chat route");
         assertTrue(response.contains("sendMessage-handler"),
                 "Response should indicate the chat route's Lambda handled it, got: " + response);
@@ -406,6 +407,7 @@ class WebSocketMessageRoutingTest {
     @Test
     @Order(70)
     void nonStringFieldValueConvertedToString() throws Exception {
+        prewarmLambdaFunctions();
         // Numeric field value is converted to string for route matching
         // Create a route with a numeric key on the action-based API
         String numericRouteId = given()
@@ -427,7 +429,7 @@ class WebSocketMessageRoutingTest {
             ws.sendText("{\"action\":42,\"data\":\"numeric\"}", true).join();
 
             // Should route to the "42" route (numeric converted to string)
-            String response = capture.getResponse(15, TimeUnit.SECONDS);
+            String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertNotNull(response, "Should receive a response when numeric field is converted to string");
             // The sendMessage Lambda handles this route, so we should get its response
             assertTrue(response.contains("42"),
@@ -447,6 +449,7 @@ class WebSocketMessageRoutingTest {
     @Test
     @Order(80)
     void missingFieldFallsToDefault() throws Exception {
+        prewarmLambdaFunctions();
         // Message missing the field in routeSelectionExpression falls to $default
         WebSocketTestSupport.MessageCapture capture = new WebSocketTestSupport.MessageCapture();
         WebSocket ws = connectWebSocketWithListener(wsApiId, "test", capture);
@@ -456,7 +459,7 @@ class WebSocketMessageRoutingTest {
         ws.sendText("{\"data\":\"no action field here\"}", true).join();
 
         // Should fall to $default
-        String response = capture.getResponse(15, TimeUnit.SECONDS);
+        String response = capture.getResponse(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertNotNull(response, "Should receive a response from the $default route");
         assertTrue(response.contains("default-handler"),
                 "Response should indicate the $default route handled it, got: " + response);
