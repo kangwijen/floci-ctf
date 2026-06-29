@@ -54,9 +54,14 @@ public class SecretsManagerKmsSupport {
             if (decoded.isPresent()) {
                 return decoded;
             }
+            return decodeNestedBase64Envelope(secretString);
         }
         if (secretBinary != null && !secretBinary.isEmpty()) {
-            return decodeBase64Envelope(secretBinary);
+            Optional<byte[]> decoded = decodeBase64Envelope(secretBinary);
+            if (decoded.isPresent()) {
+                return decoded;
+            }
+            return decodeNestedBase64Envelope(secretBinary);
         }
         return Optional.empty();
     }
@@ -83,6 +88,29 @@ public class SecretsManagerKmsSupport {
             // not valid base64
         }
         return Optional.empty();
+    }
+
+    /**
+     * Handles clients that pre-base64-encode a KMS ciphertext blob and pass the ASCII
+     * string to an SDK that base64-encodes {@code SecretBinary} again on the wire.
+     */
+    private static Optional<byte[]> decodeNestedBase64Envelope(String base64) {
+        try {
+            byte[] once = Base64.getDecoder().decode(base64);
+            if (once.length == 0) {
+                return Optional.empty();
+            }
+            if (looksLikeKmsEnvelope(once)) {
+                return Optional.of(once);
+            }
+            String inner = new String(once, StandardCharsets.UTF_8).trim();
+            if (inner.isEmpty() || inner.indexOf('\n') >= 0) {
+                return Optional.empty();
+            }
+            return decodeBase64Envelope(inner);
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
     }
 
     private static boolean looksLikeKmsEnvelope(byte[] bytes) {

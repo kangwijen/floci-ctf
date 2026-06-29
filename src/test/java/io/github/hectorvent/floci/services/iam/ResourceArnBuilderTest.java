@@ -142,6 +142,14 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void sqsReceiveMessageBuildsArnFromJsonQueueUrl() {
+        String queueUrl = "http://127.0.0.1:4566/000000000000/job-assignment-queue";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"QueueUrl\":\"" + queueUrl + "\"}");
+        String arn = builder.build("sqs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:sqs:us-east-1:000000000000:job-assignment-queue", arn);
+    }
+
+    @Test
     void sqsReceiveMessageBuildsArnFromHttpQueueUrl() {
         String queueUrl = "http://localhost:4566/000000000000/ctf-lab-queue";
         ContainerRequestContext ctx = formBodyCtx(
@@ -325,7 +333,7 @@ class ResourceArnBuilderTest {
     void secretsGetSecretValueBuildsSecretArn() {
         ContainerRequestContext ctx = jsonBodyCtx("{\"SecretId\":\"market/relay/scanner-hint\"}");
         String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-000000", arn);
+        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-??????", arn);
     }
 
     @Test
@@ -333,7 +341,7 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = jsonBodyCtx(
                 "{\"SecretIdList\":[\"allowed/secret\",\"other/secret\"]}");
         String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
-        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-000000", arn);
+        assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-??????", arn);
     }
 
     @Test
@@ -599,13 +607,52 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void secretsPathPrefixWildcardMatchesHierarchicalName() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/*"}
+            ]}""";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
+        assertEquals(IamPolicyEvaluator.Decision.ALLOW,
+                eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
+    }
+
+    @Test
+    void secretsExactNameSuffixWildcardMatchesAwsSixCharSuffix() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-??????"}
+            ]}""";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
+        assertEquals(IamPolicyEvaluator.Decision.ALLOW,
+                eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
+    }
+
+    @Test
+    void secretsHyphenSuffixWildcardDoesNotMatchPathSegmentSecret() {
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live-*"}
+            ]}""";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:app/live/deadbeef-AbCdEf";
+        IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
+        assertEquals(IamPolicyEvaluator.Decision.DENY,
+                eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));
+    }
+
+    @Test
     void secretsScopedPolicyMatchesSuffixWildcard() {
         String policy = """
             {"Version":"2012-10-17","Statement":[
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
                "Resource":"arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-*"}
             ]}""";
-        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-000000";
+        String resource = "arn:aws:secretsmanager:us-east-1:222222222222:secret:market/relay/scanner-hint-AbCdEf";
         IamPolicyEvaluator eval = new IamPolicyEvaluator(new ObjectMapper());
         assertEquals(IamPolicyEvaluator.Decision.ALLOW,
                 eval.evaluate(java.util.List.of(policy), "secretsmanager:GetSecretValue", resource));

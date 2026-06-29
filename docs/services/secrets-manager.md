@@ -37,8 +37,21 @@
 When IAM enforcement is enabled:
 
 - Data-plane calls require SigV4 from a registered IAM user or assumed role with `secretsmanager:*` (or scoped actions) on the secret ARN.
-- Resource policies merge with identity policies via `IamAuthorizationService` (same pattern as S3 bucket policies).
-- Secrets created without a customer-managed KMS key use a placeholder ARN suffix consistent with AWS envelope semantics; KMS decrypt for `GetSecretValue` follows [KMS grant and key policy rules](kms.md#ctf-fork) when a CMK is attached.
+- Resource policies merge with identity policies via `ResourcePolicyResolver` (same pattern as S3 bucket policies).
+- IAM evaluation uses the **stored secret ARN** including AWS six-character suffix when the secret exists.
+
+### IAM resource patterns (AWS)
+
+Secrets Manager appends six random characters to every secret name in its ARN (`secret:name-AbCdEf`). See [AWS identity-based policy examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html).
+
+| Lab policy pattern | Matches secret `app/live/deadbeef` | AWS guidance |
+|---|---|---|
+| `arn:...:secret:app/live/*` | Yes | Use for path-style prefixes (`TestEnv/*` in AWS docs) |
+| `arn:...:secret:app/live/deadbeef-*` | Yes | Suffix wildcard after full secret name |
+| `arn:...:secret:app/live/deadbeef-??????` | Yes | Recommended for one specific secret name |
+| `arn:...:secret:app/live-*` | **No** | Hyphen suffix matches `app/live-foo`, not `app/live/foo` |
+
+Regression: `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest`, `ResourceArnBuilderTest`.
 
 ### KMS-wrapped `SecretBinary`
 
@@ -47,7 +60,8 @@ When IAM enforcement is enabled:
 **Storage rules (CTF fork):**
 
 - Plaintext supplied via `SecretString` or `SecretBinary` on create/update is encrypted once with the secret CMK and stored as base64 `SecretBinary`.
-- Payloads that are already KMS ciphertext (decoded bytes begin with `kms:v2:`) are stored as-is; Floci does not re-wrap them.
+- Values that are already KMS `CiphertextBlob` data (raw `kms:v2:` UTF-8 or a single base64 layer from `kms:Encrypt`) are stored without re-wrapping.
+- Pass **raw bytes** to SDK `SecretBinary` parameters; do not pre-base64-encode before boto3 (AWS encodes once on the wire). Floci normalizes accidental double-base64 provisioning input to a single layer on store.
 
 Players need `secretsmanager:GetSecretValue` on the secret ARN, then `kms:Decrypt` on the CMK (from `--key-id` or the key id embedded in the blob). `kms:Decrypt` IAM enforcement scopes to `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` from `KeyId` or from the `kms:v2:` blob. Regression: `SecretsManagerKmsEnvelopeIntegrationTest`.
 

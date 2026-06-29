@@ -53,6 +53,36 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
         CtfLabIamTestSupport.putUserPolicy(user, "sm-read-one", policy);
     }
 
+    @Test
+    void getAllowedSecretWithPathPrefixWildcard() throws Exception {
+        String user = "ctf-sm-path-player";
+        CtfLabIamTestSupport.createUser(user);
+        String akid = CtfLabIamTestSupport.createAccessKey(user);
+
+        String rootSm = CtfLabIamTestSupport.scopedAuth(
+                CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
+        String secretName = "app/live/deadbeef";
+        createSecret(rootSm, secretName, "flag{path-prefix}");
+
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:app/live/*"}
+            ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
+        CtfLabIamTestSupport.putUserPolicy(user, "sm-path-prefix", policy);
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("SecretId", secretName);
+        given()
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(akid, "secretsmanager"))
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", equalTo("flag{path-prefix}"));
+    }
+
     private void createSecret(String auth, String name, String value) throws Exception {
         ObjectNode create = objectMapper.createObjectNode();
         create.put("Name", name);
@@ -64,6 +94,76 @@ class SecretsManagerGetSecretValueScopedArnIntegrationTest {
                 .body(create.toString())
                 .when().post("/")
                 .then().statusCode(200);
+    }
+
+    @Test
+    void getAllowedSecretWithAwsQuestionMarkSuffixPolicy() throws Exception {
+        String user = "ctf-sm-qmark-player";
+        CtfLabIamTestSupport.createUser(user);
+        String akid = CtfLabIamTestSupport.createAccessKey(user);
+
+        String rootSm = CtfLabIamTestSupport.scopedAuth(
+                CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
+        String secretName = "app/live/qmark-test";
+        createSecret(rootSm, secretName, "flag{qmark-suffix}");
+
+        String storedArn = given()
+                .header("Authorization", rootSm)
+                .header("X-Amz-Target", "secretsmanager.DescribeSecret")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().put("SecretId", secretName).toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("ARN");
+
+        int suffixDash = storedArn.lastIndexOf('-');
+        String policyResource = storedArn.substring(0, suffixDash) + "-??????";
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"%s"}
+            ]}""".formatted(policyResource);
+        CtfLabIamTestSupport.putUserPolicy(user, "sm-qmark-suffix", policy);
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("SecretId", secretName);
+        given()
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(akid, "secretsmanager"))
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", equalTo("flag{qmark-suffix}"));
+    }
+
+    @Test
+    void getPathPrefixSecretDeniedWithHyphenWildcard() throws Exception {
+        String user = "ctf-sm-hyphen-player";
+        CtfLabIamTestSupport.createUser(user);
+        String akid = CtfLabIamTestSupport.createAccessKey(user);
+
+        String rootSm = CtfLabIamTestSupport.scopedAuth(
+                CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID, "secretsmanager");
+        String secretName = "app/live/hyphen-test";
+        createSecret(rootSm, secretName, "flag{hyphen-deny}");
+
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"secretsmanager:GetSecretValue",
+               "Resource":"arn:aws:secretsmanager:us-east-1:%s:secret:app/live-*"}
+            ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT);
+        CtfLabIamTestSupport.putUserPolicy(user, "sm-hyphen-wildcard", policy);
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("SecretId", secretName);
+        given()
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(akid, "secretsmanager"))
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(403);
     }
 
     @Test

@@ -131,6 +131,16 @@ aws sqs set-queue-attributes \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
 
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+- `sqs:ReceiveMessage` and other queue actions require SigV4 and an identity policy (or queue resource policy) on the queue ARN.
+- API calls use **QueueUrl**; IAM policies use **queue ARN** (`arn:aws:sqs:REGION:ACCOUNT:queue-name`). See [Amazon SQS actions and resources](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html).
+- `ResourceArnBuilder` resolves the queue ARN from **Query** form `QueueUrl` and from **JSON 1.0** body `QueueUrl` (boto3 default). Account id is taken from the queue URL path when present (`http://host:4566/ACCOUNT/queue`).
+
+Regression: `SqsReceiveMessageScopedQueueIntegrationTest` (Query, JSON 1.0, assumed-role session).
+
 ## Queue URL Format
 
 ```

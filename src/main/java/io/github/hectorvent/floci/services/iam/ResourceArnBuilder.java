@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
+import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -22,6 +23,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -57,11 +59,21 @@ public class ResourceArnBuilder {
     private static final Pattern PARTIQL_UPDATE_IDENT =
             Pattern.compile("\\bUPDATE\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
 
+    /** AWS IAM suffix wildcard for the six random ARN characters when the secret is not stored yet. */
+    private static final String SECRETS_MANAGER_IAM_SUFFIX_PLACEHOLDER = "-??????";
+
     private final ObjectMapper objectMapper;
+    private final SecretsManagerService secretsManagerService;
 
     @Inject
-    public ResourceArnBuilder(ObjectMapper objectMapper) {
+    public ResourceArnBuilder(ObjectMapper objectMapper, SecretsManagerService secretsManagerService) {
         this.objectMapper = objectMapper;
+        this.secretsManagerService = secretsManagerService;
+    }
+
+    /** Unit tests without a backing secret store. */
+    ResourceArnBuilder(ObjectMapper objectMapper) {
+        this(objectMapper, null);
     }
 
     public String build(String credentialScope, ContainerRequestContext ctx,
@@ -247,19 +259,16 @@ public class ResourceArnBuilder {
     }
 
     private String buildSqsArnFromJson(JsonNode node, String region, String accountId) {
+        MultivaluedMap<String, String> params = new jakarta.ws.rs.core.MultivaluedHashMap<>();
         String queueUrl = jsonText(node, "QueueUrl");
         if (queueUrl != null && !queueUrl.isBlank()) {
-            int lastSlash = queueUrl.lastIndexOf('/');
-            if (lastSlash >= 0 && lastSlash < queueUrl.length() - 1) {
-                String queueName = queueUrl.substring(lastSlash + 1);
-                return AwsArnUtils.Arn.of("sqs", region, accountId, queueName).toString();
-            }
+            params.add("QueueUrl", queueUrl);
         }
-        String queueArn = jsonText(node, "QueueArn");
-        if (queueArn != null && queueArn.startsWith("arn:")) {
-            return queueArn;
+        String queueName = jsonText(node, "QueueName");
+        if (queueName != null && !queueName.isBlank()) {
+            params.add("QueueName", queueName);
         }
-        return AwsArnUtils.Arn.of("sqs", region, accountId, "*").toString();
+        return sqsArnFromParams(params, region, accountId);
     }
 
     private String buildSnsArnFromJson(JsonNode node, String region, String accountId) {
@@ -276,13 +285,7 @@ public class ResourceArnBuilder {
                 jsonText(node, "Name"),
                 jsonText(node, "ARN"),
                 jsonFirstArrayElement(node, "SecretIdList"));
-        if (secretId == null || secretId.isBlank()) {
-            return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
-        }
-        if (secretId.startsWith("arn:aws:secretsmanager:")) {
-            return secretId;
-        }
-        return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:" + secretId + "-000000").toString();
+        return secretsManagerArnFromSecretId(secretId, region, accountId);
     }
 
     private String buildKmsArnFromJson(JsonNode node, String region, String accountId) {
@@ -463,10 +466,19 @@ public class ResourceArnBuilder {
     // ── SQS ─────────────────────────────────────────────────────────────────────
 
     private String buildSqsArn(ContainerRequestContext ctx, String region, String accountId) {
-        return sqsArnFromParams(
-                readFormParamMap(ctx),
-                region,
-                accountId);
+        MultivaluedMap<String, String> params = readFormParamMap(ctx);
+        if (params.getFirst("QueueUrl") == null && params.getFirst("QueueName") == null) {
+            JsonNode node = readJsonBodyNode(ctx);
+            String queueUrl = jsonTextFromNode(node, "QueueUrl");
+            if (queueUrl != null && !queueUrl.isBlank()) {
+                params.add("QueueUrl", queueUrl);
+            }
+            String queueName = jsonTextFromNode(node, "QueueName");
+            if (queueName != null && !queueName.isBlank()) {
+                params.add("QueueName", queueName);
+            }
+        }
+        return sqsArnFromParams(params, region, accountId);
     }
 
     private MultivaluedMap<String, String> readFormParamMap(ContainerRequestContext ctx) {
@@ -814,13 +826,29 @@ public class ResourceArnBuilder {
                 readJsonStringField(ctx, "Name"),
                 readJsonArnField(ctx, "ARN"),
                 readJsonFirstArrayElement(ctx, "SecretIdList"));
+        return secretsManagerArnFromSecretId(secretId, region, accountId);
+    }
+
+    /**
+     * Builds a Secrets Manager secret ARN for IAM evaluation. Uses the stored ARN (with AWS six-character
+     * suffix) when the secret exists; otherwise falls back to {@code secret:name-??????} per
+     * <a href="https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html">AWS IAM examples</a>.
+     */
+    private String secretsManagerArnFromSecretId(String secretId, String region, String accountId) {
         if (secretId == null || secretId.isBlank()) {
-        return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
+            return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:*").toString();
+        }
+        if (secretsManagerService != null) {
+            Optional<String> storedArn = secretsManagerService.findSecretArnForIam(secretId, region);
+            if (storedArn.isPresent()) {
+                return storedArn.get();
+            }
         }
         if (secretId.startsWith("arn:aws:secretsmanager:")) {
             return secretId;
         }
-        return AwsArnUtils.Arn.of("secretsmanager", region, accountId, "secret:" + secretId + "-000000").toString();
+        return AwsArnUtils.Arn.of("secretsmanager", region, accountId,
+                "secret:" + secretId + SECRETS_MANAGER_IAM_SUFFIX_PLACEHOLDER).toString();
     }
 
     // ── SSM ──────────────────────────────────────────────────────────────────────

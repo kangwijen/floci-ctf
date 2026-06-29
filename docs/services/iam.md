@@ -128,10 +128,10 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 |---|---|
 | `iam` | `UserName`, `GroupName`, `RoleName`, `PolicyArn` (form) |
 | `dynamodb` | `TableName`, `TableArn`, `GlobalTableName` (JSON) |
-| `secretsmanager` | `SecretId` (JSON; friendly names get `-000000` suffix for `secret:name-*` patterns) |
+| `secretsmanager` | `SecretId` / `Name` (JSON); stored secret ARN with six-char suffix when secret exists, else `secret:name-??????` per [AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html) |
 | `s3` | Bucket/key from URL path |
 | `lambda` | Function or layer name from path |
-| `sqs` / `sns` | `QueueName` / `Name`, or ARN from `QueueUrl` / `TopicArn` |
+| `sqs` / `sns` | `QueueUrl` / `TopicArn` from Query form **or JSON 1.0 body**; account from queue URL path |
 | `kms` / `kinesis` | `KeyId`, `AliasName`, `StreamName`, `StreamARN` (JSON) |
 | `ssm` | `Name` or first `Names[]` entry (JSON) |
 | `sts` | `RoleArn` (form) |
@@ -176,6 +176,23 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 **Intentionally unscoped per AWS SAR:** `pricing`, `api.pricing`, `ce` (query APIs in Floci), `ec2messages`.
 
 When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not.
+
+### Lab author IAM patterns (AWS-aligned)
+
+When authoring policies or lab verifiers against `floci:local` with IAM enforcement, strict mode, and SigV4:
+
+| Check | Why |
+|---|---|
+| `test`/`test` denied on `sts:GetCallerIdentity` | CTF hardening default |
+| Each hop: `GetCallerIdentity` account + role ARN | Assumed-role routing |
+| Wrong `sts:ExternalId` denied on every trust hop | Trust policy fidelity |
+| SQS scoped policies use queue **ARN**; boto3 sends **QueueUrl** (Query or JSON 1.0) | [SQS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html) |
+| Secrets path prefixes: `arn:...:secret:app/live/*` | Not `secret:app/live-*` ([AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html)) |
+| Single secret: `secret:name-*` or `secret:name-??????` | Matches AWS six-character ARN suffix |
+| `GetSecretValue` + CMK: pass raw bytes to `SecretBinary`; one base64 layer on wire | See [secrets-manager.md](./secrets-manager.md#kms-wrapped-secretbinary) |
+| Operator root never given to players | Compose CTF profile |
+
+Regression: `SqsReceiveMessageScopedQueueIntegrationTest`, `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`.
 
 **EMR multi-cluster:** requests with more than one `JobFlowIds[]` entry (for example `TerminateJobFlows`) call `ResourceArnBuilder.buildAllEmrClusterResources`; `IamEnforcementFilter` runs policy evaluation against each cluster ARN and denies the request if any cluster hits an explicit Deny.
 

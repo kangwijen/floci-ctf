@@ -244,6 +244,143 @@ class SecretsManagerKmsEnvelopeIntegrationTest {
     }
 
     @Test
+    void createSecretWithPreWrappedSecretBinaryDoesNotDoubleWrap() throws Exception {
+        String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String rootSmAuth = rootKmsAuth.replace("/kms/", "/secretsmanager/");
+
+        String keyId = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        String expectedPlaintext = "binary-kms-plaintext-03";
+        ObjectNode encryptReq = objectMapper.createObjectNode();
+        encryptReq.put("KeyId", keyId);
+        encryptReq.put("Plaintext", Base64.getEncoder().encodeToString(expectedPlaintext.getBytes()));
+
+        String envelopeB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Encrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(encryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("CiphertextBlob");
+
+        String secretName = "ctf/kms-binary-nested-test";
+        ObjectNode create = objectMapper.createObjectNode();
+        create.put("Name", secretName);
+        create.put("SecretBinary", envelopeB64);
+        create.put("KmsKeyId", keyId);
+        given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.CreateSecret")
+                .contentType("application/x-amz-json-1.1")
+                .body(create.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        String secretBinaryB64 = given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().put("SecretId", secretName).toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", nullValue())
+                .body("SecretBinary", equalTo(envelopeB64))
+                .extract().jsonPath().getString("SecretBinary");
+
+        ObjectNode decryptReq = objectMapper.createObjectNode();
+        decryptReq.put("CiphertextBlob", secretBinaryB64);
+
+        String plaintextB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(decryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        assertEquals(expectedPlaintext, new String(Base64.getDecoder().decode(plaintextB64)));
+    }
+
+    @Test
+    void createSecretWithDoubleBase64SecretBinaryUnwrapsForKmsDecrypt() throws Exception {
+        String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String rootSmAuth = rootKmsAuth.replace("/kms/", "/secretsmanager/");
+
+        String keyId = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        String expectedPlaintext = "double-base64-flag";
+        ObjectNode encryptReq = objectMapper.createObjectNode();
+        encryptReq.put("KeyId", keyId);
+        encryptReq.put("Plaintext", Base64.getEncoder().encodeToString(expectedPlaintext.getBytes()));
+
+        String envelopeB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Encrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(encryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("CiphertextBlob");
+
+        String doubleWrapped = Base64.getEncoder().encodeToString(envelopeB64.getBytes());
+        String secretName = "ctf/kms-double-base64-test";
+        ObjectNode create = objectMapper.createObjectNode();
+        create.put("Name", secretName);
+        create.put("SecretBinary", doubleWrapped);
+        create.put("KmsKeyId", keyId);
+        given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.CreateSecret")
+                .contentType("application/x-amz-json-1.1")
+                .body(create.toString())
+                .when().post("/")
+                .then().statusCode(200);
+
+        String secretBinaryB64 = given()
+                .header("Authorization", rootSmAuth)
+                .header("X-Amz-Target", "secretsmanager.GetSecretValue")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().put("SecretId", secretName).toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .body("SecretString", nullValue())
+                .body("SecretBinary", equalTo(envelopeB64))
+                .extract().jsonPath().getString("SecretBinary");
+
+        ObjectNode decryptReq = objectMapper.createObjectNode();
+        decryptReq.put("CiphertextBlob", secretBinaryB64);
+
+        String plaintextB64 = given()
+                .header("Authorization", rootKmsAuth)
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(decryptReq.toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("Plaintext");
+
+        assertEquals(expectedPlaintext, new String(Base64.getDecoder().decode(plaintextB64)));
+    }
+
+    @Test
     void createSecretWithPreWrappedEnvelopeDoesNotDoubleWrap() throws Exception {
         String rootKmsAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
                 + "/20260227/us-east-1/kms/aws4_request";

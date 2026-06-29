@@ -39,7 +39,7 @@ public class SecretsManagerService {
     private static final String AWSCURRENT = "AWSCURRENT";
     private static final String AWSPREVIOUS = "AWSPREVIOUS";
     private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    /** Trailing {@code -XXXXXX} on secret ARNs (IAM placeholder uses {@code -000000}). */
+    /** Trailing {@code -XXXXXX} on secret ARNs (AWS appends six random characters). */
     private static final java.util.regex.Pattern SECRET_ARN_SUFFIX =
             java.util.regex.Pattern.compile("-[A-Z0-9]{6}$");
 
@@ -695,6 +695,19 @@ public class SecretsManagerService {
         secret.setResourcePolicy(null);
         store.put(regionKey(region, secret.getName()), secret);
         return secret;
+    }
+
+    /**
+     * Returns the stored secret ARN for IAM resource evaluation when the secret exists.
+     * Matches AWS, which evaluates {@code secretsmanager:*} against the full ARN including
+     * the six-character suffix ({@code secret:name-AbCdEf}).
+     */
+    public Optional<String> findSecretArnForIam(String secretId, String region) {
+        try {
+            return Optional.of(resolveSecret(secretId, region).getArn());
+        } catch (AwsException e) {
+            return Optional.empty();
+        }
     }
 
     /**

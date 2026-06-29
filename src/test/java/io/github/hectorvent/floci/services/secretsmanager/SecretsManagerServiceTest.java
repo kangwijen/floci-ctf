@@ -402,6 +402,22 @@ class SecretsManagerServiceTest {
     }
 
     @Test
+    void findSecretArnForIamReturnsStoredArnWithSuffix() {
+        Secret secret = service.createSecret("iam/lookup-test", "value", null, null, null, null, REGION);
+
+        Optional<String> arn = service.findSecretArnForIam("iam/lookup-test", REGION);
+
+        assertTrue(arn.isPresent());
+        assertEquals(secret.getArn(), arn.get());
+        assertTrue(arn.get().matches("arn:aws:secretsmanager:us-east-1:000000000000:secret:iam/lookup-test-[A-Z0-9]{6}"));
+    }
+
+    @Test
+    void findSecretArnForIamReturnsEmptyWhenMissing() {
+        assertTrue(service.findSecretArnForIam("missing/secret", REGION).isEmpty());
+    }
+
+    @Test
     void secretNameFromArnResourceSegmentStripsSuffix() {
         assertEquals("ctf/lab/flag", SecretsManagerService.secretNameFromArnResourceSegment("ctf/lab/flag-000000"));
         assertEquals("my-secret", SecretsManagerService.secretNameFromArnResourceSegment("my-secret-ABC123"));

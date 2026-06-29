@@ -105,7 +105,11 @@ Notable CTF deltas on core services (full map in [AGENTS.md](https://github.com/
 | [STS](sts.md#ctf-fork) | `GetSessionToken` intersects session policy with parent user; WebIdentity/SAML trust conditions |
 | [Step Functions](step-functions.md#ctf-fork) | `aws-sdk` tasks for KMS, Secrets Manager, S3; `InProcessIamAuthorizer` on state machine role |
 | [DynamoDB](dynamodb.md#ctf-fork) | PartiQL maps to `dynamodb:PartiQL*` actions with table ARN from SQL |
+| [SQS](sqs.md#ctf-fork) | Scoped `ReceiveMessage` uses queue ARN from Query form or JSON 1.0 `QueueUrl` |
+| [Secrets Manager](secrets-manager.md#ctf-fork) | Path-prefix IAM uses `secret:path/*`; single-layer KMS `SecretBinary` envelopes |
 | Cognito OAuth | `/oauth2/*` uses client credentials; Bearer tokens do not bypass SigV4 on data plane |
+
+Lab author IAM patterns and verifier checklist: [IAM lab author patterns](iam.md#lab-author-iam-patterns-aws-aligned).
 
 ## Common Setup
 
