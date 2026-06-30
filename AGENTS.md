@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Latest upstream merge | 1.5.28 (2026-06-28) |
+| Latest upstream merge | 1.5.29 (2026-06-30) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -335,7 +335,9 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **main** (3 commits through **`f52b9209`**, merged 2026-06-28; pom **1.5.28**): AppSync VTL engine Phase 4 (`AppSyncVtlEngine`, `#if`/`#foreach`/`#set`, `$util` error helpers), ELBv2 resolvable local ALB DNS names via `EmbeddedDnsServer`, IAM assumed-role credential account routing (`SessionAccountLookup`, `originAccountId` on `SessionCredential`, `AccountContextFilter` session lookup). **CTF preserved:** `StsQueryHandler` trust validation and federated token checks; `GetCallerIdentity` caller ARN for IAM users; `GetSessionToken` session-policy intersection (`parentAccessKeyId`); CTF `registerSession` fields merged with upstream `originAccountId`; SigV4 presign generator (operator root AKIA).
+**Latest merge:** upstream **main** (7 commits through **`c496091a`**, merged 2026-06-30; release **1.5.29**): Step Functions `aws-sdk` CloudFormation/EC2/S3 PutObject integrations, state reset/nuke endpoints (`Resettable`, `/_floci/state/reset`), `AmazonRDSEnhancedMonitoringRole` managed policy, idempotent ECS delete on stack delete, SES v2 optional `FromEmailAddress`. **CTF preserved:** in-process IAM on new SFN service tasks (CloudFormation, EC2 `DescribeRegions`, optimized S3 `PutObject`); `DynamoDbStreamsEventSourcePoller` keeps `InProcessTargetAuthorizer` with upstream `Resettable`; Secrets/KMS/S3 `aws-sdk` SFN handlers and `authorizeTask` on nested state machines; CloudTrail cursor pagination; IAM/SigV4/strict Compose profile.
+
+**Previous merge:** upstream **main** (3 commits through **`f52b9209`**, merged 2026-06-28; pom **1.5.28**): AppSync VTL engine Phase 4 (`AppSyncVtlEngine`, `#if`/`#foreach`/`#set`, `$util` error helpers), ELBv2 resolvable local ALB DNS names via `EmbeddedDnsServer`, IAM assumed-role credential account routing (`SessionAccountLookup`, `originAccountId` on `SessionCredential`, `AccountContextFilter` session lookup). **CTF preserved:** `StsQueryHandler` trust validation and federated token checks; `GetCallerIdentity` caller ARN for IAM users; `GetSessionToken` session-policy intersection (`parentAccessKeyId`); CTF `registerSession` fields merged with upstream `originAccountId`; SigV4 presign generator (operator root AKIA).
 
 **Previous merge:** upstream **main** (52 commits through **`aeb11d77`**, merged 2026-06-28; releases **1.5.27** and **1.5.28**): IoT Core, Elastic Beanstalk, MemoryDB ACLs, AppSync `$util` VTL runtime, EventBridge Pipes Kafka, S3 bucket logging, ECS EFS volumes, SES v1 delivery options, EC2 instance-type catalog, Cognito auth-flow fixes, Lambda SQS ESM fidelity, IAM managed-policy account context, CodeDeploy persistence, plus 1.5.27 items (CodePipeline, S3 Vectors, etc.). **CTF preserved:** SigV4 presign, strict IAM, Secrets Manager KMS envelopes, Cognito `InProcessTargetAuthorizer`, `ContainerEnvHardening`, EC2 flow logs.
 

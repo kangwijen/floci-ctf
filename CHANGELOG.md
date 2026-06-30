@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **iam:** JSON 1.1 credential-scope enforcement uses the `X-Amz-Target` service for IAM action resolution and SigV4 scope-mismatch checks (`IamJson11CredentialScopeSplitIntegrationTest`, `IamKinesisCatchAllRouteScopeIntegrationTest`)
 - **apigateway:** in-process IAM on path-style SQS query integrations and Lambda path integrations (`ApiGatewaySqsQueryIamBypassIntegrationTest`); `AwsServiceRouter.invokeQuery` records CloudTrail audit when audit is enabled
+- **stepfunctions:** in-process IAM on CloudFormation, EC2 `DescribeRegions`, and optimized S3 `PutObject` service integrations (CTF hardening on upstream 1.5.29 SFN tasks)
 
 ### Fixed
 
@@ -25,10 +26,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **lambda:** `ZipExtractor` treats backslash ZIP entry names as literal filenames on Windows (AWS Lambda parity)
 - **tls:** Windows-safe certificate path handling in tests; skip dual-protocol TLS proxy startup in Quarkus test mode
 - **core:** `TlsProxyServer` and container credential HTTP servers use `SO_REUSEADDR` for faster port reuse in test suites
+- **cloudtrail:** cursor-based `LookupEvents` pagination prevents duplicate `EventId` entries across pages
 
 ### Changed
 
 - **tests:** WebSocket integration tests provision APIs via `@BeforeEach` so filtered single-method runs work; test `application.yml` uses dedicated Lambda runtime API (`29200-29299`) and credential ports (`29171`/`29172`); ElastiCache test proxy range moved to `16379-16399` to avoid local Redis on `6379`
+
+## [1.5.29] - 2026-06-30
+
+### Added
+
+- **stepfunctions:** add `aws-sdk` CloudFormation/EC2 and S3 `PutObject` service integrations ([#1556](https://github.com/floci-io/floci/pull/1556))
+- **appsync:** add the Phase 4 VTL engine for resolver mapping templates ([#1288](https://github.com/floci-io/floci/pull/1288))
+- **iam:** add the `AmazonRDSEnhancedMonitoringRole` managed policy ([#1559](https://github.com/floci-io/floci/pull/1559)); route assumed-role credentials to the target account ([#1549](https://github.com/floci-io/floci/pull/1549))
+- **cognito:** add overrides for client id and client secret ([#1486](https://github.com/floci-io/floci/pull/1486))
+- **core:** add state reset and nuke endpoints ([#1482](https://github.com/floci-io/floci/pull/1482))
+
+### Fixed
+
+- **cloudformation:** treat an already-missing ECS task definition, cluster, or service as delete-complete during stack deletion ([#1645](https://github.com/floci-io/floci/pull/1645))
+- **ecs:** honor task `portMappings` hostPort when launching containers ([#1610](https://github.com/floci-io/floci/pull/1610)); register persisted model records for native-image reflection ([#1606](https://github.com/floci-io/floci/pull/1606))
+- **ses:** make `FromEmailAddress` optional for v2 `SendEmail` ([#1561](https://github.com/floci-io/floci/pull/1561))
+- **elbv2:** publish resolvable local ALB DNS names ([#1492](https://github.com/floci-io/floci/pull/1492))
+- **transcribe:** persist vocabularies across restart ([#1608](https://github.com/floci-io/floci/pull/1608))
+- **ssm:** retain local service diagnostics on command failure ([#1529](https://github.com/floci-io/floci/pull/1529))
+- **storage:** flush persisted state before container teardown on shutdown ([#1607](https://github.com/floci-io/floci/pull/1607))
 
 ## [1.5.28] - 2026-06-26
 
@@ -1105,7 +1127,8 @@ Initial public release of Floci — a fast, free, open-source local AWS emulator
 
 ---
 
-[Unreleased]: https://github.com/floci-io/floci/compare/1.5.28...HEAD
+[Unreleased]: https://github.com/floci-io/floci/compare/1.5.29...HEAD
+[1.5.29]: https://github.com/floci-io/floci/compare/1.5.28...1.5.29
 [1.5.28]: https://github.com/floci-io/floci/compare/1.5.27...1.5.28
 [1.5.27]: https://github.com/floci-io/floci/compare/1.5.26...1.5.27
 [1.5.26]: https://github.com/floci-io/floci/compare/1.5.25...1.5.26
