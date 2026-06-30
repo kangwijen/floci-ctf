@@ -64,6 +64,10 @@ resource "aws_dynamodb_table" "items" {
     enabled        = true
   }
 
+  server_side_encryption {
+    enabled = true
+  }
+
   tags = {
     Environment = "compat-test"
   }
@@ -101,8 +105,15 @@ resource "aws_ssm_parameter" "api_key" {
 }
 
 # -- Secrets Manager -----------------------------------------------------------
+resource "aws_kms_key" "secrets" {
+  description             = "Compat test key for Secrets Manager"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
 resource "aws_secretsmanager_secret" "db_creds" {
-  name = "floci-compat/db-creds"
+  name       = "floci-compat/db-creds"
+  kms_key_id = aws_kms_key.secrets.arn
 }
 
 resource "aws_secretsmanager_secret_version" "db_creds" {
@@ -114,6 +125,12 @@ resource "aws_secretsmanager_secret_version" "db_creds" {
 }
 
 # -- RDS DB Instance -----------------------------------------------------------
+variable "db_password" {
+  type      = string
+  sensitive = true
+  default   = "Password1!"
+}
+
 resource "aws_db_instance" "app" {
   identifier        = "floci-compat-db"
   engine            = "postgres"
@@ -121,8 +138,10 @@ resource "aws_db_instance" "app" {
   instance_class    = "db.t3.micro"
   allocated_storage = 20
   username          = "admin"
-  password          = "Password1!"
+  password          = var.db_password
   skip_final_snapshot = true
+
+  enabled_cloudwatch_logs_exports = ["postgresql"]
 }
 
 # -- Outputs -------------------------------------------------------------------

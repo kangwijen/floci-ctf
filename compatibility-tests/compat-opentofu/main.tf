@@ -64,6 +64,10 @@ resource "aws_dynamodb_table" "items" {
     enabled        = true
   }
 
+  server_side_encryption {
+    enabled = true
+  }
+
   tags = {
     Environment = "compat-test"
   }
@@ -97,8 +101,15 @@ resource "aws_ssm_parameter" "api_key" {
 }
 
 # ── Secrets Manager ────────────────────────────────────────────────────────
+resource "aws_kms_key" "secrets" {
+  description             = "Compat test key for Secrets Manager"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
 resource "aws_secretsmanager_secret" "db_creds" {
-  name = "floci-compat/db-creds"
+  name       = "floci-compat/db-creds"
+  kms_key_id = aws_kms_key.secrets.arn
 }
 
 resource "aws_secretsmanager_secret_version" "db_creds" {

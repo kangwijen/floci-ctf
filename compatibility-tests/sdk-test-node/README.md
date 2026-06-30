@@ -75,7 +75,7 @@ covering connect/disconnect, route selection, broadcast, authorization,
 
 These tests always run as part of the suite — they derive the HTTPS/WSS endpoint
 from the HTTP endpoint by swapping the scheme (`http://floci:4566` → `https://floci:4566`,
-`ws://` → `wss://`).
+plain WebSocket scheme → `wss://`).
 
 Since Floci serves HTTP and HTTPS simultaneously when TLS is enabled, existing HTTP
 tests are unaffected.

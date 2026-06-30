@@ -14,10 +14,21 @@ variable "endpoint" {
   default = "http://localhost:4566"
 }
 
+variable "aws_access_key" {
+  type    = string
+  default = "test"
+}
+
+variable "aws_secret_key" {
+  type      = string
+  sensitive = true
+  default   = "test"
+}
+
 provider "aws" {
   region     = "us-east-1"
-  access_key = "test"
-  secret_key = "test"
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
 
   skip_credentials_validation = true
   skip_metadata_api_check     = true
@@ -34,6 +45,7 @@ provider "aws" {
     sts            = var.endpoint
     ssm            = var.endpoint
     secretsmanager = var.endpoint
+    kms            = var.endpoint
     cognitoidp     = var.endpoint
     rds            = var.endpoint
     cloudwatch     = var.endpoint
