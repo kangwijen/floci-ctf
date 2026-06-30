@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AccountResolver;
+import io.github.hectorvent.floci.core.common.ClientSourceIpResolver;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import io.github.hectorvent.floci.core.common.RequestContext;
 import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContext;
@@ -61,6 +62,7 @@ public class CloudTrailEventRecorder {
     private final ResourceArnBuilder arnBuilder;
     private final EmulatorConfig config;
     private final Instance<RequestContext> requestContext;
+    private final Instance<io.quarkus.vertx.http.runtime.CurrentVertxRequest> vertxRequest;
 
     @Inject
     public CloudTrailEventRecorder(ObjectMapper mapper,
@@ -68,13 +70,15 @@ public class CloudTrailEventRecorder {
                                    IamService iamService,
                                    ResourceArnBuilder arnBuilder,
                                    EmulatorConfig config,
-                                   Instance<RequestContext> requestContext) {
+                                   Instance<RequestContext> requestContext,
+                                   Instance<io.quarkus.vertx.http.runtime.CurrentVertxRequest> vertxRequest) {
         this.mapper = mapper;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
         this.arnBuilder = arnBuilder;
         this.config = config;
         this.requestContext = requestContext;
+        this.vertxRequest = vertxRequest;
     }
 
     public Map<String, Object> buildEvent(ContainerRequestContext request,
@@ -110,7 +114,9 @@ public class CloudTrailEventRecorder {
         if (tlsDetails != null && !tlsDetails.isEmpty()) {
             event.put("tlsDetails", tlsDetails);
         }
-        event.put("requestParameters", buildRequestParameters(request, credentialScope));
+        Map<String, Object> requestParameters = buildRequestParameters(request, credentialScope);
+        enrichAuditParameters(requestParameters, credentialScope, eventName, request, response, region, accountId);
+        event.put("requestParameters", requestParameters);
         event.put("responseElements", null);
         event.put("requestID", requestId);
         event.put("eventID", eventId);
@@ -291,6 +297,9 @@ public class CloudTrailEventRecorder {
         if ("AssumeRole".equals(eventName) || "ReceiveMessage".equals(eventName)) {
             return true;
         }
+        if ("Decrypt".equals(eventName) || "Verify".equals(eventName) || "GenerateDataKey".equals(eventName)) {
+            return true;
+        }
         return eventName.startsWith("Get")
                 || eventName.startsWith("List")
                 || eventName.startsWith("Describe")
@@ -326,6 +335,15 @@ public class CloudTrailEventRecorder {
         }
         if ("sqs".equals(ctx.credentialScope())) {
             normalizeSqsAuditParameters(params);
+        }
+        if ("dynamodb".equals(ctx.credentialScope())) {
+            normalizeDynamoDbAuditParameters(params);
+        }
+        if ("sns".equals(ctx.credentialScope())) {
+            normalizeSnsAuditParameters(params);
+        }
+        if ("kms".equals(ctx.credentialScope())) {
+            normalizeKmsAuditParameters(params, null, ctx.region(), config.defaultAccountId(), ctx.eventName(), null);
         }
         if (ctx.inScopeSourceArn() != null && !ctx.inScopeSourceArn().isBlank()
                 && !params.containsKey("inScopeOf")) {
@@ -556,7 +574,145 @@ public class CloudTrailEventRecorder {
                 params.put("messageBody", messageBody);
             }
         }
+        if (!params.containsKey("tableName")) {
+            String tableName = readJsonStringField(request, "TableName");
+            if (tableName != null && !tableName.isBlank()) {
+                params.put("tableName", tableName);
+            }
+        }
+        if (!params.containsKey("topicArn")) {
+            String topicArn = readJsonStringField(request, "TopicArn");
+            if (topicArn != null && !topicArn.isBlank()) {
+                params.put("topicArn", topicArn);
+            }
+        }
+        if (!params.containsKey("keyId")) {
+            String keyId = readJsonStringField(request, "KeyId");
+            if (keyId != null && !keyId.isBlank()) {
+                params.put("keyId", keyId);
+            }
+        }
         return params.isEmpty() ? null : params;
+    }
+
+    private void enrichAuditParameters(Map<String, Object> params,
+                                       String credentialScope,
+                                       String eventName,
+                                       ContainerRequestContext request,
+                                       ContainerResponseContext response,
+                                       String region,
+                                       String accountId) {
+        if (params == null) {
+            return;
+        }
+        if ("dynamodb".equals(credentialScope)) {
+            normalizeDynamoDbAuditParameters(params);
+        }
+        if ("sns".equals(credentialScope)) {
+            normalizeSnsAuditParameters(params);
+        }
+        if ("kms".equals(credentialScope)) {
+            normalizeKmsAuditParameters(params, request, region, accountId, eventName, response);
+        }
+    }
+
+    private static void normalizeDynamoDbAuditParameters(Map<String, Object> params) {
+        copyAuditParamIfAbsent(params, "TableName", "tableName");
+        params.remove("TableName");
+        params.remove("path");
+    }
+
+    private static void normalizeSnsAuditParameters(Map<String, Object> params) {
+        copyAuditParamIfAbsent(params, "TopicArn", "topicArn");
+        params.remove("TopicArn");
+    }
+
+    private void normalizeKmsAuditParameters(Map<String, Object> params,
+                                             ContainerRequestContext request,
+                                             String region,
+                                             String accountId,
+                                             String eventName,
+                                             ContainerResponseContext response) {
+        String ciphertextBlob = request != null
+                ? readJsonStringField(request, "CiphertextBlob")
+                : stringParam(params, "CiphertextBlob");
+        if (ciphertextBlob == null) {
+            ciphertextBlob = stringParam(params, "ciphertextBlob");
+        }
+
+        params.remove("CiphertextBlob");
+        params.remove("ciphertextBlob");
+        params.remove("Plaintext");
+        params.remove("plaintext");
+        params.remove("path");
+
+        String keyId = stringParam(params, "keyId");
+        if (keyId == null || keyId.isBlank()) {
+            String embeddedKeyId = ResourceArnBuilder.keyIdFromCiphertextBlob(ciphertextBlob);
+            if (embeddedKeyId != null && !embeddedKeyId.isBlank()) {
+                keyId = formatKmsKeyArn(embeddedKeyId, region, accountId);
+            }
+        }
+        if ((keyId == null || keyId.isBlank()) && "Decrypt".equals(eventName) && response != null
+                && response.getStatus() >= 200 && response.getStatus() < 300) {
+            keyId = readResponseJsonStringField(response, "KeyId");
+        }
+        if (keyId != null && !keyId.isBlank()) {
+            params.put("keyId", formatKmsKeyArn(keyId, region, accountId));
+        }
+
+        if (!params.containsKey("encryptionContext") && request != null) {
+            Map<String, Object> encryptionContext = readJsonStringMapField(request, "EncryptionContext");
+            if (encryptionContext != null && !encryptionContext.isEmpty()) {
+                params.put("encryptionContext", encryptionContext);
+            }
+        }
+        Object encryptionContext = params.get("EncryptionContext");
+        if (encryptionContext != null) {
+            params.put("encryptionContext", encryptionContext);
+            params.remove("EncryptionContext");
+        }
+
+        if ("Decrypt".equals(eventName) || "Encrypt".equals(eventName) || "ReEncrypt".equals(eventName)) {
+            String algorithm = stringParam(params, "encryptionAlgorithm");
+            if (algorithm == null || algorithm.isBlank()) {
+                algorithm = stringParam(params, "EncryptionAlgorithm");
+            }
+            params.put("encryptionAlgorithm",
+                    algorithm != null && !algorithm.isBlank() ? algorithm : "SYMMETRIC_DEFAULT");
+            params.remove("EncryptionAlgorithm");
+        }
+    }
+
+    private static String stringParam(Map<String, Object> params, String key) {
+        Object value = params.get(key);
+        return value == null ? null : value.toString();
+    }
+
+    private static String formatKmsKeyArn(String keyId, String region, String accountId) {
+        if (keyId.startsWith("arn:aws:kms:")) {
+            return keyId;
+        }
+        if (keyId.startsWith("alias/")) {
+            return "arn:aws:kms:" + region + ":" + accountId + ":" + keyId;
+        }
+        return "arn:aws:kms:" + region + ":" + accountId + ":key/" + keyId;
+    }
+
+    private String readResponseJsonStringField(ContainerResponseContext response, String fieldName) {
+        Object entity = response.getEntity();
+        if (!(entity instanceof String body) || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode node = mapper.readTree(body);
+            JsonNode field = node.get(fieldName);
+            if (field != null && !field.isNull()) {
+                return field.asText();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private List<Map<String, Object>> buildResources(ContainerRequestContext request,
@@ -622,6 +778,8 @@ public class CloudTrailEventRecorder {
             }
             case "sqs" -> "AWS::SQS::Queue";
             case "sns" -> "AWS::SNS::Topic";
+            case "kms" -> "AWS::KMS::Key";
+            case "dynamodb" -> "AWS::DynamoDB::Table";
             case "secretsmanager" -> "AWS::SecretsManager::Secret";
             case "cloudtrail" -> "AWS::CloudTrail::Trail";
             case "iam" -> iamResourceType(arn);
@@ -687,6 +845,28 @@ public class CloudTrailEventRecorder {
             if (field != null && field.isTextual()) {
                 return field.asText();
             }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private Map<String, Object> readJsonStringMapField(ContainerRequestContext request, String fieldName) {
+        if (!isAwsJsonMediaType(request.getMediaType())) {
+            return null;
+        }
+        byte[] body = RequestBodyBuffer.peek(request);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode node = mapper.readTree(body);
+            JsonNode field = node.get(fieldName);
+            if (field == null || !field.isObject()) {
+                return null;
+            }
+            Map<String, Object> map = new LinkedHashMap<>();
+            field.fields().forEachRemaining(entry -> map.put(entry.getKey(), entry.getValue().asText()));
+            return map;
         } catch (Exception ignored) {
         }
         return null;
@@ -960,24 +1140,23 @@ public class CloudTrailEventRecorder {
     }
 
     private String resolveSourceIp(ContainerRequestContext request) {
-        if (config.ctf().cloudTrailAllowSourceIpHeader()) {
-            String stamped = request.getHeaderString("X-Floci-CloudTrail-Source-Ip");
-            if (stamped != null && !stamped.isBlank()) {
-                return stamped.trim();
-            }
-        }
-        if (config.auth().trustForwardedHeaders()) {
-            String forwarded = request.getHeaderString("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                String sourceIp = forwarded;
-                int comma = sourceIp.indexOf(',');
-                if (comma > 0) {
-                    sourceIp = sourceIp.substring(0, comma).trim();
+        String stamped = request.getHeaderString("X-Floci-CloudTrail-Source-Ip");
+        String forwarded = request.getHeaderString("X-Forwarded-For");
+        String socketPeer = resolveSocketPeerHost();
+        return ClientSourceIpResolver.resolve(config, stamped, forwarded, socketPeer);
+    }
+
+    private String resolveSocketPeerHost() {
+        try {
+            if (vertxRequest.isResolvable()) {
+                var current = vertxRequest.get().getCurrent();
+                if (current != null && current.request().remoteAddress() != null) {
+                    return current.request().remoteAddress().host();
                 }
-                return sourceIp;
             }
+        } catch (Exception ignored) {
         }
-        return "127.0.0.1";
+        return null;
     }
 
     private static String firstHeader(ContainerResponseContext response, String... names) {

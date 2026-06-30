@@ -170,3 +170,16 @@ When IAM enforcement is enabled, PartiQL statements map to scoped DynamoDB IAM a
 | `DELETE` | `dynamodb:PartiQLDelete` |
 
 Policies must allow the action on the target table ARN (for example `arn:aws:dynamodb:us-east-1:000000000000:table/MyTable`). Multi-table batch statements use the first resolved table ARN for scoping.
+
+### CloudTrail audit (HTTP)
+
+When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, `dynamodb:PutItem` and related item APIs record management events unless a trail enables DynamoDB **data** event selectors (Floci indexes all HTTP audit as management events today; see [CloudTrail event delivery](./cloudtrail.md#event-delivery-and-s3-layout)):
+
+| Field | Behavior |
+|-------|----------|
+| `requestParameters.tableName` | Table name from JSON `TableName` (normalized to lowercase AWS shape) |
+| `resources[]` | `AWS::DynamoDB::Table` with table ARN |
+| `eventCategory` | `Management` on Floci HTTP audit |
+| Item payload | `Item` map is not copied into `requestParameters` |
+
+Regression: `CloudTrailDynamoDbPutItemAuditIntegrationTest`, `DynamoDbPutItemScopedIntegrationTest`. Cross-reference: [CloudTrail data-plane audit](./cloudtrail.md#data-plane-requestparameters-http-audit).

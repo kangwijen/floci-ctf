@@ -92,6 +92,23 @@ final class S3AccessLogFormatter {
         return line.split(" ", -1).length;
     }
 
+    /**
+     * Returns field 4 (Remote IP) from a log line. The time field is bracketed and may contain spaces.
+     */
+    static String extractRemoteIp(String line) {
+        int timeStart = line.indexOf('[');
+        if (timeStart < 0) {
+            return null;
+        }
+        int timeEnd = line.indexOf(']', timeStart);
+        if (timeEnd < 0 || timeEnd + 1 >= line.length()) {
+            return null;
+        }
+        String afterTime = line.substring(timeEnd + 1).stripLeading();
+        int space = afterTime.indexOf(' ');
+        return space < 0 ? afterTime : afterTime.substring(0, space);
+    }
+
     private static String quoteOrDash(String value) {
         if (value == null || value.isBlank()) {
             return "\"-\"";

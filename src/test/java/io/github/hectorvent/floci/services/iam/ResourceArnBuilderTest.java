@@ -452,6 +452,15 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void snsPublishUsesTopicArn() {
+        String topicArn = "arn:aws:sns:us-east-1:222222222222:publish-target";
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=Publish&TopicArn=" + topicArn + "&Message=hello");
+        String arn = builder.build("sns", ctx, REGION, ACCOUNT);
+        assertEquals(topicArn, arn);
+    }
+
+    @Test
     void snsSubscribeUsesTopicArnNotSubscriptionArn() {
         String topicArn = "arn:aws:sns:us-east-1:222222222222:dispatch";
         String subscriptionArn = topicArn + ":sub-id";

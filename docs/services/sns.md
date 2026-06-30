@@ -59,6 +59,19 @@ A topic policy principal `arn:aws:iam::ACCOUNT:root` does **not** authorize ever
 
 Regression: `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`.
 
+### CloudTrail audit (HTTP)
+
+When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, `sns:Publish` records a **management** event (not a data event) per [AWS SNS CloudTrail](https://docs.aws.amazon.com/sns/latest/dg/sns-logging-using-cloudtrail.html):
+
+| Field | Behavior |
+|-------|----------|
+| `requestParameters.topicArn` | Topic ARN from Query `TopicArn` or JSON `TopicArn` (`SNS_20100331.Publish`) |
+| `resources[]` | `AWS::SNS::Topic` with topic ARN |
+| `eventCategory` | `Management`; `readOnly` is `false` |
+| Message body | Not recorded in `requestParameters` |
+
+Regression: `CloudTrailSnsPublishAuditIntegrationTest`, `SnsPublishScopedIamIntegrationTest`. Cross-reference: [CloudTrail data-plane audit](./cloudtrail.md#data-plane-requestparameters-http-audit).
+
 ### SNS to SQS fan-out (closed)
 
 **Status:** Closed on current `floci:local`. End-to-end subscribe, operator publish with explicit resource policies, and SQS delivery under IAM enforcement is covered by `SnsSubscribeReceiveIamIntegrationTest.fanOutWithExplicitTopicAndQueueResourcePolicies`.

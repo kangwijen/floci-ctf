@@ -903,7 +903,7 @@ public class ResourceArnBuilder {
     /**
      * Extracts CMK id embedded in Floci KMS ciphertext blobs ({@code kms:v2:KEYID:...}).
      */
-    static String keyIdFromCiphertextBlob(String ciphertextBlobBase64) {
+    public static String keyIdFromCiphertextBlob(String ciphertextBlobBase64) {
         if (ciphertextBlobBase64 == null || ciphertextBlobBase64.isBlank()) {
             return null;
         }

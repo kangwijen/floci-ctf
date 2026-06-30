@@ -2876,13 +2876,19 @@ public class S3Controller {
     }
 
     private String resolveRemoteIp() {
+        String socketPeer = null;
+        String forwarded = null;
+        String stamped = null;
         if (currentVertxRequest != null && currentVertxRequest.getCurrent() != null) {
             var request = currentVertxRequest.getCurrent().request();
             if (request.remoteAddress() != null) {
-                return request.remoteAddress().host();
+                socketPeer = request.remoteAddress().host();
             }
+            forwarded = request.getHeader("X-Forwarded-For");
+            stamped = request.getHeader("X-Floci-CloudTrail-Source-Ip");
         }
-        return "127.0.0.1";
+        return io.github.hectorvent.floci.core.common.ClientSourceIpResolver.resolve(
+                emulatorConfig, stamped, forwarded, socketPeer);
     }
 
     private static String[] resolveAuthType(HttpHeaders httpHeaders, UriInfo uriInfo) {

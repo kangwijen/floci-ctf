@@ -94,7 +94,19 @@ HTTP audit events follow AWS CloudTrail record semantics where practical:
 | `additionalEventData` | SigV4 HTTP calls include `SignatureVersion` (`AWS4-HMAC-SHA256`) and `AuthenticationMethod` (`AuthHeader` or `QueryString`) when applicable. |
 | `tlsDetails` | When `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` and `X-Forwarded-Proto: https`, includes synthetic `tlsVersion`, `cipherSuite`, and `clientProvidedHostHeader` (same pattern as S3 access logs). |
 
-Regression: `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailSqsAuditIntegrationTest`, `CloudTrailS3DeliveryIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`, `CloudTrailEventRecorderTest`.
+### Data-plane `requestParameters` (HTTP audit)
+
+| Service | Event | Recorded fields | Notes |
+|---------|-------|-----------------|-------|
+| SQS | `SendMessage`, `ReceiveMessage`, ... | `queueUrl`, `messageBody` (SendMessage) | Data events when applicable |
+| KMS | `Decrypt`, `Encrypt`, ... | `keyId`, `encryptionAlgorithm`, `encryptionContext` | `CiphertextBlob` / `Plaintext` omitted; `keyId` resolved from explicit `KeyId`, response `KeyId`, or Floci `kms:v2:` envelope; `encryptionContext` copied from request body when set |
+| SNS | `Publish` | `topicArn` | Query and JSON bodies |
+| DynamoDB | `PutItem`, `GetItem`, ... | `tableName` | JSON `TableName` normalized to lowercase AWS shape; Floci HTTP audit uses `eventCategory: Management` (AWS records data events only when trail data selectors include DynamoDB) |
+| S3 | object APIs | `bucketName`, `key` | REST path derived |
+
+`resources[]` includes `AWS::KMS::Key`, `AWS::SNS::Topic`, and `AWS::DynamoDB::Table` when the scoped ARN resolves.
+
+Regression: `CloudTrailFieldFidelityIntegrationTest`, `CloudTrailSqsAuditIntegrationTest`, `CloudTrailKmsDecryptAuditIntegrationTest`, `CloudTrailSnsPublishAuditIntegrationTest`, `CloudTrailDynamoDbPutItemAuditIntegrationTest`, `CloudTrailS3DeliveryIntegrationTest`, `CloudTrailLookupEventsIntegrationTest`, `CloudTrailEventRecorderTest`.
 
 `LatestDeliveryTime` on `GetTrailStatus` updates when events flush to the trail bucket (default buffer size: 10 events per trail).
 
@@ -152,9 +164,9 @@ Exercises that grade investigators with **live** `aws cloudtrail lookup-events` 
 
 | Priority | Mechanism | When to use |
 |---|---|---|
-| Primary | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` and client `X-Forwarded-For` (first hop) | Trusted reverse proxy or provision script that sets distinct forwarded IPs per principal |
+| Primary | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` and client `X-Forwarded-For` (first hop) | Trusted reverse proxy or provision script that sets distinct forwarded IPs per principal; **same IP used for S3 access log Remote IP** |
 | Alternate | `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER=true` and `X-Floci-CloudTrail-Source-Ip` per request | Single-host Docker deployments without a proxy; does not affect IAM `aws:sourceip` |
-| Default | Socket peer or `127.0.0.1` | When neither option is enabled |
+| Default | Socket peer, then `127.0.0.1` | When neither header option is enabled; S3 access logs and CloudTrail share `ClientSourceIpResolver` |
 
 When both alternate and primary are enabled, `X-Floci-CloudTrail-Source-Ip` wins if present. Regression profile: `CloudTrailForwardedHeadersAuditProfile`.
 
@@ -213,6 +225,23 @@ Batch requests use an `events` array instead of `event`. Required event fields: 
 `preserveEventTime=true` (default) keeps operator-supplied timestamps for graded `lookup-events` and S3 day paths. `deliverToTrails=false` indexes only (no S3 flush). Regression: `CloudTrailEventInjectionIntegrationTest`.
 
 Compose defaults keep injection **off**; enable explicitly for provisioning hosts that expose `/_floci/*` to operators.
+
+### Data-plane audit probe (running `floci:local`)
+
+After `StartLogging`, exercise live APIs and confirm `lookup-events` `requestParameters` before authoring graded questions:
+
+| API | Graded field candidate |
+|-----|------------------------|
+| `kms:Decrypt` | `requestParameters.keyId` (from explicit `KeyId`, response `KeyId`, or Floci `kms:v2:` envelope in `CiphertextBlob`) |
+| `sns:Publish` | `requestParameters.topicArn` |
+| `dynamodb:PutItem` | `requestParameters.tableName` |
+| S3 `GetObject` + bucket logging | Access log `REST.GET.OBJECT`; Remote IP vs CloudTrail `sourceIPAddress` when `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` |
+
+Maven regression (no running instance):
+
+```bash
+./mvnw test -Dtest=S3AccessLoggingIntegrationTest,S3AccessLogDeliveryIamIntegrationTest,CloudForensicsIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbPutItemScopedIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SnsPublishScopedIamIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailKmsDecryptAuditIntegrationTest,CloudTrailSnsPublishAuditIntegrationTest,CloudTrailDynamoDbPutItemAuditIntegrationTest,S3AccessLogSourceIpParityIntegrationTest,ClientSourceIpResolverTest
+```
 
 ### Investigator IAM
 

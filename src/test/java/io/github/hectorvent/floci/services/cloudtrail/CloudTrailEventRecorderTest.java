@@ -47,7 +47,18 @@ class CloudTrailEventRecorderTest {
     }
 
     @Test
-    void cloudTrailResourceType_mapsS3ObjectAndSqsQueue() {
+    void isReadOnly_matchesDecrypt() {
+        assertTrue(CloudTrailEventRecorder.isReadOnly("Decrypt"));
+    }
+
+    @Test
+    void cloudTrailResourceType_mapsKmsDynamoDbS3AndSqs() {
+        assertEquals("AWS::KMS::Key",
+                CloudTrailEventRecorder.cloudTrailResourceType(
+                        "kms", "Decrypt", "arn:aws:kms:us-east-1:123:key/abc"));
+        assertEquals("AWS::DynamoDB::Table",
+                CloudTrailEventRecorder.cloudTrailResourceType(
+                        "dynamodb", "PutItem", "arn:aws:dynamodb:us-east-1:123:table/t"));
         assertEquals("AWS::S3::Object",
                 CloudTrailEventRecorder.cloudTrailResourceType(
                         "s3", "PutObject", "arn:aws:s3:::bucket/key.txt"));
@@ -66,6 +77,7 @@ class CloudTrailEventRecorderTest {
                 mock(IamService.class),
                 mock(ResourceArnBuilder.class),
                 config,
+                mock(Instance.class),
                 mock(Instance.class));
 
         String queueUrl = "http://localhost:4566/000000000000/inprocess-queue";
@@ -91,6 +103,41 @@ class CloudTrailEventRecorderTest {
         assertFalse(params.containsKey("QueueUrl"));
         assertFalse(params.containsKey("MessageBody"));
         assertEquals("Data", event.get("eventCategory"));
+    }
+
+    @Test
+    void buildInProcessEvent_normalizesSnsTopicArn() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        when(config.defaultAccountId()).thenReturn("000000000000");
+        CloudTrailEventRecorder recorder = new CloudTrailEventRecorder(
+                new ObjectMapper(),
+                mock(AccountResolver.class),
+                mock(IamService.class),
+                mock(ResourceArnBuilder.class),
+                config,
+                mock(Instance.class),
+                mock(Instance.class));
+
+        String topicArn = "arn:aws:sns:us-east-1:000000000000:inprocess-topic";
+        Map<String, Object> requestParameters = new LinkedHashMap<>();
+        requestParameters.put("TopicArn", topicArn);
+        requestParameters.put("Message", "payload");
+
+        Map<String, Object> event = recorder.buildInProcessEvent(InProcessAuditContext.builder()
+                .region("us-east-1")
+                .eventName("Publish")
+                .credentialScope("sns")
+                .requestParameters(requestParameters)
+                .invokedBy("events.amazonaws.com")
+                .executionRoleArn("arn:aws:iam::000000000000:role/EventRole")
+                .managementEvent(true)
+                .eventCategory("Management")
+                .build());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) event.get("requestParameters");
+        assertEquals(topicArn, params.get("topicArn"));
+        assertFalse(params.containsKey("TopicArn"));
     }
 
     @Test

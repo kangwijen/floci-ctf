@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class S3AccessLogFormatterTest {
@@ -46,5 +47,6 @@ class S3AccessLogFormatterTest {
         assertTrue(line.endsWith(" us-east-1"));
         assertTrue(line.contains(" 40 "));
         assertTrue(line.contains(" 42 "));
+        assertEquals("192.0.2.3", S3AccessLogFormatter.extractRemoteIp(line));
     }
 }

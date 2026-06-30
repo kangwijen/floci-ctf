@@ -54,6 +54,22 @@ In permissive mode, grants are stored and queryable but are **not** evaluated du
 
 When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evaluate grants after identity and key policy checks. A valid grant for the caller principal and operation can allow `Decrypt` (and related crypto actions) when IAM alone would deny. In-process calls from Step Functions `aws-sdk` tasks do not evaluate grants yet; use the state machine execution role's IAM policy for those paths.
 
+### CloudTrail audit (HTTP)
+
+When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, KMS API calls emit management events indexed for `lookup-events`. `Decrypt` matches [AWS KMS CloudTrail events](https://docs.aws.amazon.com/kms/latest/developerguide/logging-using-cloudtrail.html):
+
+| Field | Behavior |
+|-------|----------|
+| `readOnly` | `true` for `Decrypt` |
+| `requestParameters.keyId` | Full key ARN; resolved from explicit `KeyId`, response `KeyId`, or Floci `kms:v2:` envelope in `CiphertextBlob` |
+| `requestParameters.encryptionContext` | Present when supplied in the request body |
+| `requestParameters.encryptionAlgorithm` | Defaults to `SYMMETRIC_DEFAULT` when omitted |
+| Sensitive fields | `CiphertextBlob` and `Plaintext` are omitted from audit |
+| `resources[]` | `AWS::KMS::Key` with key ARN and account id |
+| `eventCategory` | `Management` |
+
+Regression: `CloudTrailKmsDecryptAuditIntegrationTest`, `KmsDecryptScopedKeyIntegrationTest`. Cross-reference: [CloudTrail data-plane audit](./cloudtrail.md#data-plane-requestparameters-http-audit).
+
 ## Configuration
 
 | Variable | Default | Description |
