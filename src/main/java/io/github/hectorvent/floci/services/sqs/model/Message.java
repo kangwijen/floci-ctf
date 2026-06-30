@@ -113,7 +113,7 @@ public class Message {
             return;
         }
         try {
-            var md = java.security.MessageDigest.getInstance("MD5");
+            var md = java.security.MessageDigest.getInstance("MD5"); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
             java.io.DataOutputStream dos = new java.io.DataOutputStream(bos);
 
@@ -155,7 +155,7 @@ public class Message {
 
     private static String computeMd5(String input) {
         try {
-            var md = java.security.MessageDigest.getInstance("MD5");
+            var md = java.security.MessageDigest.getInstance("MD5"); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             byte[] digest = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             var sb = new StringBuilder();
             for (byte b : digest) {

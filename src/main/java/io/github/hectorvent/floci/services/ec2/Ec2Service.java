@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -663,7 +664,7 @@ public class Ec2Service {
 
     private String assignPrivateIp(String region, String subnetId) {
         if (subnetId == null) {
-            return "172.31.0." + (10 + new Random().nextInt(200));
+            return "172.31.0." + (10 + ThreadLocalRandom.current().nextInt(200));
         }
         AtomicInteger counter = subnetIpCounters.computeIfAbsent(region + "::" + subnetId, k -> new AtomicInteger(10));
         int offset = counter.getAndIncrement();
@@ -1984,7 +1985,8 @@ public class Ec2Service {
     public Address allocateAddress(String region) {
         ensureDefaultResources(region);
         String allocId = "eipalloc-" + randomHex(17);
-        String ip = "54." + (new Random().nextInt(256)) + "." + (new Random().nextInt(256)) + "." + (new Random().nextInt(256));
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        String ip = "54." + random.nextInt(256) + "." + random.nextInt(256) + "." + random.nextInt(256);
         Address addr = new Address();
         addr.setAllocationId(allocId);
         addr.setPublicIp(ip);

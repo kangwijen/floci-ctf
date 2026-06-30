@@ -2698,7 +2698,7 @@ public class DynamoDbService {
 
     private String computeMd5Hex(byte[] data) {
         try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
+            MessageDigest md = MessageDigest.getInstance("MD5"); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             byte[] digest = md.digest(data);
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {

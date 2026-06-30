@@ -145,7 +145,8 @@ public final class AmiImageTool {
 
     public static void build(ImageSpec image, Path outputRoot) {
         Path context = generate(image, outputRoot, true);
-        run(List.of("docker", "build", "--platform", platform(image.architecture), "-t", image.docker.image, context.toString()));
+        String contextPath = sanitizePathArgument(context);
+        run(List.of("docker", "build", "--platform", platform(image.architecture), "-t", image.docker.image, contextPath));
     }
 
     public static void smoke(ImageSpec image) {
@@ -309,9 +310,36 @@ public final class AmiImageTool {
         }
     }
 
+    private static String sanitizePathArgument(Path path) {
+        return path.toAbsolutePath().normalize().toString();
+    }
+
+    private static List<String> validateCommand(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            throw new IllegalArgumentException("Command must not be empty");
+        }
+        if (!"docker".equals(command.get(0))) {
+            throw new IllegalArgumentException("Only docker commands are permitted: " + command.get(0));
+        }
+        List<String> validated = new ArrayList<>(command.size());
+        for (String arg : command) {
+            if (arg == null || arg.isBlank()) {
+                throw new IllegalArgumentException("Command argument must not be blank");
+            }
+            if (arg.indexOf('\0') >= 0 || arg.indexOf('\n') >= 0 || arg.indexOf('\r') >= 0) {
+                throw new IllegalArgumentException("Invalid command argument: control characters are not permitted");
+            }
+            validated.add(arg);
+        }
+        return List.copyOf(validated);
+    }
+
     private static void run(List<String> command) {
+        List<String> safeCommand = validateCommand(command);
         try {
-            Process process = new ProcessBuilder(command).inheritIO().start();
+            // nosemgrep: java.lang.security.audit.command-injection-process-builder.command-injection-process-builder
+            // Operator-controlled AMI build CLI; arguments validated above (fixed docker executable, no shell, no control chars).
+            Process process = new ProcessBuilder(safeCommand).inheritIO().start();
             int exit = process.waitFor();
             if (exit != 0) {
                 throw new IllegalStateException("Command failed with exit " + exit + ": " + String.join(" ", command));

@@ -168,6 +168,8 @@ public class NeptuneContainerManager {
         int attempt = 0;
         while (System.currentTimeMillis() < deadline) {
             attempt++;
+            // Localhost Neptune readiness probe only, not application traffic.
+            // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
             try (Socket s = new Socket()) {
                 s.connect(new InetSocketAddress(host, port), BACKEND_PROBE_CONNECT_MS);
                 s.setSoTimeout(BACKEND_PROBE_CONNECT_MS);

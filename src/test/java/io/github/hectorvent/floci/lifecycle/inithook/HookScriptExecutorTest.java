@@ -163,6 +163,21 @@ class HookScriptExecutorTest {
     }
 
     @Test
+    @DisplayName("Should reject hook script filenames with path separators")
+    void shouldRejectHookScriptFilenamesWithPathSeparators() {
+        File hookDirectory = new File(".");
+
+        Assertions.assertAll(
+                () -> Assertions.assertThrows(IllegalArgumentException.class,
+                        () -> hookScriptExecutor.run(hookDirectory, "../evil.sh")),
+                () -> Assertions.assertThrows(IllegalArgumentException.class,
+                        () -> hookScriptExecutor.run(hookDirectory, "subdir/script.sh")),
+                () -> Assertions.assertThrows(IllegalArgumentException.class,
+                        () -> hookScriptExecutor.run(hookDirectory, "subdir\\script.sh"))
+        );
+    }
+
+    @Test
     @DisplayName("Should throw IOException when shell executable does not exist")
     void shouldThrowIOExceptionWhenShellExecutableDoesNotExist() {
         File hookDirectory = new File(".");

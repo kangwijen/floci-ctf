@@ -361,7 +361,7 @@ public class ConfigSnapshotDeliveryService {
 
     private static String md5Hex(String value) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("MD5");
+            MessageDigest digest = MessageDigest.getInstance("MD5"); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {

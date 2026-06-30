@@ -54,6 +54,8 @@ public class ElastiCacheAuthProxy {
     }
 
     public void start(int proxyPort) throws IOException {
+        // Intentional localhost Redis RESP proxy listener; mirrors AWS ElastiCache wire protocol, not TLS-terminated.
+        // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
         serverSocket = new ServerSocket(proxyPort);
         serverSocket.setReuseAddress(true);
         running = true;
@@ -106,6 +108,8 @@ public class ElastiCacheAuthProxy {
             } else {
                 // No auth required and no AUTH command — bridge immediately
                 // First re-send the already-read command to the backend
+                // Intentional localhost backend relay; Redis RESP to co-located Valkey container, not TLS-terminated.
+                // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
                 Socket backend = new Socket(backendHost, backendPort);
                 backend.setTcpNoDelay(true);
                 resendCommand(cmd, backend.getOutputStream());
@@ -147,6 +151,8 @@ public class ElastiCacheAuthProxy {
         client.getOutputStream().write(OK_RESPONSE);
         client.getOutputStream().flush();
 
+        // Intentional localhost backend relay; Redis RESP to co-located Valkey container, not TLS-terminated.
+        // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
         Socket backend = new Socket(backendHost, backendPort);
         backend.setTcpNoDelay(true);
         bridge(client, backend);

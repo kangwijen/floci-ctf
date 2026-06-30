@@ -264,6 +264,8 @@ public class PostgresProtocolHandler {
         KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
         keyManagerFactory.init(keyStore, password);
 
+        // PostgreSQL SSLRequest negotiation; RDS proxy mirrors frontend/backend protocol.
+        // nosemgrep: java.lang.security.audit.weak-ssl-context.weak-ssl-context
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(keyManagerFactory.getKeyManagers(), null, new SecureRandom());
         return context;
@@ -565,6 +567,8 @@ public class PostgresProtocolHandler {
 
     private static String computeMd5Password(String password, String username, byte[] salt) {
         try {
+            // PostgreSQL AUTH_REQ_MD5 password hash per PostgreSQL/RDS wire protocol.
+            // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             MessageDigest md5 = MessageDigest.getInstance("MD5");
             md5.update(password.getBytes(StandardCharsets.UTF_8));
             md5.update(username.getBytes(StandardCharsets.UTF_8));

@@ -60,6 +60,8 @@ public class MemoryDbAuthProxy {
     }
 
     public void start(int proxyPort) throws IOException {
+        // Intentional localhost Redis RESP proxy listener; mirrors AWS MemoryDB wire protocol, not TLS-terminated.
+        // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
         serverSocket = new ServerSocket(proxyPort);
         running = true;
         Thread.ofVirtual().name("memorydb-proxy-accept-" + clusterName).start(this::acceptLoop);
@@ -109,6 +111,8 @@ public class MemoryDbAuthProxy {
                 client.getOutputStream().flush();
                 closeQuietly(client);
             } else {
+                // Intentional localhost backend relay; Redis RESP to co-located Redis container, not TLS-terminated.
+                // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
                 Socket backend = new Socket(backendHost, backendPort);
                 backend.setTcpNoDelay(true);
                 resendCommand(cmd, backend.getOutputStream());
@@ -148,6 +152,8 @@ public class MemoryDbAuthProxy {
         client.getOutputStream().write(OK_RESPONSE);
         client.getOutputStream().flush();
 
+        // Intentional localhost backend relay; Redis RESP to co-located Redis container, not TLS-terminated.
+        // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
         Socket backend = new Socket(backendHost, backendPort);
         backend.setTcpNoDelay(true);
         bridge(client, backend);

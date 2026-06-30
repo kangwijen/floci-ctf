@@ -35,6 +35,8 @@ public class NeptuneGremlinProxy {
     }
 
     public void start(int proxyPort) throws IOException {
+        // Intentional localhost Gremlin proxy listener; mirrors AWS Neptune wire protocol, not TLS-terminated.
+        // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
         serverSocket = new ServerSocket(proxyPort);
         running = true;
         Thread.ofVirtual().name("neptune-proxy-accept-" + clusterId).start(this::acceptLoop);
@@ -69,6 +71,8 @@ public class NeptuneGremlinProxy {
     private void relay(Socket client) {
         try {
             client.setTcpNoDelay(true);
+            // Intentional localhost backend relay; Gremlin WebSocket to co-located TinkerPop, not TLS-terminated.
+            // nosemgrep: java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket
             Socket backend = new Socket(backendHost, backendPort);
             backend.setTcpNoDelay(true);
             bridge(client, backend);

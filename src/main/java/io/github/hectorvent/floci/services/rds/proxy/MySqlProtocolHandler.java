@@ -241,6 +241,8 @@ public class MySqlProtocolHandler {
         if (password == null || password.isEmpty()) {
             return new byte[0];
         }
+        // mysql_native_password scramble requires SHA-1 per MySQL/RDS wire protocol.
+        // nosemgrep: java.lang.security.audit.crypto.use-of-sha1.use-of-sha1
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
         byte[] hash1 = sha1.digest(password.getBytes(StandardCharsets.UTF_8));
         sha1.reset();

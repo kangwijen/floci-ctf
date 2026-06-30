@@ -1410,7 +1410,7 @@ public class S3Service implements Resettable {
         // Concatenate parts in order
         try {
             ByteArrayOutputStream combined = new ByteArrayOutputStream();
-            MessageDigest md = MessageDigest.getInstance("MD5");
+            MessageDigest md = MessageDigest.getInstance("MD5"); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
 
             for (int num : partNumbers) {
                 byte[] partData = inMemory
@@ -1970,7 +1970,7 @@ public class S3Service implements Resettable {
                 throw new AwsException("InvalidArgument",
                         "The x-amz-server-side-encryption-customer-key must be a 256-bit key.", 400);
             }
-            byte[] md5 = MessageDigest.getInstance("MD5").digest(decodedKey);
+            byte[] md5 = MessageDigest.getInstance("MD5").digest(decodedKey); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
             return Base64.getEncoder().encodeToString(md5);
         }
         catch (IllegalArgumentException e) {
@@ -2342,7 +2342,7 @@ public class S3Service implements Resettable {
 
     private static byte[] computeETagBytes(byte[] data) {
         try {
-            return MessageDigest.getInstance("MD5").digest(data);
+            return MessageDigest.getInstance("MD5").digest(data); // AWS ETag / Content-MD5 / DynamoDB attribute parity // nosemgrep: java.lang.security.audit.crypto.use-of-md5.use-of-md5
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("MD5 algorithm not available", e);
         }

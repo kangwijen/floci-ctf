@@ -7,6 +7,7 @@ import org.jboss.logging.Logger;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
@@ -25,12 +26,25 @@ public class HookScriptExecutor {
     }
 
     public void run(final File hookDirectory, final String scriptFileName) throws IOException, InterruptedException {
+        validateSimpleFilename(scriptFileName);
         final String command = scriptFileName.endsWith(".py") ? "python3" : initHooksConfig.shellExecutable();
         LOG.debugv("Executing hook script {0} via {1}", scriptFileName, command);
 
         // Inherit parent I/O so script output is streamed directly and does not block on unconsumed buffers.
-        final Process process = new ProcessBuilder(command, scriptFileName).directory(hookDirectory).inheritIO().start();
+        final Process process = new ProcessBuilder(List.of(command, scriptFileName))
+                .directory(hookDirectory)
+                .inheritIO()
+                .start();
         run(process, scriptFileName);
+    }
+
+    static void validateSimpleFilename(final String scriptFileName) {
+        if (scriptFileName == null || scriptFileName.isBlank()) {
+            throw new IllegalArgumentException("Hook script filename must not be blank");
+        }
+        if (scriptFileName.contains("..") || scriptFileName.indexOf('/') >= 0 || scriptFileName.indexOf('\\') >= 0) {
+            throw new IllegalArgumentException("Invalid hook script filename: " + scriptFileName);
+        }
     }
 
     void run(final Process process, final String scriptFileName) throws InterruptedException {
