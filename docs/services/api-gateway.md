@@ -18,6 +18,7 @@ Floci supports both API Gateway v1 (REST APIs) and API Gateway v2 (HTTP APIs).
 | **Integrations** | PutIntegration, GetIntegration, UpdateIntegration, DeleteIntegration |
 | **Integration Responses** | PutIntegrationResponse, GetIntegrationResponse |
 | **Deployments** | CreateDeployment, GetDeployments |
+| **Test invoke** | TestInvokeMethod (`POST /restapis/{apiId}/test-invoke-method`; MOCK and AWS_PROXY) |
 | **Stages** | CreateStage, GetStage, GetStages, UpdateStage, DeleteStage |
 | **Authorizers** | CreateAuthorizer, GetAuthorizer, GetAuthorizers |
 | **API Keys** | CreateApiKey, GetApiKeys |

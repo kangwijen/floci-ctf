@@ -330,7 +330,7 @@ public class ApiGatewayExecuteController {
 
         String requestId = UUID.randomUUID().toString();
         String eventJson = buildProxyEvent(region, apiId, httpMethod, path, proxy, resource.getPath(),
-                resource.getId(), stageName, stage, headers, uriInfo, body, requestId,
+                resource.getId(), stageName, stage, headers, uriInfo.getQueryParameters(), body, requestId,
                 authorizerResult.principalId(), authorizerResult.context(), resolvedApiKey);
 
         try {
@@ -599,7 +599,7 @@ public class ApiGatewayExecuteController {
                                    String httpMethod, String path, String proxy,
                                    String resourcePath, String resourceId,
                                    String stageName, Stage stage,
-                                   HttpHeaders headers, UriInfo uriInfo,
+                                   HttpHeaders headers, MultivaluedMap<String, String> queryParams,
                                    byte[] body, String requestId,
                                    String principalId, Map<String, Object> authorizerContext,
                                    String resolvedApiKey) {
@@ -610,8 +610,8 @@ public class ApiGatewayExecuteController {
 
         putSingleValueHeaders(event, headers);
         putMultiValueHeaders(event, headers);
-        putQueryStringParameters(event, uriInfo);
-        putMultiValueQueryStringParameters(event, uriInfo);
+        putQueryStringParameters(event, queryParams);
+        putMultiValueQueryStringParameters(event, queryParams);
 
         ObjectNode pathParams = event.putObject("pathParameters");
         if (proxy != null && !proxy.isEmpty()) pathParams.put("proxy", proxy);
@@ -725,7 +725,10 @@ public class ApiGatewayExecuteController {
     }
 
     private void putQueryStringParameters(ObjectNode event, UriInfo uriInfo) {
-        MultivaluedMap<String, String> queryParams = uriInfo.getQueryParameters();
+        putQueryStringParameters(event, uriInfo.getQueryParameters());
+    }
+
+    private void putQueryStringParameters(ObjectNode event, MultivaluedMap<String, String> queryParams) {
         if (!queryParams.isEmpty()) {
             ObjectNode qsp = event.putObject("queryStringParameters");
             queryParams.forEach((name, values) -> {
@@ -737,7 +740,10 @@ public class ApiGatewayExecuteController {
     }
 
     private void putMultiValueQueryStringParameters(ObjectNode event, UriInfo uriInfo) {
-        MultivaluedMap<String, String> queryParams = uriInfo.getQueryParameters();
+        putMultiValueQueryStringParameters(event, uriInfo.getQueryParameters());
+    }
+
+    private void putMultiValueQueryStringParameters(ObjectNode event, MultivaluedMap<String, String> queryParams) {
         if (!queryParams.isEmpty()) {
             ObjectNode mqsp = event.putObject("multiValueQueryStringParameters");
             queryParams.forEach((name, values) -> {
@@ -1199,6 +1205,8 @@ public class ApiGatewayExecuteController {
         Response integrationResponse = switch (integration.getType().toUpperCase()) {
             case "MOCK" -> invokeMock(region, httpMethod, path, "test-invoke-stage", resource, integration,
                     headerMap, queryMap, bodyBytes);
+            case "AWS_PROXY" -> invokeProxyForTestInvoke(region, apiId, httpMethod, path, resource, integration,
+                    headerMap, queryMap, bodyBytes);
             default -> throw new AwsException("BadRequestException",
                     "Unsupported integration type for test invoke: " + integration.getType(), 400);
         };
@@ -1216,7 +1224,12 @@ public class ApiGatewayExecuteController {
         });
 
         Object entity = integrationResponse.getEntity();
-        String responseBody = entity != null ? entity.toString() : "";
+        String responseBody;
+        if (entity instanceof byte[] bytes) {
+            responseBody = new String(bytes, StandardCharsets.UTF_8);
+        } else {
+            responseBody = entity != null ? entity.toString() : "";
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("status", integrationResponse.getStatus());
@@ -1226,6 +1239,45 @@ public class ApiGatewayExecuteController {
         result.put("latency", latency);
         result.put("log", "");
         return result;
+    }
+
+    private Response invokeProxyForTestInvoke(String region, String apiId, String httpMethod, String path,
+                                              ApiGatewayResource resource, Integration integration,
+                                              Map<String, String> headerMap, Map<String, String> queryMap,
+                                              byte[] body) {
+        String proxy = path.length() > 1 ? path.substring(1) : null;
+        HttpHeaders headers = new MapHttpHeaders(headerMap);
+        MultivaluedMap<String, String> queryParams = new MultivaluedHashMap<>();
+        if (queryMap != null) {
+            queryMap.forEach(queryParams::add);
+        }
+
+        String functionName = functionNameFromUri(integration.getUri());
+        if (functionName == null) {
+            return Response.status(500)
+                    .entity(jsonMessage("Cannot resolve function from URI: " + integration.getUri()))
+                    .type(MediaType.APPLICATION_JSON).build();
+        }
+
+        String requestId = UUID.randomUUID().toString();
+        String eventJson = buildProxyEvent(region, apiId, httpMethod, path, proxy, resource.getPath(),
+                resource.getId(), "test-invoke-stage", null, headers, queryParams, body, requestId,
+                null, null, null);
+
+        try {
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    buildMethodArn(region, apiId, "test-invoke-stage", httpMethod, path));
+            InvokeResult result = lambdaService.invoke(region, functionName, eventJson.getBytes(),
+                    InvocationType.RequestResponse);
+            return buildProxyResponse(result);
+        } catch (AwsException e) {
+            if (e.getHttpStatus() == 404) {
+                return Response.status(404)
+                        .entity(jsonMessage("Function not found: " + functionName))
+                        .type(MediaType.APPLICATION_JSON).build();
+            }
+            throw e;
+        }
     }
 
     private static String stringField(Map<String, Object> request, String key) {
@@ -2092,5 +2144,68 @@ public class ApiGatewayExecuteController {
             }
         }
         return params;
+    }
+
+    /** Minimal {@link HttpHeaders} for test invoke control-plane calls. */
+    private static final class MapHttpHeaders implements HttpHeaders {
+        private final MultivaluedMap<String, String> requestHeaders;
+
+        MapHttpHeaders(Map<String, String> headers) {
+            MultivaluedMap<String, String> map = new MultivaluedHashMap<>();
+            if (headers != null) {
+                headers.forEach(map::add);
+            }
+            this.requestHeaders = map;
+        }
+
+        @Override
+        public String getHeaderString(String name) {
+            return requestHeaders.getFirst(name);
+        }
+
+        @Override
+        public List<String> getRequestHeader(String name) {
+            return requestHeaders.getOrDefault(name, List.of());
+        }
+
+        @Override
+        public MultivaluedMap<String, String> getRequestHeaders() {
+            return requestHeaders;
+        }
+
+        @Override
+        public List<MediaType> getAcceptableMediaTypes() {
+            return List.of();
+        }
+
+        @Override
+        public List<java.util.Locale> getAcceptableLanguages() {
+            return List.of();
+        }
+
+        @Override
+        public MediaType getMediaType() {
+            return null;
+        }
+
+        @Override
+        public java.util.Locale getLanguage() {
+            return null;
+        }
+
+        @Override
+        public Map<String, Cookie> getCookies() {
+            return Map.of();
+        }
+
+        @Override
+        public java.util.Date getDate() {
+            return null;
+        }
+
+        @Override
+        public int getLength() {
+            return -1;
+        }
     }
 }

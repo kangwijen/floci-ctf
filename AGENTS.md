@@ -235,6 +235,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `AnonymousAccessGate` bypass regressions (private S3, `AWS_IAM` APIGW/Lambda URL, `NONE` URL without resource policy) | Closed | `AnonymousAccessGateBypassIntegrationTest` |
 | API Gateway deploy + stage lifecycle | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | API Gateway `TestInvokeMethod` without stage deploy | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
+| API Gateway `TestInvokeMethod` with `AWS_PROXY` Lambda integration | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
