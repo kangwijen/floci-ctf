@@ -337,9 +337,8 @@ public final class AmiImageTool {
     private static void run(List<String> command) {
         List<String> safeCommand = validateCommand(command);
         try {
-            // nosemgrep: java.lang.security.audit.command-injection-process-builder.command-injection-process-builder
             // Operator-controlled AMI build CLI; arguments validated above (fixed docker executable, no shell, no control chars).
-            Process process = new ProcessBuilder(safeCommand).inheritIO().start();
+            Process process = new ProcessBuilder(safeCommand).inheritIO().start(); // nosemgrep: java.lang.security.audit.command-injection-process-builder.command-injection-process-builder
             int exit = process.waitFor();
             if (exit != 0) {
                 throw new IllegalStateException("Command failed with exit " + exit + ": " + String.join(" ", command));

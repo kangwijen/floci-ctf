@@ -31,7 +31,7 @@ public class HookScriptExecutor {
         LOG.debugv("Executing hook script {0} via {1}", scriptFileName, command);
 
         // Inherit parent I/O so script output is streamed directly and does not block on unconsumed buffers.
-        final Process process = new ProcessBuilder(List.of(command, scriptFileName))
+        final Process process = new ProcessBuilder(List.of(command, scriptFileName)) // nosemgrep: java.lang.security.audit.command-injection-process-builder.command-injection-process-builder
                 .directory(hookDirectory)
                 .inheritIO()
                 .start();

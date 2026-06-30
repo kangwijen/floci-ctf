@@ -43,6 +43,12 @@ resource "aws_sns_topic_subscription" "events_to_sqs" {
 }
 
 # -- DynamoDB Table -------------------------------------------------------------
+resource "aws_kms_key" "dynamodb" {
+  description             = "Compat test key for DynamoDB"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
 resource "aws_dynamodb_table" "items" {
   name         = "floci-compat-items"
   billing_mode = "PAY_PER_REQUEST"
@@ -65,7 +71,8 @@ resource "aws_dynamodb_table" "items" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
   }
 
   tags = {
@@ -125,10 +132,9 @@ resource "aws_secretsmanager_secret_version" "db_creds" {
 }
 
 # -- RDS DB Instance -----------------------------------------------------------
-variable "db_password" {
-  type      = string
-  sensitive = true
-  default   = "Password1!"
+resource "random_password" "db" {
+  length  = 16
+  special = true
 }
 
 resource "aws_db_instance" "app" {
@@ -138,7 +144,7 @@ resource "aws_db_instance" "app" {
   instance_class    = "db.t3.micro"
   allocated_storage = 20
   username          = "admin"
-  password          = var.db_password
+  password          = random_password.db.result
   skip_final_snapshot = true
 
   enabled_cloudwatch_logs_exports = ["postgresql"]
