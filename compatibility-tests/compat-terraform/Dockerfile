@@ -24,5 +24,8 @@ ENV AWS_SECRET_ACCESS_KEY=test
 ENV AWS_DEFAULT_REGION=us-east-1
 ENV BATS_LIB_PATH=/opt
 
-RUN chmod +x /app/run-bats-in-container.sh && mkdir -p /results
+RUN useradd -m -u 1000 appuser \
+    && chmod +x /app/run-bats-in-container.sh && mkdir -p /results \
+    && chown -R appuser:appuser /app /results
+USER appuser
 ENTRYPOINT ["./run-bats-in-container.sh"]

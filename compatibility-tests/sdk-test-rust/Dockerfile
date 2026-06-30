@@ -22,5 +22,8 @@ ENV AWS_ACCESS_KEY_ID=test
 ENV AWS_SECRET_ACCESS_KEY=test
 ENV AWS_DEFAULT_REGION=us-east-1
 
-RUN mkdir -p /results
+RUN groupadd -g 1000 appuser && useradd -m -u 1000 -g appuser appuser \
+    && mkdir -p /results \
+    && chown -R appuser:appuser /app /results /usr/local/cargo
+USER appuser
 ENTRYPOINT ["cargo", "nextest", "run", "--profile", "ci"]

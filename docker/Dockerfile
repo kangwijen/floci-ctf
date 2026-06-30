@@ -61,5 +61,10 @@ EXPOSE 4566 6379-6399
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
     CMD wget -q --spider http://localhost:4566/health || exit 1
 
+# Container must start as root so entrypoint can align docker.sock group membership
+# and chown /app/data; docker-entrypoint.sh then drops to floci via gosu before
+# running the JVM (see docker/entrypoint.sh).
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "/app/quarkus-app/quarkus-run.jar"]

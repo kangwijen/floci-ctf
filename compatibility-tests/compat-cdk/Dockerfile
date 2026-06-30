@@ -34,5 +34,8 @@ ENV AWS_DEFAULT_REGION=us-east-1
 ENV LOCALSTACK_HOSTNAME=floci
 ENV EDGE_PORT=4566
 
-RUN chmod +x /app/run-bats-in-container.sh && mkdir -p /results
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser \
+    && chmod +x /app/run-bats-in-container.sh && mkdir -p /results \
+    && chown -R appuser:appuser /app /results
+USER appuser
 ENTRYPOINT ["./run-bats-in-container.sh"]

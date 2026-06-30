@@ -11,5 +11,8 @@ ENV FLOCI_ENDPOINT=http://floci:4566
 ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 ENV TEST_RESULTS_DIR=/results
 
-RUN mkdir -p /results
+RUN groupadd -g 1000 appuser && useradd -m -u 1000 -g appuser appuser \
+    && mkdir -p /results \
+    && chown -R appuser:appuser /app /results
+USER appuser
 ENTRYPOINT ["npm", "test"]

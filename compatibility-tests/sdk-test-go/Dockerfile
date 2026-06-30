@@ -16,4 +16,8 @@ ENV AWS_ACCESS_KEY_ID=test
 ENV AWS_SECRET_ACCESS_KEY=test
 ENV AWS_DEFAULT_REGION=us-east-1
 
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser \
+    && mkdir -p /results \
+    && chown -R appuser:appuser /app /results /go
+USER appuser
 ENTRYPOINT ["gotestsum", "--format", "testname", "--junitfile", "/results/junit.xml", "./tests/..."]

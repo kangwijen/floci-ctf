@@ -9,5 +9,8 @@ COPY tests/ tests/
 
 ENV FLOCI_ENDPOINT=http://floci:4566
 
-RUN mkdir -p /results
+RUN groupadd -g 1000 appuser && useradd -m -u 1000 -g appuser appuser \
+    && mkdir -p /results \
+    && chown -R appuser:appuser /app /results
+USER appuser
 ENTRYPOINT ["pytest", "tests/", "-v", "--junit-xml=/results/junit.xml"]

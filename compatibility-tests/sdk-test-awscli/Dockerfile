@@ -16,5 +16,8 @@ COPY sdk-test-awscli/run-bats-in-container.sh /usr/local/bin/run-bats-in-contain
 ENV FLOCI_ENDPOINT=http://floci:4566
 ENV BATS_LIB_PATH=/opt
 
-RUN chmod +x /usr/local/bin/run-bats-in-container.sh && mkdir -p /results
+RUN useradd -m -u 1000 appuser \
+    && chmod +x /usr/local/bin/run-bats-in-container.sh && mkdir -p /results \
+    && chown -R appuser:appuser /app /results
+USER appuser
 ENTRYPOINT ["run-bats-in-container.sh"]
