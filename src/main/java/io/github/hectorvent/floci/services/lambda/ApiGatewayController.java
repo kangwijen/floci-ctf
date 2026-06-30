@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.lambda;
 
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.cloudwatch.logs.CloudWatchLogsService;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
@@ -121,7 +122,8 @@ public class ApiGatewayController {
 
         InvokeResult result;
         try {
-            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    buildMethodArn(region, httpMethod, path));
             result = lambdaService.invoke(region, functionName, eventJson.getBytes(),
                     InvocationType.RequestResponse);
         } catch (AwsException e) {
@@ -158,6 +160,13 @@ public class ApiGatewayController {
         } catch (Exception e) {
             LOG.debugv("Could not write API Gateway execution log: {0}", e.getMessage());
         }
+    }
+
+    private String buildMethodArn(String region, String httpMethod, String requestPath) {
+        String normalizedPath = requestPath == null ? "" : requestPath.replaceFirst("^/", "");
+        String arnRegion = region == null ? regionResolver.getDefaultRegion() : region;
+        return AwsArnUtils.Arn.of("execute-api", arnRegion, regionResolver.getAccountId(),
+                "_floci/" + "local/" + httpMethod + "/" + normalizedPath).toString();
     }
 
     private String buildProxyEvent(String httpMethod, String path, String proxy,

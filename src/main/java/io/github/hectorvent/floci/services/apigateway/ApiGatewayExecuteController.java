@@ -304,7 +304,7 @@ public class ApiGatewayExecuteController {
         return switch (integration.getType().toUpperCase()) {
             case "AWS_PROXY" -> invokeProxy(region, apiId, httpMethod, path, proxy, stageName,
                     matched, stage, integration, headers, uriInfo, body, authorizerResult, resolvedApiKey);
-            case "AWS" -> invokeAwsIntegration(region, httpMethod, path, proxy, stageName,
+            case "AWS" -> invokeAwsIntegration(region, apiId, httpMethod, path, proxy, stageName,
                     matched, integration, headers, uriInfo, body);
             case "MOCK" -> invokeMock(region, httpMethod, path, stageName, matched, integration, headers, uriInfo, body);
             default -> Response.status(500)
@@ -334,7 +334,8 @@ public class ApiGatewayExecuteController {
                 authorizerResult.principalId(), authorizerResult.context(), resolvedApiKey);
 
         try {
-            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    buildMethodArn(region, apiId, stageName, httpMethod, path));
             InvokeResult result = lambdaService.invoke(region, functionName, eventJson.getBytes(),
                     InvocationType.RequestResponse);
             return buildProxyResponse(result);
@@ -368,7 +369,8 @@ public class ApiGatewayExecuteController {
 
             String event = toAuthorizerEvent(auth, headers, region, apiId, stageName, httpMethod, requestPath, resourcePath, resourceId, stage, uriInfo, resolvedApiKey);
             try {
-                targetAuthorizer.authorizeApigwLambdaInvoke(lambdaName, region);
+                targetAuthorizer.authorizeApigwLambdaInvoke(lambdaName, region,
+                        buildMethodArn(region, apiId, stageName, httpMethod, requestPath));
                 InvokeResult result = lambdaService.invoke(region, lambdaName, event.getBytes(), InvocationType.RequestResponse);
                 if (result.getFunctionError() != null) {
                     return new AuthorizerResult(Response.status(403).build(), null, null);
@@ -788,7 +790,7 @@ public class ApiGatewayExecuteController {
 
     // ──────────────────────────── AWS (non-proxy) ────────────────────────────
 
-    private Response invokeAwsIntegration(String region, String httpMethod, String path, String proxy,
+    private Response invokeAwsIntegration(String region, String apiId, String httpMethod, String path, String proxy,
                                           String stageName, ApiGatewayResource resource,
                                           Integration integration, HttpHeaders headers,
                                           UriInfo uriInfo, byte[] body) {
@@ -909,7 +911,8 @@ public class ApiGatewayExecuteController {
                                 .type(MediaType.APPLICATION_JSON).build();
                     }
                     try {
-                        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+                        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                                buildMethodArn(region, apiId, stageName, httpMethod, path));
                         byte[] payload = transformedBody != null
                                 ? transformedBody.getBytes(StandardCharsets.UTF_8)
                                 : new byte[0];
@@ -1128,11 +1131,144 @@ public class ApiGatewayExecuteController {
         return null;
     }
 
+    // ──────────────────────────── TestInvokeMethod ────────────────────────────
+
+    /**
+     * Simulates API Gateway {@code TestInvokeMethod}: runs a method integration without a deployed stage.
+     */
+    public Map<String, Object> testInvokeMethod(String region, String apiId, Map<String, Object> request) {
+        long startNanos = System.nanoTime();
+
+        apiGatewayService.getRestApi(region, apiId);
+        region = apiGatewayService.resolveRestApiRegion(region, apiId);
+
+        String resourceId = stringField(request, "resourceId");
+        String httpMethod = stringField(request, "httpMethod");
+        if (resourceId == null || httpMethod == null) {
+            throw new AwsException("BadRequestException", "resourceId and httpMethod are required", 400);
+        }
+
+        ApiGatewayResource resource = apiGatewayService.getResource(region, apiId, resourceId);
+        MethodConfig method = resource.getResourceMethods().get(httpMethod.toUpperCase());
+        if (method == null) {
+            method = resource.getResourceMethods().get("ANY");
+        }
+        if (method == null) {
+            throw new AwsException("NotFoundException", "Invalid Method identifier specified", 404);
+        }
+
+        Integration integration = method.getMethodIntegration();
+        if (integration == null) {
+            throw new AwsException("NotFoundException", "No integration defined for method", 404);
+        }
+
+        String pathWithQuery = stringField(request, "pathWithQueryString");
+        if (pathWithQuery == null || pathWithQuery.isBlank()) {
+            pathWithQuery = resource.getPath() != null ? resource.getPath() : "/";
+        }
+
+        String path;
+        Map<String, String> queryMap = new HashMap<>();
+        int queryIdx = pathWithQuery.indexOf('?');
+        if (queryIdx >= 0) {
+            path = pathWithQuery.substring(0, queryIdx);
+            parseQueryString(pathWithQuery.substring(queryIdx + 1), queryMap);
+        } else {
+            path = pathWithQuery;
+        }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        Map<String, String> headerMap = new HashMap<>();
+        Object headersObj = request.get("headers");
+        if (headersObj instanceof Map<?, ?> headers) {
+            for (Map.Entry<?, ?> entry : headers.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    headerMap.put(entry.getKey().toString(), entry.getValue().toString());
+                }
+            }
+        }
+
+        byte[] bodyBytes = null;
+        Object bodyObj = request.get("body");
+        if (bodyObj != null) {
+            bodyBytes = bodyObj.toString().getBytes(StandardCharsets.UTF_8);
+        }
+
+        Response integrationResponse = switch (integration.getType().toUpperCase()) {
+            case "MOCK" -> invokeMock(region, httpMethod, path, "test-invoke-stage", resource, integration,
+                    headerMap, queryMap, bodyBytes);
+            default -> throw new AwsException("BadRequestException",
+                    "Unsupported integration type for test invoke: " + integration.getType(), 400);
+        };
+
+        long latency = Math.max(1L, (System.nanoTime() - startNanos) / 1_000_000L);
+
+        Map<String, String> responseHeaders = new HashMap<>();
+        Map<String, List<String>> multiValueHeaders = new HashMap<>();
+        integrationResponse.getHeaders().forEach((name, values) -> {
+            if (values != null && !values.isEmpty()) {
+                List<String> asStrings = values.stream().map(Object::toString).toList();
+                multiValueHeaders.put(name, asStrings);
+                responseHeaders.put(name, asStrings.getFirst());
+            }
+        });
+
+        Object entity = integrationResponse.getEntity();
+        String responseBody = entity != null ? entity.toString() : "";
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", integrationResponse.getStatus());
+        result.put("body", responseBody);
+        result.put("headers", responseHeaders);
+        result.put("multiValueHeaders", multiValueHeaders);
+        result.put("latency", latency);
+        result.put("log", "");
+        return result;
+    }
+
+    private static String stringField(Map<String, Object> request, String key) {
+        Object value = request.get(key);
+        return value != null ? value.toString() : null;
+    }
+
+    private static void parseQueryString(String query, Map<String, String> out) {
+        for (String pair : query.split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            String key = eq >= 0 ? pair.substring(0, eq) : pair;
+            String val = eq >= 0 ? pair.substring(eq + 1) : "";
+            out.put(URLDecoder.decode(key, StandardCharsets.UTF_8),
+                    URLDecoder.decode(val, StandardCharsets.UTF_8));
+        }
+    }
+
     // ──────────────────────────── MOCK ────────────────────────────
 
     private Response invokeMock(String region, String httpMethod, String path, String stageName,
                                 ApiGatewayResource resource, Integration integration,
                                 HttpHeaders headers, UriInfo uriInfo, byte[] body) {
+        Map<String, String> headerMap = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : headers.getRequestHeaders().entrySet()) {
+            if (!e.getValue().isEmpty()) {
+                headerMap.put(e.getKey(), e.getValue().get(0));
+            }
+        }
+        Map<String, String> queryMap = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : uriInfo.getQueryParameters().entrySet()) {
+            if (!e.getValue().isEmpty()) {
+                queryMap.put(e.getKey(), e.getValue().get(0));
+            }
+        }
+        return invokeMock(region, httpMethod, path, stageName, resource, integration, headerMap, queryMap, body);
+    }
+
+    private Response invokeMock(String region, String httpMethod, String path, String stageName,
+                                ApiGatewayResource resource, Integration integration,
+                                Map<String, String> headerMap, Map<String, String> queryMap, byte[] body) {
         // Use the "200" integration response if present, else return empty 200
         IntegrationResponse ir = integration.getIntegrationResponses().get("200");
         if (ir == null) {
@@ -1150,16 +1286,8 @@ public class ApiGatewayExecuteController {
 
         // Evaluate the response template through VTL (supports $context.responseOverride etc.)
         String requestId = UUID.randomUUID().toString();
-        String bodyStr = body != null && body.length > 0 ? new String(body) : null;
+        String bodyStr = body != null && body.length > 0 ? new String(body, StandardCharsets.UTF_8) : null;
 
-        Map<String, String> headerMap = new HashMap<>();
-        for (Map.Entry<String, List<String>> e : headers.getRequestHeaders().entrySet()) {
-            if (!e.getValue().isEmpty()) headerMap.put(e.getKey(), e.getValue().get(0));
-        }
-        Map<String, String> queryMap = new HashMap<>();
-        for (Map.Entry<String, List<String>> e : uriInfo.getQueryParameters().entrySet()) {
-            if (!e.getValue().isEmpty()) queryMap.put(e.getKey(), e.getValue().get(0));
-        }
         Map<String, String> pathMap = new HashMap<>(extractPathParams(resource.getPath(), path));
 
         VtlTemplateEngine.VtlContext vtlCtx = new VtlTemplateEngine.VtlContext(
@@ -1247,7 +1375,8 @@ public class ApiGatewayExecuteController {
         LOG.debugv("execute-api v2: {0} {1}/{2}{3} → Lambda {4}", httpMethod, apiId, stageName, path, functionName);
 
         try {
-            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    buildMethodArn(region, apiId, stageName, httpMethod, path));
             InvokeResult result = lambdaService.invoke(region, functionName,
                     eventJson.getBytes(), InvocationType.RequestResponse);
             return buildProxyResponse(result);
@@ -1541,7 +1670,8 @@ public class ApiGatewayExecuteController {
         // Invoke the authorizer Lambda
         InvokeResult invokeResult;
         try {
-            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    buildMethodArn(region, apiId, stageName, httpMethod, path));
             invokeResult = lambdaService.invoke(region, functionName,
                     eventJson.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
         } catch (Exception e) {

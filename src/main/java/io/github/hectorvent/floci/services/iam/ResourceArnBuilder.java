@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
+import io.github.hectorvent.floci.core.common.SecurityBypassPaths;
 import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -468,6 +469,10 @@ public class ResourceArnBuilder {
     private String buildSqsArn(ContainerRequestContext ctx, String region, String accountId) {
         MultivaluedMap<String, String> params = readFormParamMap(ctx);
         if (params.getFirst("QueueUrl") == null && params.getFirst("QueueName") == null) {
+            Object queuedUrl = ctx.getProperty(SecurityBypassPaths.SQS_QUEUE_URL_PROPERTY);
+            if (queuedUrl instanceof String queueUrl && !queueUrl.isBlank()) {
+                params.add("QueueUrl", queueUrl);
+            }
             JsonNode node = readJsonBodyNode(ctx);
             String queueUrl = jsonTextFromNode(node, "QueueUrl");
             if (queueUrl != null && !queueUrl.isBlank()) {

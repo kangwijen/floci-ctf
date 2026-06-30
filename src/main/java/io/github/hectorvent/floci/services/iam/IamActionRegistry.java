@@ -103,6 +103,17 @@ public class IamActionRegistry {
         rule("lambda", "POST",   "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:CreateFunctionUrlConfig"),
         rule("lambda", "PUT",    "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:UpdateFunctionUrlConfig"),
         rule("lambda", "DELETE", "^/2015-03-31/functions/[^/]+/url/?$",                "lambda:DeleteFunctionUrlConfig"),
+        rule("lambda", "GET",    "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:GetFunctionUrlConfig"),
+        rule("lambda", "POST",   "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:CreateFunctionUrlConfig"),
+        rule("lambda", "PUT",    "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:UpdateFunctionUrlConfig"),
+        rule("lambda", "DELETE", "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:DeleteFunctionUrlConfig"),
+        rule("lambda", "GET",    "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "POST",   "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "PUT",    "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "PATCH",  "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "DELETE", "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "HEAD",   "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
+        rule("lambda", "OPTIONS","^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
 
         // ── DynamoDB (JSON 1.1, action from X-Amz-Target handled separately) ──
         // Handled via Query-style action extraction in the filter

@@ -57,6 +57,10 @@ public class SecretsManagerKmsSupport {
             return decodeNestedBase64Envelope(secretString);
         }
         if (secretBinary != null && !secretBinary.isEmpty()) {
+            byte[] utf8 = secretBinary.getBytes(StandardCharsets.UTF_8);
+            if (looksLikeKmsEnvelope(utf8)) {
+                return Optional.of(utf8);
+            }
             Optional<byte[]> decoded = decodeBase64Envelope(secretBinary);
             if (decoded.isPresent()) {
                 return decoded;

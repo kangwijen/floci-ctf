@@ -46,7 +46,16 @@ public class SqsQueueUrlRouterFilter implements ContainerRequestFilter {
 
         MediaType mt = ctx.getMediaType();
         if (mt == null) {
-            return;
+            String contentType = ctx.getHeaderString("Content-Type");
+            if (contentType != null && !contentType.isBlank()) {
+                try {
+                    mt = MediaType.valueOf(contentType.split(";")[0].trim());
+                } catch (IllegalArgumentException ignored) {
+                    return;
+                }
+            } else {
+                return;
+            }
         }
 
         boolean isSqsJson = "application".equals(mt.getType())
@@ -65,6 +74,7 @@ public class SqsQueueUrlRouterFilter implements ContainerRequestFilter {
         // Reconstruct the queue URL from the original path.
         URI reqUri = ctx.getUriInfo().getRequestUri();
         String queueUrl = reqUri.getScheme() + "://" + reqUri.getAuthority() + path;
+        ctx.setProperty(SecurityBypassPaths.SQS_QUEUE_URL_PROPERTY, queueUrl);
 
         if (isSqsQuery) {
             // AWS SDK v1 omits QueueUrl from the form body and uses the queue URL as the

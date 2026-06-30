@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import io.github.hectorvent.floci.services.apigateway.model.EndpointConfiguration;
@@ -462,6 +463,40 @@ public class ApiGatewayService {
         Deployment deployment = new Deployment(shortId(10), description, System.currentTimeMillis() / 1000L);
         deploymentStore.put(deploymentKey(region, apiId, deployment.id()), deployment);
         LOG.infov("Created deployment {0} for API {1}", deployment.id(), apiId);
+
+        String stageName = (String) request.get("stageName");
+        if (stageName != null && !stageName.isBlank()) {
+            Map<String, Object> stageRequest = new java.util.HashMap<>();
+            stageRequest.put("stageName", stageName);
+            stageRequest.put("deploymentId", deployment.id());
+            Object stageDescription = request.get("stageDescription");
+            if (stageDescription != null) {
+                stageRequest.put("description", stageDescription);
+            }
+            Object variables = request.get("variables");
+            if (variables instanceof Map<?, ?> vars) {
+                stageRequest.put("variables", vars);
+            }
+            String stageKey = stageKey(region, apiId, stageName);
+            Optional<Stage> existingStage = stageStore.get(stageKey);
+            if (existingStage.isPresent()) {
+                Stage existing = existingStage.get();
+                existing.setDeploymentId(deployment.id());
+                existing.setLastUpdatedDate(System.currentTimeMillis() / 1000L);
+                if (stageDescription != null) {
+                    existing.setDescription(stageDescription.toString());
+                }
+                if (variables instanceof Map<?, ?> vars) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> stageVars = (Map<String, String>) vars;
+                    existing.setVariables(stageVars);
+                }
+                stageStore.put(stageKey, existing);
+                LOG.infov("Updated stage {0} to deployment {1} for API {2}", stageName, deployment.id(), apiId);
+            } else {
+                createStage(region, apiId, stageRequest);
+            }
+        }
         return deployment;
     }
 

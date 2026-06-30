@@ -62,14 +62,17 @@ public class ApiGatewayController {
 
     private final ApiGatewayService service;
     private final ApiGatewayV2Service v2Service;
+    private final ApiGatewayExecuteController executeController;
     private final RegionResolver regionResolver;
     private final ObjectMapper objectMapper;
 
     @Inject
     public ApiGatewayController(ApiGatewayService service, ApiGatewayV2Service v2Service,
+                                ApiGatewayExecuteController executeController,
                                 RegionResolver regionResolver, ObjectMapper objectMapper) {
         this.service = service;
         this.v2Service = v2Service;
+        this.executeController = executeController;
         this.regionResolver = regionResolver;
         this.objectMapper = objectMapper;
     }
@@ -483,6 +486,24 @@ public class ApiGatewayController {
         String region = regionResolver.resolveRegion(headers);
         service.deleteIntegration(region, apiId, resourceId, httpMethod);
         return Response.noContent().build();
+    }
+
+    // ──────────────────────────── Test invoke (v1) ────────────────────────────
+
+    @POST
+    @Path("/restapis/{apiId}/test-invoke-method")
+    public Response testInvokeMethod(@Context HttpHeaders headers,
+                                     @PathParam("apiId") String apiId,
+                                     String body) {
+        String region = regionResolver.resolveRegion(headers);
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> request = objectMapper.readValue(body, Map.class);
+            Map<String, Object> result = executeController.testInvokeMethod(region, apiId, request);
+            return Response.ok(objectMapper.writeValueAsString(result)).type(MediaType.APPLICATION_JSON).build();
+        } catch (IOException e) {
+            throw new AwsException("BadRequestException", e.getMessage(), 400);
+        }
     }
 
     // ──────────────────────────── Deployments & Stages (v1) ────────────────────────────

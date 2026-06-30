@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.core.common.RegionResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -30,6 +31,9 @@ public class WebSocketProxyEventBuilder {
 
     @Inject
     ObjectMapper objectMapper;
+
+    @Inject
+    RegionResolver regionResolver;
 
     /**
      * Build a CONNECT event from the upgrade request.
@@ -147,7 +151,7 @@ public class WebSocketProxyEventBuilder {
         ObjectNode event = objectMapper.createObjectNode();
 
         event.put("type", "REQUEST");
-        event.put("methodArn", buildMethodArn(region, apiId, stageName));
+        event.put("methodArn", buildRouteArn(region, apiId, stageName, "$connect"));
 
         putHeaders(event, headers);
         putMultiValueHeaders(event, headers);
@@ -285,8 +289,13 @@ public class WebSocketProxyEventBuilder {
         return apiId + ".execute-api." + region + ".amazonaws.com";
     }
 
+    public String buildRouteArn(String region, String apiId, String stageName, String routeKey) {
+        return "arn:aws:execute-api:" + region + ":" + regionResolver.getAccountId() + ":"
+                + apiId + "/" + stageName + "/" + routeKey;
+    }
+
     private String buildMethodArn(String region, String apiId, String stageName) {
-        return "arn:aws:execute-api:" + region + ":000000000000:" + apiId + "/" + stageName + "/$connect";
+        return buildRouteArn(region, apiId, stageName, "$connect");
     }
 
     private String formatRequestTime(long epochMillis) {

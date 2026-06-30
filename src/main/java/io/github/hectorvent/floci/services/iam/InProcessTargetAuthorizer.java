@@ -309,8 +309,13 @@ public class InProcessTargetAuthorizer {
     }
 
     public void authorizeApigwLambdaInvoke(String functionArnOrName, String region) {
+        authorizeApigwLambdaInvoke(functionArnOrName, region, null);
+    }
+
+    public void authorizeApigwLambdaInvoke(String functionArnOrName, String region, String sourceArn) {
         iamAuthorizer.authorizeServicePrincipal(
-                APIGW_SERVICE, "lambda", "InvokeFunction", resolveLambdaArn(functionArnOrName, region), region);
+                APIGW_SERVICE, "lambda", "InvokeFunction",
+                resolveLambdaArn(functionArnOrName, region), region, sourceArn);
     }
 
     public void authorizeCognitoLambdaInvoke(String functionArnOrName, String region) {

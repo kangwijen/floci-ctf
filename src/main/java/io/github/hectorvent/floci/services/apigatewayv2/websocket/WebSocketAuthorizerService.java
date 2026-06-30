@@ -134,7 +134,8 @@ public class WebSocketAuthorizerService {
         // Invoke the authorizer Lambda
         InvokeResult invokeResult;
         try {
-            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+            targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region,
+                    proxyEventBuilder.buildRouteArn(region, apiId, stageName, "$connect"));
             invokeResult = lambdaService.invoke(region, functionName,
                     authorizerEventJson.getBytes(), InvocationType.RequestResponse);
         } catch (Exception e) {

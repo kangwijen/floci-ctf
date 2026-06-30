@@ -61,6 +61,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final ResourcePolicyResolver resourcePolicyResolver;
     private final RegionResolver regionResolver;
     private final KmsService kmsService;
+    private final AnonymousAccessGate anonymousAccessGate;
 
     @Inject
     public IamEnforcementFilter(EmulatorConfig config,
@@ -71,7 +72,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 ResourceArnBuilder arnBuilder,
                                 ResourcePolicyResolver resourcePolicyResolver,
                                 RegionResolver regionResolver,
-                                KmsService kmsService) {
+                                KmsService kmsService,
+                                AnonymousAccessGate anonymousAccessGate) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
@@ -81,6 +83,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         this.resourcePolicyResolver = resourcePolicyResolver;
         this.regionResolver = regionResolver;
         this.kmsService = kmsService;
+        this.anonymousAccessGate = anonymousAccessGate;
     }
 
     @Override
@@ -130,6 +133,9 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if (auth == null) {
             if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(
                     path, config.ctf().hideInternalEndpointsMode())) {
+                if (anonymousAccessGate.allowsUnsignedRequest(ctx)) {
+                    return;
+                }
                 LOG.infov("IAM strict enforcement DENY: missing Authorization header on {0}", path);
                 ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
             }

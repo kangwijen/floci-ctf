@@ -374,6 +374,15 @@ Under strict enforcement:
 | No `Authorization` header on any other path | Denied (HTTP 403) |
 | Unresolvable IAM action for the request | Denied (HTTP 403) |
 
+**Anonymous-access exceptions (`AnonymousAccessGate`):** {#anonymous-access-exceptions} Under strict enforcement, unsigned requests are still allowed only on AWS-intentional public invoke paths. Each surface has an explicit gate: resource policy evaluation for S3 and Lambda function URLs, and method `authorizationType` for API Gateway. Methods with `authorizationType=AWS_IAM` (or any non-`NONE` value) do not qualify; unsigned invoke is denied like any other unsigned path.
+
+| Surface | Gate condition | Regression |
+|---|---|---|
+| S3 object read | Public bucket policy allows `s3:GetObject` or `s3:HeadObject` for `Principal *` | `S3PublicBucketPolicyAnonymousGetIntegrationTest` |
+| API Gateway data plane | REST method `authorizationType=NONE` on `execute-api` or `_user_request_` paths; `AWS_IAM` and other non-`NONE` types require SigV4 | `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest` |
+| Lambda function URL | `AuthType=NONE` on `/lambda-url/{urlId}` **and** function resource policy allows `lambda:InvokeFunctionUrl` for anonymous principal | `LambdaFunctionUrlNoneAuthIntegrationTest` |
+| Bypass regressions (negative) | Unsigned requests denied when gate conditions are not met (private bucket, `AWS_IAM` method, `AuthType=AWS_IAM`, `AuthType=NONE` without public resource policy, unsigned `PutObject` despite public `GetObject`) | `AnonymousAccessGateBypassIntegrationTest` |
+
 The configured root credential pair (`FLOCI_AUTH_ROOT_ACCESS_KEY_ID` and `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY`) still bypasses all enforcement checks when both match the request, including strict mode.
 
 Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound API requests must carry a valid SigV4 signature. Regression: `SigV4ValidationFilterIntegrationTest`. See [CTF hardening](#ctf-hardening) for the full operator workflow.

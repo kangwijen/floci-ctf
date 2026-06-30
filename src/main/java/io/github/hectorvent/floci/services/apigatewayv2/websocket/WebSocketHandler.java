@@ -228,7 +228,8 @@ public class WebSocketHandler {
         final Map<String, String> finalStageVariables = stageVariables;
         vertx.<WebSocketIntegrationInvoker.IntegrationResult>executeBlocking(() -> {
             return integrationInvoker.invoke(region, finalIntegration, eventJson,
-                    finalStageVariables, Collections.emptyMap(), Collections.emptyMap());
+                    finalStageVariables, Collections.emptyMap(), Collections.emptyMap(),
+                    proxyEventBuilder.buildRouteArn(region, apiId, stageName, "$connect"));
         }).onSuccess(result -> {
             // Check for function error (Lambda invocation error)
             if (result.functionError() != null) {
@@ -503,7 +504,8 @@ public class WebSocketHandler {
         final String finalConnectionId = connectionId;
         vertx.executeBlocking(() -> {
             return integrationInvoker.invoke(region, finalIntegration, eventJson,
-                    finalStageVariables, Collections.emptyMap(), Collections.emptyMap());
+                    finalStageVariables, Collections.emptyMap(), Collections.emptyMap(),
+                    proxyEventBuilder.buildRouteArn(region, apiId, stageName, effectiveRouteKey));
         }).onSuccess(result -> {
             // Route response handling (Requirements 5.1–5.3)
             if (finalRoute.getRouteResponseSelectionExpression() != null && result.body() != null) {
@@ -601,7 +603,8 @@ public class WebSocketHandler {
             final Map<String, String> finalStageVariables = stageVariables;
             vertx.executeBlocking(() -> {
                 integrationInvoker.invoke(region, finalIntegration, eventJson,
-                        finalStageVariables, Collections.emptyMap(), Collections.emptyMap());
+                        finalStageVariables, Collections.emptyMap(), Collections.emptyMap(),
+                        proxyEventBuilder.buildRouteArn(region, apiId, stageName, "$disconnect"));
                 return null;
             }).onComplete(ar -> {
                 if (ar.failed()) {

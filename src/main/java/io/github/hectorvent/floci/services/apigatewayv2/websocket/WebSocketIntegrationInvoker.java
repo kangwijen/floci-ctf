@@ -101,15 +101,16 @@ public class WebSocketIntegrationInvoker {
     public IntegrationResult invoke(String region, Integration integration, String eventJson,
                                     Map<String, String> stageVariables,
                                     Map<String, String> requestTemplates,
-                                    Map<String, String> responseTemplates) {
+                                    Map<String, String> responseTemplates,
+                                    String sourceArn) {
         String integrationType = integration.getIntegrationType();
         if (integrationType == null) {
             integrationType = "AWS_PROXY";
         }
 
         return switch (integrationType) {
-            case "AWS_PROXY" -> invokeAwsProxy(region, integration, eventJson, stageVariables);
-            case "AWS" -> invokeAws(region, integration, eventJson, stageVariables, requestTemplates, responseTemplates);
+            case "AWS_PROXY" -> invokeAwsProxy(region, integration, eventJson, stageVariables, sourceArn);
+            case "AWS" -> invokeAws(region, integration, eventJson, stageVariables, requestTemplates, responseTemplates, sourceArn);
             case "HTTP_PROXY" -> invokeHttpProxy(integration, eventJson, stageVariables);
             case "HTTP" -> invokeHttp(integration, eventJson, stageVariables, requestTemplates, responseTemplates);
             case "MOCK" -> invokeMock(integration, stageVariables, requestTemplates, responseTemplates);
@@ -124,7 +125,8 @@ public class WebSocketIntegrationInvoker {
      * Invoke a Lambda function via AWS_PROXY integration.
      */
     private IntegrationResult invokeAwsProxy(String region, Integration integration,
-                                             String eventJson, Map<String, String> stageVariables) {
+                                             String eventJson, Map<String, String> stageVariables,
+                                             String sourceArn) {
         String uri = integration.getIntegrationUri();
         uri = substituteStageVariables(uri, stageVariables);
 
@@ -136,7 +138,7 @@ public class WebSocketIntegrationInvoker {
 
         LOG.debugv("Invoking Lambda function {0} for AWS_PROXY integration", functionName);
 
-        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region, sourceArn);
         InvokeResult result = lambdaService.invoke(region, functionName,
                 eventJson.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
 
@@ -183,7 +185,8 @@ public class WebSocketIntegrationInvoker {
     private IntegrationResult invokeAws(String region, Integration integration, String eventJson,
                                         Map<String, String> stageVariables,
                                         Map<String, String> requestTemplates,
-                                        Map<String, String> responseTemplates) {
+                                        Map<String, String> responseTemplates,
+                                        String sourceArn) {
         String uri = integration.getIntegrationUri();
         uri = substituteStageVariables(uri, stageVariables);
 
@@ -207,7 +210,7 @@ public class WebSocketIntegrationInvoker {
 
         LOG.debugv("Invoking Lambda function {0} for AWS integration", functionName);
 
-        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region);
+        targetAuthorizer.authorizeApigwLambdaInvoke(functionName, region, sourceArn);
         InvokeResult result = lambdaService.invoke(region, functionName,
                 transformedPayload.getBytes(StandardCharsets.UTF_8), InvocationType.RequestResponse);
 

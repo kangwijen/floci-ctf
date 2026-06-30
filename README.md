@@ -119,6 +119,8 @@ aws sts get-caller-identity --endpoint-url "$AWS_ENDPOINT_URL"
 
 Under strict mode, `test`/`test`, `floci`/`floci`, and other unregistered keys are rejected. Only IAM identities allowed by policy (or the configured root pair) succeed.
 
+AWS-intentional unsigned invoke is limited to explicit public surfaces (S3 bucket policy read, API Gateway `authorizationType=NONE`, Lambda function URL `AuthType=NONE` with a public resource policy). See [docs/services/iam.md](./docs/services/iam.md#anonymous-access-exceptions).
+
 **STS notes:** Participants do **not** need `sts:GetCallerIdentity` or `sts:GetSessionToken` in IAM policies (same as AWS). Operator `FLOCI_AUTH_ROOT_*` resolves to `arn:aws:iam::ACCOUNT:root`. Set `FLOCI_DEFAULT_ACCOUNT_ID` when using a non-default account id in ARNs.
 
 <details>

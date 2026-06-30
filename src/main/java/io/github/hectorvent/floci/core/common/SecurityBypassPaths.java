@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class SecurityBypassPaths {
 
+    public static final String SQS_QUEUE_URL_PROPERTY = "floci.sqs.queueUrl";
+
     private SecurityBypassPaths() {
     }
 

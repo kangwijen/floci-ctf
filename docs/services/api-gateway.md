@@ -59,6 +59,8 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`:
 
 Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`, `ApiGatewaySqsIntegrationTest`.
 
+**Unsigned invoke under strict IAM:** On the execute plane (`/execute-api/...` or `/restapis/{id}/{stage}/_user_request_/...`), `AnonymousAccessGate` permits unsigned requests only when the matched REST method has `authorizationType=NONE`. Methods configured with `authorizationType=AWS_IAM` (or any other non-`NONE` value) require SigV4 like any other data-plane path. Positive regression: `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`. Negative regression: `AnonymousAccessGateBypassIntegrationTest`. See [Anonymous-access exceptions](iam.md#anonymous-access-exceptions) in the IAM service doc.
+
 ### Examples
 
 ```bash

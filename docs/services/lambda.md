@@ -464,3 +464,7 @@ When IAM enforcement is enabled:
 - `ContainerEnvHardening` removes static AWS keys and operator bypass variables from the runtime environment.
 - Function resource policies feed `IamAuthorizationService` for `lambda:InvokeFunction` and related actions.
 - Control-plane Lambda API calls require SigV4 from registered IAM principals.
+
+### Function URLs and anonymous invoke
+
+Per [AWS Lambda function URL auth](https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html), `AuthType=NONE` allows unauthenticated HTTP access only when the function resource policy also grants `lambda:InvokeFunctionUrl` to the anonymous principal. Floci mirrors this under strict IAM: `AnonymousAccessGate` checks both `AuthType=NONE` on `/lambda-url/{urlId}` and a resource-policy Allow for `lambda:InvokeFunctionUrl`. `AuthType=AWS_IAM` always requires SigV4. Positive regression: `LambdaFunctionUrlNoneAuthIntegrationTest`. Negative regression: `AnonymousAccessGateBypassIntegrationTest`. See [Anonymous-access exceptions](iam.md#anonymous-access-exceptions) in the IAM service doc.
