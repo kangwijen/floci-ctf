@@ -98,6 +98,7 @@ public class S3Controller {
     private final EmulatorConfig emulatorConfig;
     private final AccountResolver accountResolver;
     private final io.github.hectorvent.floci.services.floci.ui.UiPages uiPages;
+    private final io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver sigV4aPublicKeyResolver;
 
     @Inject
     public S3Controller(S3Service s3Service, S3SelectService s3SelectService,
@@ -107,7 +108,8 @@ public class S3Controller {
                         IamService iamService,
                         EmulatorConfig emulatorConfig,
                         AccountResolver accountResolver,
-                        io.github.hectorvent.floci.services.floci.ui.UiPages uiPages) {
+                        io.github.hectorvent.floci.services.floci.ui.UiPages uiPages,
+                        io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver sigV4aPublicKeyResolver) {
         this.s3Service = s3Service;
         this.s3SelectService = s3SelectService;
         this.accessLogService = accessLogService;
@@ -117,6 +119,7 @@ public class S3Controller {
         this.emulatorConfig = emulatorConfig;
         this.accountResolver = accountResolver;
         this.uiPages = uiPages;
+        this.sigV4aPublicKeyResolver = sigV4aPublicKeyResolver;
     }
 
     // --- Bucket operations ---
@@ -2378,12 +2381,22 @@ public class S3Controller {
 
         rejectExpiredPresignedPostPolicy(policy);
 
+        String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
         if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
-            throw new AwsException("AccessDenied",
-                    "SigV4a (AWS4-ECDSA-P256-SHA256) is not supported.", 403);
+            var publicKey = sigV4aPublicKeyResolver.resolve(accessKeyId);
+            if (publicKey.isEmpty()) {
+                throw new AwsException("AccessDenied",
+                        "The request signature we calculated does not match the signature you provided.", 403);
+            }
+            SigV4RequestValidator.Result sigv4aResult = SigV4RequestValidator.validatePresignedPostPolicySigV4a(
+                    policy, algorithm, credential, amzDate, signature, publicKey.get());
+            if (sigv4aResult != SigV4RequestValidator.Result.VALID) {
+                throw new AwsException("AccessDenied",
+                        "The request signature we calculated does not match the signature you provided.", 403);
+            }
+            return;
         }
 
-        String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
         Optional<String> secret = resolvePresignSecret(accessKeyId);
         if (secret.isEmpty()) {
             throw new AwsException("AccessDenied",
@@ -2507,6 +2520,36 @@ public class S3Controller {
                 throw new AwsException("AccessDenied",
                         "Invalid according to Policy: Policy Condition failed: "
                                 + "[\"starts-with\", \"$" + fieldName + "\", \"" + prefix + "\"]", 403);
+            }
+        } else if ("not-eq".equals(operator)) {
+            String fieldRef = condition.get(1).asText();
+            String forbiddenValue = condition.get(2).asText();
+            String fieldName = fieldRef.startsWith("$") ? fieldRef.substring(1) : fieldRef;
+            String actualValue = resolveFieldValue(fieldName.toLowerCase(Locale.ROOT), bucket, fields);
+            if (actualValue != null && actualValue.equals(forbiddenValue)) {
+                throw new AwsException("AccessDenied",
+                        "Invalid according to Policy: Policy Condition failed: "
+                                + "[\"not-eq\", \"$" + fieldName + "\", \"" + forbiddenValue + "\"]", 403);
+            }
+        } else if ("in".equals(operator)) {
+            if (condition.size() < 3) {
+                throw new AwsException("AccessDenied",
+                        "Invalid according to Policy: Policy Condition failed: malformed condition", 403);
+            }
+            String fieldRef = condition.get(1).asText();
+            String fieldName = fieldRef.startsWith("$") ? fieldRef.substring(1) : fieldRef;
+            String actualValue = resolveFieldValue(fieldName.toLowerCase(Locale.ROOT), bucket, fields);
+            boolean allowed = false;
+            for (int i = 2; i < condition.size(); i++) {
+                if (actualValue != null && actualValue.equals(condition.get(i).asText())) {
+                    allowed = true;
+                    break;
+                }
+            }
+            if (!allowed) {
+                throw new AwsException("AccessDenied",
+                        "Invalid according to Policy: Policy Condition failed: "
+                                + "[\"in\", \"$" + fieldName + "\", ...]", 403);
             }
         } else {
             throw new AwsException("AccessDenied",

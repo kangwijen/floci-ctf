@@ -555,7 +555,45 @@ class SigV4RequestValidatorTest {
     }
 
     @Test
-    void validatePresignedUrl_rejectsSigV4aAlgorithm() {
+    void validatePresignedUrlSigV4a_validatesSignature() throws Exception {
+        String accessKeyId = SigV4aTestSupport.ACCESS_KEY_ID;
+        String amzDate = "20130524T000000Z";
+        String credentialValue = accessKeyId + "/20130524/us-east-1/s3/aws4_request";
+        String credentialScope = "20130524/us-east-1/s3/aws4_request";
+        String host = "examplebucket.s3.amazonaws.com";
+        String path = "/test.txt";
+        String rawQueryWithoutSignature = PreSignedUrlGenerator.buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, 86400, "host", SigV4aPresignSupport.ALGORITHM);
+        String stringToSign = SigV4aPresignSupport.buildPresignedUrlStringToSign(
+                "GET", path, rawQueryWithoutSignature, host, amzDate, "host", credentialScope, null);
+        String signature = SigV4aPresignSupport.signStringToSign(stringToSign, SigV4aTestSupport.privateKey());
+        String rawQuery = rawQueryWithoutSignature + "&X-Amz-Signature=" + signature;
+
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrlSigV4a(
+                "GET", path, rawQuery, host, SigV4aTestSupport.publicKey(), null);
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validatePresignedPostPolicySigV4a_validatesSignature() throws Exception {
+        String policyBase64 = java.util.Base64.getEncoder().encodeToString(
+                "{\"expiration\":\"2026-12-31T00:00:00.000Z\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String amzDate = "20130524T000000Z";
+        String credential = SigV4aTestSupport.ACCESS_KEY_ID + "/20130524/us-east-1/s3/aws4_request";
+        String stringToSign = SigV4aPresignSupport.buildPresignedPostStringToSign(policyBase64);
+        String signature = SigV4aPresignSupport.signStringToSign(stringToSign, SigV4aTestSupport.privateKey());
+        SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedPostPolicySigV4a(
+                policyBase64,
+                SigV4aPresignSupport.ALGORITHM,
+                credential,
+                amzDate,
+                signature,
+                SigV4aTestSupport.publicKey());
+        assertEquals(SigV4RequestValidator.Result.VALID, result);
+    }
+
+    @Test
+    void validatePresignedUrl_hmacPathStillRejectsSigV4aAlgorithm() {
         String rawQuery = "X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256"
                 + "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"
                 + "&X-Amz-Date=20130524T000000Z"

@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
+import io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.services.iam.IamService;
 import jakarta.annotation.Priority;
@@ -32,14 +33,17 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
     private final PreSignedUrlGenerator presignGenerator;
     private final EmulatorConfig config;
     private final IamService iamService;
+    private final SigV4aPublicKeyResolver sigV4aPublicKeyResolver;
 
     @Inject
     public PreSignedUrlFilter(PreSignedUrlGenerator presignGenerator,
                               EmulatorConfig config,
-                              IamService iamService) {
+                              IamService iamService,
+                              SigV4aPublicKeyResolver sigV4aPublicKeyResolver) {
         this.presignGenerator = presignGenerator;
         this.config = config;
         this.iamService = iamService;
+        this.sigV4aPublicKeyResolver = sigV4aPublicKeyResolver;
     }
 
     @Override
@@ -52,8 +56,12 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
         }
 
         if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
-            requestContext.abortWith(errorResponse(403, "AccessDenied",
-                    "SigV4a (AWS4-ECDSA-P256-SHA256) is not supported."));
+            if (config.services().iam().strictEnforcementEnabled() && !presignGenerator.shouldValidateSignatures()) {
+                requestContext.abortWith(errorResponse(403, "AccessDenied",
+                        "Pre-signed URLs require FLOCI_AUTH_VALIDATE_SIGNATURES when strict IAM enforcement is enabled."));
+                return;
+            }
+            handleSigV4aPresignedUrl(requestContext, queryParams, algorithm);
             return;
         }
         if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
@@ -135,6 +143,84 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
                         "The request signature we calculated does not match the signature you provided."));
                 return;
             }
+        }
+
+        requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+    }
+
+    private void handleSigV4aPresignedUrl(ContainerRequestContext requestContext,
+                                            jakarta.ws.rs.core.MultivaluedMap<String, String> queryParams,
+                                            String algorithm) {
+        String amzDate = queryParams.getFirst("X-Amz-Date");
+        String expiresStr = queryParams.getFirst("X-Amz-Expires");
+        String signature = queryParams.getFirst("X-Amz-Signature");
+        String credential = queryParams.getFirst("X-Amz-Credential");
+
+        if (amzDate == null || expiresStr == null || signature == null || credential == null) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Missing required pre-signed URL parameters."));
+            return;
+        }
+
+        int expires;
+        try {
+            expires = Integer.parseInt(expiresStr);
+        } catch (NumberFormatException e) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Invalid X-Amz-Expires value."));
+            return;
+        }
+
+        Optional<Instant> signedAt = presignGenerator.parseAmzDate(amzDate);
+        if (signedAt.isEmpty()) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Invalid X-Amz-Date value."));
+            return;
+        }
+
+        if (presignGenerator.isExpired(signedAt.get(), expires)) {
+            requestContext.abortWith(expiredResponse(signedAt.get(), expires));
+            return;
+        }
+
+        if (!presignGenerator.shouldValidateSignatures()) {
+            requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+            return;
+        }
+
+        String path = requestContext.getUriInfo().getRequestUri().getRawPath();
+        String rawQuery = requestContext.getUriInfo().getRequestUri().getRawQuery();
+        String host = requestContext.getHeaderString("Host");
+        if (host == null || host.isBlank()) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Missing Host header for pre-signed URL validation."));
+            return;
+        }
+
+        String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
+        var publicKey = sigV4aPublicKeyResolver.resolve(accessKeyId);
+        if (publicKey.isEmpty()) {
+            requestContext.abortWith(errorResponse(403, "AccessDenied",
+                    "Unknown credentials for pre-signed URL."));
+            return;
+        }
+
+        if (IamService.isTemporaryAccessKey(accessKeyId) && !validatePresignSessionToken(requestContext, accessKeyId)) {
+            return;
+        }
+
+        SigV4RequestValidator.Result sigv4aResult = SigV4RequestValidator.validatePresignedUrlSigV4a(
+                requestContext.getMethod(),
+                path,
+                rawQuery,
+                host,
+                publicKey.get(),
+                collectRequestHeaders(requestContext));
+
+        if (sigv4aResult != SigV4RequestValidator.Result.VALID) {
+            requestContext.abortWith(errorResponse(403, "SignatureDoesNotMatch",
+                    "The request signature we calculated does not match the signature you provided."));
+            return;
         }
 
         requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);

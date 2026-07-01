@@ -15,6 +15,12 @@ floci:
     # Product default is true; tests keep internal routes for EmulatorInfoController etc.
     hide-internal-endpoints: false
     cloud-trail-injection-enabled: true
+    sigv4a-signing-public-keys:
+      "AKIATESTSIGV4A01": |
+        -----BEGIN PUBLIC KEY-----
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECi3Y3xNt3+cwyB6r2UurOShO5lH/
+        MsXUQGo4jCPFTeFM0GhP1owYF6ngjs2zzeyG92NC8GqAm8SSA/poZJ/RcA==
+        -----END PUBLIC KEY-----
   storage:
     mode: memory
     persistent-path: ./target/test-data

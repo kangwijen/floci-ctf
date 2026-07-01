@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
+import io.github.hectorvent.floci.core.common.SigV4aPresignSupport;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -125,6 +126,49 @@ public class PreSignedUrlGenerator {
     }
 
     /**
+     * Generates a SigV4a ({@code AWS4-ECDSA-P256-SHA256}) presigned URL for CTF testing.
+     */
+    public String generateSigV4aPresignedUrl(String baseUrl,
+                                             String bucket,
+                                             String key,
+                                             String method,
+                                             int expiresSeconds,
+                                             String sigV4aAccessKeyId,
+                                             java.security.PrivateKey privateKey) {
+        int expiry = expiresSeconds > 0 ? expiresSeconds : defaultExpiry;
+        Instant now = Instant.now();
+        String amzDate = AMZ_DATE_FORMAT.format(now);
+        String dateStamp = amzDate.substring(0, 8);
+        String credentialScope = dateStamp + "/" + defaultRegion + "/s3/aws4_request";
+        String credentialValue = sigV4aAccessKeyId + "/" + credentialScope;
+
+        URI base = URI.create(baseUrl);
+        String host = base.getHost();
+        if (base.getPort() > 0) {
+            host = host + ":" + base.getPort();
+        }
+
+        String rawPath = "/" + bucket + "/" + key;
+        String rawQueryWithoutSignature = buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, expiry, "host", SigV4aPresignSupport.ALGORITHM);
+        try {
+            String stringToSign = SigV4aPresignSupport.buildPresignedUrlStringToSign(
+                    method,
+                    rawPath,
+                    rawQueryWithoutSignature,
+                    host,
+                    amzDate,
+                    "host",
+                    credentialScope,
+                    null);
+            String signature = SigV4aPresignSupport.signStringToSign(stringToSign, privateKey);
+            return baseUrl + rawPath + "?" + rawQueryWithoutSignature + "&X-Amz-Signature=" + signature;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to compute SigV4a presigned URL signature", e);
+        }
+    }
+
+    /**
      * Parses {@code X-Amz-Date} (SigV4 {@code yyyyMMdd'T'HHmmss'Z'} form).
      * Returns empty when the value is missing or not a valid timestamp.
      */
@@ -191,9 +235,29 @@ public class PreSignedUrlGenerator {
                                                     String amzDate,
                                                     int expiresSeconds,
                                                     String signedHeaders,
+                                                    String algorithm) {
+        return buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, expiresSeconds, signedHeaders, Map.of(), algorithm);
+    }
+
+    public static String buildPresignQueryWithoutSignature(String credentialValue,
+                                                    String amzDate,
+                                                    int expiresSeconds,
+                                                    String signedHeaders,
                                                     Map<String, String> extraSignedQueryParams) {
+        return buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, expiresSeconds, signedHeaders, extraSignedQueryParams,
+                "AWS4-HMAC-SHA256");
+    }
+
+    public static String buildPresignQueryWithoutSignature(String credentialValue,
+                                                    String amzDate,
+                                                    int expiresSeconds,
+                                                    String signedHeaders,
+                                                    Map<String, String> extraSignedQueryParams,
+                                                    String algorithm) {
         Map<String, String> params = new LinkedHashMap<>();
-        params.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+        params.put("X-Amz-Algorithm", algorithm);
         params.put("X-Amz-Credential", credentialValue);
         params.put("X-Amz-Date", amzDate);
         params.put("X-Amz-Expires", Integer.toString(expiresSeconds));

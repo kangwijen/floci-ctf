@@ -2,7 +2,12 @@ package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
+import io.github.hectorvent.floci.core.common.SigV4aPresignSupport;
+import io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver;
+import io.github.hectorvent.floci.core.common.SigV4aTestSupport;
+import io.github.hectorvent.floci.testsupport.SigV4aValidationProfile;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -18,8 +23,11 @@ import java.util.Base64;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
+@TestProfile(SigV4aValidationProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class S3PresignedPostIntegrationTest {
 
@@ -28,6 +36,10 @@ class S3PresignedPostIntegrationTest {
 
     @Inject
     EmulatorConfig emulatorConfig;
+
+    @Inject
+    SigV4aPublicKeyResolver sigV4aPublicKeyResolver;
+
     private static final DateTimeFormatter AMZ_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
 
@@ -528,6 +540,41 @@ class S3PresignedPostIntegrationTest {
     }
 
     @Test
+    @Order(94)
+    void presignedPostAcceptsNotEqCondition() {
+        String key = "uploads/not-eq-ok.txt";
+        String fileContent = "allowed";
+        String expiration = Instant.now().plusSeconds(3600)
+                .atZone(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ISO_INSTANT);
+        String policy = """
+                {
+                  "expiration": "%s",
+                  "conditions": [
+                    {"bucket": "%s"},
+                    {"key": "%s"},
+                    ["not-eq", "$key", "forbidden-key"]
+                  ]
+                }
+                """.formatted(expiration, BUCKET, key);
+        String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
+
+        given()
+            .multiPart("key", key)
+            .multiPart("policy", policyBase64)
+            .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
+            .multiPart("file", "not-eq-ok.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
+        .when()
+            .post("/" + BUCKET)
+        .then()
+            .statusCode(204);
+    }
+
+    @Test
     @Order(95)
     void presignedPostRejectsUnknownConditionOperator() {
         String key = "uploads/unknown-op.txt";
@@ -541,7 +588,7 @@ class S3PresignedPostIntegrationTest {
                   "conditions": [
                     {"bucket": "%s"},
                     {"key": "%s"},
-                    ["not-eq", "$key", "%s"]
+                    ["unknown-op", "$key", "%s"]
                   ]
                 }
                 """.formatted(expiration, BUCKET, key, key);
@@ -565,7 +612,7 @@ class S3PresignedPostIntegrationTest {
 
     @Test
     @Order(96)
-    void presignedPostRejectsSigV4aAlgorithm() {
+    void presignedPostRejectsSigV4aWithInvalidSignature() {
         String key = "uploads/sigv4a.txt";
         String fileContent = "blocked";
         String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
@@ -584,11 +631,44 @@ class S3PresignedPostIntegrationTest {
             .post("/" + BUCKET)
         .then()
             .statusCode(403)
-            .body(containsString("SigV4a"));
+            .body(containsString("signature we calculated does not match"));
     }
 
     @Test
     @Order(97)
+    void presignedPostAcceptsSigV4aWithValidSignature() throws Exception {
+        assertTrue(sigV4aPublicKeyResolver.resolve(SigV4aTestSupport.ACCESS_KEY_ID).isPresent());
+        String key = "uploads/sigv4a-valid.txt";
+        String fileContent = "sigv4a post";
+        String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
+        String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPostSigV4a(policyBase64, Instant.now());
+        SigV4RequestValidator.Result validated = SigV4RequestValidator.validatePresignedPostPolicySigV4a(
+                policyBase64,
+                SigV4aPresignSupport.ALGORITHM,
+                sig.credential(),
+                sig.amzDate(),
+                sig.signature(),
+                SigV4aTestSupport.publicKey());
+        assertEquals(SigV4RequestValidator.Result.VALID, validated);
+
+        given()
+            .multiPart("key", key)
+            .multiPart("Content-Type", "text/plain")
+            .multiPart("policy", policyBase64)
+            .multiPart("x-amz-algorithm", "AWS4-ECDSA-P256-SHA256")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
+            .multiPart("file", "sigv4a-valid.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
+        .when()
+            .post("/" + BUCKET)
+        .then()
+            .statusCode(204);
+    }
+
+    @Test
+    @Order(98)
     void presignedPostPersistsUserMetadata() {
         String key = "uploads/with-metadata.txt";
         String fileContent = "metadata test";
@@ -633,6 +713,8 @@ class S3PresignedPostIntegrationTest {
         given().delete("/" + BUCKET + "/uploads/within-range.txt");
         given().delete("/" + BUCKET + "/uploads/prefix-test.txt");
         given().delete("/" + BUCKET + "/uploads/capital-p-ok.txt");
+        given().delete("/" + BUCKET + "/uploads/not-eq-ok.txt");
+        given().delete("/" + BUCKET + "/uploads/sigv4a-valid.txt");
         given().delete("/" + BUCKET + "/uploads/with-metadata.txt");
 
         given()
@@ -674,6 +756,15 @@ class S3PresignedPostIntegrationTest {
         } catch (Exception e) {
             throw new RuntimeException("Failed to sign presigned POST policy", e);
         }
+    }
+
+    private PostSigFields signPostSigV4a(String policyBase64, Instant when) throws Exception {
+        String amzDate = AMZ_DATE_FORMAT.format(when);
+        String dateStamp = amzDate.substring(0, 8);
+        String credential = SigV4aTestSupport.ACCESS_KEY_ID + "/" + dateStamp + "/" + REGION + "/s3/aws4_request";
+        String stringToSign = SigV4aPresignSupport.buildPresignedPostStringToSign(policyBase64);
+        String signature = SigV4aPresignSupport.signStringToSign(stringToSign, SigV4aTestSupport.privateKey());
+        return new PostSigFields(credential, amzDate, signature);
     }
 
     private String buildStartsWithPolicy(String bucket, String keyPrefix, String contentTypePrefix,

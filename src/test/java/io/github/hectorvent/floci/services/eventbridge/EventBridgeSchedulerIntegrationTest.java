@@ -355,6 +355,26 @@ class EventBridgeSchedulerIntegrationTest {
                     public java.util.Optional<String> federatedJwtRs256PublicKeyPem() {
                         return java.util.Optional.empty();
                     }
+
+                    @Override
+                    public java.util.Optional<String> federatedSamlSigningCertPem() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Map<String, String> federatedSamlSigningCerts() {
+                        return java.util.Map.of();
+                    }
+
+                    @Override
+                    public java.util.Optional<String> sigv4aSigningPublicKeyPem() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Map<String, String> sigv4aSigningPublicKeys() {
+                        return java.util.Map.of();
+                    }
                 };
             }
             @Override

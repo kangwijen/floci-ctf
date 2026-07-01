@@ -407,7 +407,7 @@ Pair strict enforcement with `FLOCI_AUTH_VALIDATE_SIGNATURES=true` so inbound AP
 
 **Resource-based policies (HTTP):** S3 bucket policy, Lambda resource policy, SQS queue policy, SNS topic policy, KMS key policy (see above).
 
-**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals. SigV4a presign is rejected.
+**Not yet supported**: full cross-account condition keys, `NotPrincipal` on trust policies combined with complex federated principals.
 
 **Presigned S3 (CTF fork):** Query-string GET/PUT URLs validate under `FLOCI_AUTH_VALIDATE_SIGNATURES=true` with IAM or operator root secrets (`PreSignedUrlFilter`). When the access key id matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the configured operator root secret wins over IAM lookups. Signed `x-amz-*` headers are read from the request when absent from the query string. Presigned POST requires policy and signature fields under strict enforcement; policy expiration is enforced. Regression: `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`, `PreSignedUrlCtfIntegrationTest`, `S3PresignedPostCtfIntegrationTest`, `S3PresignedPostIntegrationTest`.
 

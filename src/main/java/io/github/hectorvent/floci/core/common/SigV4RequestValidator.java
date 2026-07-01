@@ -8,6 +8,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -595,21 +596,131 @@ public final class SigV4RequestValidator {
         return mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String sha256Hex(String input) throws Exception {
+    /**
+     * Validates an S3 presigned URL signed with SigV4a ({@code AWS4-ECDSA-P256-SHA256}).
+     */
+    public static Result validatePresignedUrlSigV4a(String method,
+                                                    String rawPath,
+                                                    String rawQuery,
+                                                    String hostHeader,
+                                                    PublicKey publicKey,
+                                                    Map<String, String> requestHeaders) {
+        try {
+            if (publicKey == null) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            String algorithm = queryParam(rawQuery, "X-Amz-Algorithm");
+            if (!SigV4aPresignSupport.ALGORITHM.equals(algorithm)) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String credential = queryParam(rawQuery, "X-Amz-Credential");
+            String amzDate = queryParam(rawQuery, "X-Amz-Date");
+            String signedHeadersList = queryParam(rawQuery, "X-Amz-SignedHeaders");
+            String providedSignature = queryParam(rawQuery, "X-Amz-Signature");
+
+            if (credential == null || amzDate == null || signedHeadersList == null || providedSignature == null) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String[] credParts = credential.split("/");
+            if (credParts.length < 5) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            String date = credParts[1];
+            String region = credParts[2];
+            String service = credParts[3];
+            String credentialScope = date + "/" + region + "/" + service + "/aws4_request";
+
+            String stringToSign = SigV4aPresignSupport.buildPresignedUrlStringToSign(
+                    method, rawPath, rawQuery, hostHeader, amzDate, signedHeadersList, credentialScope, requestHeaders);
+            if (SigV4aPresignSupport.verifyStringToSign(stringToSign, providedSignature, publicKey)) {
+                return Result.VALID;
+            }
+            return Result.INVALID_SIGNATURE;
+        } catch (Exception e) {
+            return Result.INVALID_SIGNATURE;
+        }
+    }
+
+    /**
+     * Validates an S3 presigned POST policy signature signed with SigV4a.
+     */
+    public static Result validatePresignedPostPolicySigV4a(String policyBase64,
+                                                           String algorithm,
+                                                           String credential,
+                                                           String amzDate,
+                                                           String providedSignature,
+                                                           PublicKey publicKey) {
+        try {
+            if (policyBase64 == null || policyBase64.isBlank() || publicKey == null) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            if (!SigV4aPresignSupport.ALGORITHM.equals(algorithm)) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+            if (credential == null || credential.isBlank()
+                    || amzDate == null || amzDate.isBlank()
+                    || providedSignature == null || providedSignature.isBlank()) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String[] credParts = credential.split("/");
+            if (credParts.length < 5) {
+                return Result.INVALID_AUTHORIZATION;
+            }
+
+            String stringToSign = SigV4aPresignSupport.buildPresignedPostStringToSign(policyBase64);
+            if (SigV4aPresignSupport.verifyStringToSign(stringToSign, providedSignature, publicKey)) {
+                return Result.VALID;
+            }
+            return Result.INVALID_SIGNATURE;
+        } catch (Exception e) {
+            return Result.INVALID_SIGNATURE;
+        }
+    }
+
+    public static String buildPresignedCanonicalRequestPublic(String method,
+                                                              String rawPath,
+                                                              String rawQuery,
+                                                              String hostHeader,
+                                                              String signedHeadersList,
+                                                              Map<String, String> requestHeaders) throws Exception {
+        return buildPresignedCanonicalRequest(
+                method, rawPath, rawQuery, hostHeader, signedHeadersList, requestHeaders);
+    }
+
+    public static String sha256Hex(String input) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         return hexEncode(digest.digest(input.getBytes(StandardCharsets.UTF_8)));
     }
 
-    private static String sha256HexBytes(byte[] input) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        return hexEncode(digest.digest(input));
+    public static byte[] hexDecode(String hex) {
+        if (hex == null || (hex.length() % 2) != 0) {
+            return null;
+        }
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            int hi = Character.digit(hex.charAt(i * 2), 16);
+            int lo = Character.digit(hex.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) {
+                return null;
+            }
+            out[i] = (byte) ((hi << 4) + lo);
+        }
+        return out;
     }
 
-    private static String hexEncode(byte[] bytes) {
+    public static String hexEncode(byte[] bytes) {
         StringBuilder sb = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    private static String sha256HexBytes(byte[] input) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return hexEncode(digest.digest(input));
     }
 }

@@ -284,11 +284,15 @@ class PreSignedUrlIntegrationTest {
 
     @Test
     @Order(18)
-    void sigV4aPresignedUrlIsRejectedAsUnsupported() {
+    void sigV4aPresignedUrlAcceptedWhenSignatureValidationDisabled() {
+        String amzDate = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+                .withZone(java.time.ZoneOffset.UTC)
+                .format(java.time.Instant.now());
+        String dateStamp = amzDate.substring(0, 8);
         String sigV4aPath = "/" + BUCKET + "/secret-file.txt"
                 + "?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256"
-                + "&X-Amz-Credential=AKIATESTPRESIGN01/20260205/us-east-1/s3/aws4_request"
-                + "&X-Amz-Date=20260205T120000Z"
+                + "&X-Amz-Credential=AKIATESTSIGV4A01/" + dateStamp + "/us-east-1/s3/aws4_request"
+                + "&X-Amz-Date=" + amzDate
                 + "&X-Amz-Expires=3600"
                 + "&X-Amz-SignedHeaders=host"
                 + "&X-Amz-Signature=abc123";
@@ -297,9 +301,8 @@ class PreSignedUrlIntegrationTest {
         .when()
             .get(sigV4aPath)
         .then()
-            .statusCode(403)
-            .body(containsString("AccessDenied"))
-            .body(containsString("SigV4a (AWS4-ECDSA-P256-SHA256) is not supported"));
+            .statusCode(200)
+            .body(equalTo("presigned content"));
     }
 
     @Test

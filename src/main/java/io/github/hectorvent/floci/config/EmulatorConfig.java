@@ -508,6 +508,31 @@ public interface EmulatorConfig {
          * Env: {@code FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM}.
          */
         Optional<String> federatedJwtRs256PublicKeyPem();
+
+        /**
+         * Shared PEM-encoded X.509 certificate (or RSA public key) for SAML assertion XML signature verification.
+         * Env: {@code FLOCI_CTF_FEDERATED_SAML_SIGNING_CERT_PEM}.
+         */
+        Optional<String> federatedSamlSigningCertPem();
+
+        /**
+         * Per SAML provider name signing certificate PEMs for XML signature verification.
+         * Env prefix: {@code FLOCI_CTF_FEDERATED_SAML_SIGNING_CERTS__<provider_name>}.
+         */
+        Map<String, String> federatedSamlSigningCerts();
+
+        /**
+         * Shared PEM-encoded EC P-256 public key for SigV4a presigned URL/POST verification
+         * when the access key matches {@code floci.auth.root-access-key-id}.
+         * Env: {@code FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEY_PEM}.
+         */
+        Optional<String> sigv4aSigningPublicKeyPem();
+
+        /**
+         * Per access key EC P-256 public key PEMs for SigV4a verification.
+         * Env prefix: {@code FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEYS__<access_key_id>}.
+         */
+        Map<String, String> sigv4aSigningPublicKeys();
     }
 
     interface ServicesConfig {
@@ -1292,6 +1317,14 @@ public interface EmulatorConfig {
         String uriStyle();
 
         Optional<String> dockerNetwork();
+
+        /** When true and IAM enforcement is on, registry docker-login tokens are bound to caller identity and docker push/pull is IAM-gated via {@link io.github.hectorvent.floci.services.ecr.registry.EcrRegistryDataPlane}. */
+        @WithDefault("true")
+        boolean registryAuthEnabled();
+
+        /** TTL for registry auth tokens issued by {@code GetAuthorizationToken} (seconds). */
+        @WithDefault("43200")
+        int registryAuthTokenTtlSeconds();
     }
 
     interface LambdaServiceConfig {

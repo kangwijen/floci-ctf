@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.eks;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
+import io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.s3.PreSignedUrlGenerator;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -25,14 +26,17 @@ public class EksTokenValidator {
     private final EmulatorConfig config;
     private final IamService iamService;
     private final PreSignedUrlGenerator presignGenerator;
+    private final SigV4aPublicKeyResolver sigV4aPublicKeyResolver;
 
     @Inject
     public EksTokenValidator(EmulatorConfig config,
                              IamService iamService,
-                             PreSignedUrlGenerator presignGenerator) {
+                             PreSignedUrlGenerator presignGenerator,
+                             SigV4aPublicKeyResolver sigV4aPublicKeyResolver) {
         this.config = config;
         this.iamService = iamService;
         this.presignGenerator = presignGenerator;
+        this.sigV4aPublicKeyResolver = sigV4aPublicKeyResolver;
     }
 
     public boolean accepts(String token) {
@@ -81,13 +85,6 @@ public class EksTokenValidator {
         }
 
         String algorithm = SigV4RequestValidator.queryParam(rawQuery, "X-Amz-Algorithm");
-        if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
-            return false;
-        }
-        if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
-            return false;
-        }
-
         String amzDate = SigV4RequestValidator.queryParam(rawQuery, "X-Amz-Date");
         String expiresStr = SigV4RequestValidator.queryParam(rawQuery, "X-Amz-Expires");
         if (amzDate == null || expiresStr == null) {
@@ -100,6 +97,21 @@ public class EksTokenValidator {
             return false;
         }
         if (presignGenerator.isExpired(amzDate, expiresSeconds)) {
+            return false;
+        }
+
+        if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
+            String credential = SigV4RequestValidator.queryParam(rawQuery, "X-Amz-Credential");
+            String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
+            var publicKey = sigV4aPublicKeyResolver.resolve(accessKeyId);
+            if (publicKey.isEmpty()) {
+                return false;
+            }
+            SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrlSigV4a(
+                    "GET", rawPath, rawQuery, hostHeader, publicKey.get(), null);
+            return result == SigV4RequestValidator.Result.VALID;
+        }
+        if (!"AWS4-HMAC-SHA256".equals(algorithm)) {
             return false;
         }
 
