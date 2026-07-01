@@ -1337,7 +1337,9 @@ public class ResourceArnBuilder {
         if (arn != null) {
             return arn;
         }
-        String repo = readJsonStringField(ctx, "repositoryName");
+        String repo = firstNonBlank(
+                readJsonStringField(ctx, "repositoryName"),
+                readJsonFirstArrayElement(ctx, "repositoryNames"));
         if (repo != null && !repo.isBlank()) {
             String registryAccount = firstNonBlank(readJsonStringField(ctx, "registryId"), accountId);
             return AwsArnUtils.Arn.of("ecr", region, registryAccount, "repository/" + repo).toString();

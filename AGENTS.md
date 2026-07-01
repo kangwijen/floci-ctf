@@ -199,7 +199,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 - SigV4a presign verification (GET/PUT/POST reject with 403; full ECDSA-P256 verification not implemented)
 - Federated JWT/SAML full X.509/XML signature validation against provider metadata (structural checks + HS256/RS256 when `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`; SAML requires `SignatureValue` when validation is on)
-- ECR repository policy enforcement at registry data plane (policies round-trip via API only)
+- ECR repository policy enforcement at registry data plane (docker push/pull; control-plane HTTP IAM wired)
 
 **Recently closed (CTF security / test stability):**
 
@@ -241,6 +241,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Presigned POST unknown condition operators fail-closed | Closed | `S3PresignedPostIntegrationTest` |
 | OIDC multi-value `aud` trust conditions + federated `nbf`/SAML sig floor | Closed | `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest`, `StsWebIdentityTrustIntegrationTest` |
 | EKS `k8s-aws-v1.*` token SigV4 verify on presigned STS GetCallerIdentity | Closed | `EksTokenSigV4IntegrationTest`, `EksTokenValidatorTest` |
+| STS federated `InvalidIdentityToken`, SAML response fidelity, trust Deny, SAML expiry | Closed | `StsWebIdentityTrustIntegrationTest`, `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest` |
+| ECR repository policy on control-plane IAM (`DescribeRepositories` scoped ARN) | Closed | `EcrRepositoryPolicyControlPlaneIntegrationTest`, `ResourcePolicyResolverTest`, `ResourceArnBuilderTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |

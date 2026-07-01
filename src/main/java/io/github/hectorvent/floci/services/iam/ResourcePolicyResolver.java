@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.iam;
 
+import io.github.hectorvent.floci.services.ecr.EcrService;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.s3.S3Service;
@@ -26,6 +27,7 @@ public class ResourcePolicyResolver {
     private final SnsService snsService;
     private final KmsService kmsService;
     private final SecretsManagerService secretsManagerService;
+    private final EcrService ecrService;
 
     @Inject
     public ResourcePolicyResolver(S3Service s3Service,
@@ -33,13 +35,15 @@ public class ResourcePolicyResolver {
                                   SqsService sqsService,
                                   SnsService snsService,
                                   KmsService kmsService,
-                                  SecretsManagerService secretsManagerService) {
+                                  SecretsManagerService secretsManagerService,
+                                  EcrService ecrService) {
         this.s3Service = s3Service;
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
         this.snsService = snsService;
         this.kmsService = kmsService;
         this.secretsManagerService = secretsManagerService;
+        this.ecrService = ecrService;
     }
 
     /**
@@ -65,6 +69,7 @@ public class ResourcePolicyResolver {
             case "kms" -> kmsService.findKeyPolicyDocument(resourceArn, region).ifPresent(docs::add);
             case "secretsmanager" -> secretsManagerService.findSecretResourcePolicyDocument(resourceArn, region)
                     .ifPresent(docs::add);
+            case "ecr" -> ecrService.findRepositoryPolicyByArn(resourceArn).ifPresent(docs::add);
             default -> { }
         }
         return List.copyOf(docs);

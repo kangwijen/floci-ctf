@@ -541,6 +541,13 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void ecrDescribeRepositoriesBuildsRepoArnFromRepositoryNamesArray() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"repositoryNames\":[\"policy-only-repo\"]}");
+        String arn = builder.build("ecr", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:ecr:us-east-1:222222222222:repository/policy-only-repo", arn);
+    }
+
+    @Test
     void ecsDescribeServicesBuildsServiceArn() {
         ContainerRequestContext ctx = jsonBodyCtx(
                 "{\"cluster\":\"prod\",\"service\":\"api\"}");

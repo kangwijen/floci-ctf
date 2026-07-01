@@ -169,13 +169,13 @@ new lambda.DockerImageFunction(this, 'MyFn', {
 
 ## Not Implemented
 
-The following ECR features are **not** implemented. Stored values for policies and lifecycle rules round-trip via the API but are not enforced at runtime:
+The following ECR features are **not** implemented or only partially implemented:
 
 - Replication and pull-through cache
 - Image scanning (`StartImageScan`, `DescribeImageScanFindings`)
 - Image signing and notary attachments
 - Lifecycle policy enforcement (the policy text is stored but not applied)
-- Repository policy enforcement (no IAM evaluation against repository-level policies)
+- Repository policy enforcement on docker push/pull (HTTP control plane uses `SetRepositoryPolicy` via `ResourcePolicyResolver`; regression: `EcrRepositoryPolicyControlPlaneIntegrationTest`)
 - TLS via emulated ACM
 
 ## Troubleshooting

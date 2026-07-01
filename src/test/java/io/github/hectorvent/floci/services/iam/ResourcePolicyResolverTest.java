@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.iam;
 
+import io.github.hectorvent.floci.services.ecr.EcrService;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.s3.S3Service;
@@ -29,6 +30,7 @@ class ResourcePolicyResolverTest {
     private SnsService snsService;
     private KmsService kmsService;
     private SecretsManagerService secretsManagerService;
+    private EcrService ecrService;
     private ResourcePolicyResolver resolver;
 
     @BeforeEach
@@ -39,8 +41,9 @@ class ResourcePolicyResolverTest {
         snsService = mock(SnsService.class);
         kmsService = mock(KmsService.class);
         secretsManagerService = mock(SecretsManagerService.class);
+        ecrService = mock(EcrService.class);
         resolver = new ResourcePolicyResolver(
-                s3Service, lambdaService, sqsService, snsService, kmsService, secretsManagerService);
+                s3Service, lambdaService, sqsService, snsService, kmsService, secretsManagerService, ecrService);
     }
 
     @Test
@@ -170,5 +173,22 @@ class ResourcePolicyResolverTest {
         when(kmsService.findKeyPolicyDocument(aliasArn, REGION)).thenReturn(Optional.of(customPolicy));
 
         assertEquals(List.of(customPolicy), resolver.resolve("kms", aliasArn, REGION));
+    }
+
+    @Test
+    void resolvesEcrRepositoryPolicy() {
+        String repoArn = "arn:aws:ecr:" + REGION + ":" + ACCOUNT + ":repository/policy-repo";
+        String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[]}";
+        when(ecrService.findRepositoryPolicyByArn(repoArn)).thenReturn(Optional.of(policy));
+
+        assertEquals(List.of(policy), resolver.resolve("ecr", repoArn, REGION));
+    }
+
+    @Test
+    void ecrReturnsEmptyWhenRepositoryHasNoPolicy() {
+        String repoArn = "arn:aws:ecr:" + REGION + ":" + ACCOUNT + ":repository/no-policy";
+        when(ecrService.findRepositoryPolicyByArn(repoArn)).thenReturn(Optional.empty());
+
+        assertTrue(resolver.resolve("ecr", repoArn, REGION).isEmpty());
     }
 }

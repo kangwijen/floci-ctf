@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 @ApplicationScoped
@@ -499,6 +500,22 @@ public class EcrService {
         repo.setRepositoryPolicyText(null);
         repoStore.put(key(region, repo.getRegistryId(), repoName), repo);
         return repo;
+    }
+
+    public Optional<String> findRepositoryPolicyByArn(String repositoryArn) {
+        if (repositoryArn == null || !repositoryArn.startsWith("arn:aws:ecr:")) {
+            return Optional.empty();
+        }
+        String[] parts = repositoryArn.split(":", 6);
+        if (parts.length < 6 || !parts[5].startsWith("repository/")) {
+            return Optional.empty();
+        }
+        String region = parts[3];
+        String accountId = parts[4];
+        String repoName = parts[5].substring("repository/".length());
+        return repoStore.get(key(region, accountId, repoName))
+                .map(Repository::getRepositoryPolicyText)
+                .filter(policy -> policy != null && !policy.isBlank());
     }
 
     // ============================================================

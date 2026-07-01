@@ -24,6 +24,7 @@ import java.net.InetSocketAddress;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -320,8 +321,17 @@ class EcrServiceTest {
         assertEquals("RepositoryPolicyNotFoundException", ex.getErrorCode());
     }
 
+    @Test
+    void findRepositoryPolicyByArnReturnsStoredPolicy() {
+        String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[]}";
+        service.createRepository(REPO, null, null, null, null, null, null, REGION);
+        service.setRepositoryPolicy(REPO, null, policy, REGION);
+        String arn = "arn:aws:ecr:" + REGION + ":" + ACCOUNT + ":repository/" + REPO;
+        assertEquals(Optional.of(policy), service.findRepositoryPolicyByArn(arn));
+        assertTrue(service.findRepositoryPolicyByArn("arn:aws:ecr:" + REGION + ":" + ACCOUNT + ":repository/missing").isEmpty());
+    }
+
     // ------------------------------------------------------------
-    // Reconcile
     // ------------------------------------------------------------
 
     @Test
