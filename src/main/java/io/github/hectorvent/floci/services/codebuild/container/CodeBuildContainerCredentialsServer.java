@@ -46,6 +46,10 @@ public class CodeBuildContainerCredentialsServer {
         return delegate.credentialsRelativeUri(credentialToken);
     }
 
+    public boolean injectRelativeUri() {
+        return delegate.injectRelativeUri();
+    }
+
     public CompletableFuture<Void> start() {
         return delegate.start();
     }

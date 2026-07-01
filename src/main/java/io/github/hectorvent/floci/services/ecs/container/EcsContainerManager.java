@@ -357,8 +357,10 @@ public class EcsContainerManager {
         if (credentialToken != null) {
             envMap.put("AWS_CONTAINER_CREDENTIALS_FULL_URI",
                     credentialsServer.credentialsFullUri(flociHost, credentialToken));
-            envMap.put("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-                    credentialsServer.credentialsRelativeUri(credentialToken));
+            if (credentialsServer.injectRelativeUri()) {
+                envMap.put("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                        credentialsServer.credentialsRelativeUri(credentialToken));
+            }
             envMap.put("ECS_CONTAINER_METADATA_URI_V4",
                     credentialsServer.metadataUriV4(flociHost, taskId));
         }

@@ -6,6 +6,7 @@ services:
     tty: true
     ports:
       - "4566:4566"
+      - "5100:5100"
       - "6379-6399:6379-6399"
       - "7001-7099:7001-7099"
       - "9200-9299:9200-9299"
@@ -26,7 +27,10 @@ services:
       FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST: "true"
       # Link-local cred URIs (http://169.254.170.2:9171/v2/credentials/{token}); servers bind 0.0.0.0 on 9170/9171/9172.
       # Floci injects extra_hosts on spawned Lambda/ECS/CodeBuild containers (host-gateway or Floci container IP).
+      # RELATIVE_URI is omitted on non-80 ports so botocore uses FULL_URI (with explicit port) instead of link-local :80.
       FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI: "true"
+      FLOCI_SERVICES_ECR_REGISTRY_BASE_PORT: "5100"
+      FLOCI_SERVICES_ECR_REGISTRY_MAX_PORT: "5100"
       FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY: ${FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY}
       FLOCI_SERVICES_DOCKER_NETWORK: floci_default
       FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"

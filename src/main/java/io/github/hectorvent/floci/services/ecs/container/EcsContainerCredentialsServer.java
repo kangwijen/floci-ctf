@@ -102,6 +102,10 @@ public class EcsContainerCredentialsServer {
         return uriBuilder.credentialsRelativeUri(credentialToken);
     }
 
+    public boolean injectRelativeUri() {
+        return uriBuilder.injectRelativeUri();
+    }
+
     public String metadataUriV4(String hostAddress, String taskId) {
         int port = config.services().ecs().containerCredentialsPort();
         return "http://" + hostAddress + ":" + port + "/v4/" + taskId;

@@ -97,6 +97,7 @@ class ContainerLauncherTest {
                 credentialsServer, reachableEndpoint, containerDetector, currentContainerNetworkResolver);
 
         lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
+        lenient().when(credentialsServer.injectRelativeUri()).thenReturn(false);
 
         when(runtimeApiServerFactory.create()).thenReturn(runtimeApiServer);
         when(runtimeApiServer.getPort()).thenReturn(9000);
@@ -467,6 +468,8 @@ class ContainerLauncherTest {
 
         List<String> env = specCaptor.getValue().env();
         assertTrue(env.contains("AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:9171/v2/credentials/cred-token-1"));
+        assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=")),
+                "RELATIVE_URI must not be set on non-80 credential ports (botocore would use link-local :80)");
         assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_ACCESS_KEY_ID=")),
                 "operator credentials must not be injected when execution role is set");
         assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_SECRET_ACCESS_KEY=")),
@@ -497,6 +500,9 @@ class ContainerLauncherTest {
         ArgumentCaptor<ContainerSpec> specCaptor = ArgumentCaptor.forClass(ContainerSpec.class);
         verify(lifecycleManager).create(specCaptor.capture());
         assertTrue(specCaptor.getValue().extraHosts().contains("169.254.170.2:172.20.0.5"));
+        assertTrue(specCaptor.getValue().env().stream()
+                        .noneMatch(e -> e.startsWith("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=")),
+                "link-local FULL_URI must be used without RELATIVE_URI on port 9171");
     }
 
     @Test

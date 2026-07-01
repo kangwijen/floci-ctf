@@ -488,8 +488,10 @@ public class CodeBuildRunner {
         if (credentialToken != null) {
             env.put("AWS_CONTAINER_CREDENTIALS_FULL_URI",
                     credentialsServer.credentialsFullUri(flociHost, credentialToken));
-            env.put("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-                    credentialsServer.credentialsRelativeUri(credentialToken));
+            if (credentialsServer.injectRelativeUri()) {
+                env.put("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                        credentialsServer.credentialsRelativeUri(credentialToken));
+            }
         } else {
             OperatorCredentialEnv.putIfPresent(env);
         }

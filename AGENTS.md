@@ -233,8 +233,8 @@ _(None from the former SigV4a / SAML X.509 / ECR data-plane / presigned POST ope
 | API Gateway `TestInvokeMethod` without stage deploy | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | API Gateway `TestInvokeMethod` with `AWS_PROXY` Lambda integration | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
-| Lambda execution-role creds on Compose bridge (link-local `extra_hosts` + port in URI) | Closed | `ContainerLauncherTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
-| ECR registry reconcile on Compose bridge (`list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
+| Lambda execution-role creds on Compose bridge (link-local `extra_hosts`, explicit port in `FULL_URI`, no `RELATIVE_URI` on 9171) | Closed | `ContainerLauncherTest`, `ContainerCredentialsUriBuilderTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
+| ECR registry reconcile on Compose bridge (`5100` published, adopt path backend port, `list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
 | STS `AssumeRole` same-account caller identity (trust-only unless explicit Deny) | Closed | `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
 | Presigned POST unknown condition operators fail-closed | Closed | `S3PresignedPostIntegrationTest` |
 | OIDC multi-value `aud` trust conditions + federated `nbf`/SAML sig floor | Closed | `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest`, `StsWebIdentityTrustIntegrationTest` |
@@ -362,7 +362,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | ELB / API Gateway / Cognito / CodeDeploy Lambda invoke | Yes (`elasticloadbalancing.amazonaws.com`, `apigateway.amazonaws.com`, `cognito-idp.amazonaws.com`, `codedeploy.amazonaws.com` on function resource policy) |
 | CloudTrail / Config / Firehose / VPC flow logs S3 delivery | Yes (`authorizeServiceS3Put` for CloudTrail and Config (`s3:ListBucket` for Config); Firehose stream `RoleARN` identity policy on `s3:PutObject`; VPC flow logs use `delivery.logs.amazonaws.com`) |
 | Inter-service delivery audit | CloudTrail audit when audit enabled (`invokedBy` AWSService events on Firehose, Config, flow logs, and other in-process delivery) |
-| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2:PORT` URIs with auto `extra_hosts` on spawned containers; `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `ContainerLauncherTest`) |
+| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2:PORT` in `AWS_CONTAINER_CREDENTIALS_FULL_URI` with auto `extra_hosts`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` omitted on non-80 ports so botocore uses the explicit port; `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `ContainerLauncherTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
 

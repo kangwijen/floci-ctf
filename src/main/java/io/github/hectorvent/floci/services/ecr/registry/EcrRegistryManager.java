@@ -284,6 +284,10 @@ public class EcrRegistryManager {
         if (configured.isPresent() && !configured.get().isBlank()) {
             return configured;
         }
+        java.util.Optional<String> global = config.services().dockerNetwork();
+        if (global.isPresent() && !global.get().isBlank()) {
+            return global;
+        }
         if (containerDetector.isRunningInContainer()) {
             return currentContainerNetworkResolver.resolveNetworkName();
         }
@@ -408,6 +412,10 @@ public class EcrRegistryManager {
                         config.services().ecr().registryBasePort(),
                         config.services().ecr().registryMaxPort());
                 this.hostPort = chosenPort;
+                if (!containerDetector.isRunningInContainer()) {
+                    lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
+                            .ifPresent(port -> this.internalBackendPort = port);
+                }
                 dataPlane.start(chosenPort, resolveRegistryBaseUrl());
             } else {
                 lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));

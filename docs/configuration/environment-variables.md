@@ -36,7 +36,7 @@ Floci is configured exclusively through environment variables. Every option belo
 | `FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEY_PEM` | _(none)_ | Shared EC P-256 public key PEM for SigV4a presigned URL/POST verification when the access key matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` |
 | `FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEYS__<access_key_id>` | _(none)_ | Per access key EC P-256 public key PEM for SigV4a verification (for example `FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEYS__AKIAEXAMPLE`) |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | When link-local URI mode is off: bind credential HTTP servers to `127.0.0.1` only (ports 9170/9171/9172). Ignored when link-local URI mode is on (servers bind `0.0.0.0`) |
-| `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2:PORT/v2/credentials/{token}` and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; credential servers bind `0.0.0.0`. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers (`169.254.170.2:host-gateway` on native Docker, or `169.254.170.2:<floci-container-ip>` in Compose) |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2:PORT/v2/credentials/{token}` as `AWS_CONTAINER_CREDENTIALS_FULL_URI`; credential servers bind `0.0.0.0`. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers. `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` is omitted when the credential port is not 80 so botocore uses the explicit port in `FULL_URI` instead of link-local port 80 |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
 
 ### Audit profile (Compose defaults)

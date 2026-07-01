@@ -13,6 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.github.dockerjava.api.model.Container;
+import org.mockito.ArgumentCaptor;
+
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,27 +43,31 @@ class EcrRegistryManagerTest {
     private ContainerDetector containerDetector;
     private CurrentContainerNetworkResolver currentContainerNetworkResolver;
     private EmulatorConfig.EcrServiceConfig ecrConfig;
+    private EmulatorConfig config;
+    private ContainerBuilder containerBuilder;
+    private ContainerBuilder.Builder builder;
+    private ContainerLogStreamer logStreamer;
+    private RegionResolver regionResolver;
     private EcrRegistryManager manager;
 
     @BeforeEach
     void setUp() {
         portAllocator = new PortAllocator();
 
-        ContainerBuilder containerBuilder = Mockito.mock(ContainerBuilder.class);
-        ContainerBuilder.Builder builder =
-                Mockito.mock(ContainerBuilder.Builder.class, Mockito.RETURNS_SELF);
+        containerBuilder = Mockito.mock(ContainerBuilder.class);
+        builder = Mockito.mock(ContainerBuilder.Builder.class, Mockito.RETURNS_SELF);
         when(containerBuilder.newContainer(anyString())).thenReturn(builder);
         when(builder.build()).thenReturn(Mockito.mock(ContainerSpec.class));
 
         lifecycleManager = Mockito.mock(ContainerLifecycleManager.class);
         when(lifecycleManager.findByName(anyString())).thenReturn(Optional.empty());
 
-        ContainerLogStreamer logStreamer = Mockito.mock(ContainerLogStreamer.class);
+        logStreamer = Mockito.mock(ContainerLogStreamer.class);
         containerDetector = Mockito.mock(ContainerDetector.class);
         currentContainerNetworkResolver = Mockito.mock(CurrentContainerNetworkResolver.class);
-        RegionResolver regionResolver = new RegionResolver("us-east-1", "000000000000");
+        regionResolver = new RegionResolver("us-east-1", "000000000000");
 
-        EmulatorConfig config = Mockito.mock(EmulatorConfig.class);
+        config = Mockito.mock(EmulatorConfig.class);
         ecrConfig = Mockito.mock(EmulatorConfig.EcrServiceConfig.class);
         EmulatorConfig.StorageConfig storage = Mockito.mock(EmulatorConfig.StorageConfig.class);
         when(config.services()).thenReturn(Mockito.mock(EmulatorConfig.ServicesConfig.class));
@@ -126,5 +134,46 @@ class EcrRegistryManagerTest {
 
         assertEquals("000000000000/us-east-1/floci-it/app",
                 manager.internalRepoName("000000000000", "us-east-1", "floci-it/app"));
+    }
+
+    @Test
+    void ensureStarted_adoptExistingWithAuthProxy_resolvesInternalBackendPortOnNativeHost() {
+        when(ecrConfig.registryAuthEnabled()).thenReturn(true);
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(containerDetector.isRunningInContainer()).thenReturn(false);
+
+        Container existing = Mockito.mock(Container.class);
+        when(existing.getId()).thenReturn("registry-existing-id");
+        when(lifecycleManager.findByName(REGISTRY_NAME)).thenReturn(Optional.of(existing));
+        when(lifecycleManager.resolveHostPublishedPort("registry-existing-id", 5000))
+                .thenReturn(java.util.OptionalInt.of(51234));
+
+        EcrRegistryDataPlane dataPlane = Mockito.mock(EcrRegistryDataPlane.class);
+        manager = new EcrRegistryManager(containerBuilder, lifecycleManager, logStreamer,
+                containerDetector, currentContainerNetworkResolver, portAllocator, config, regionResolver,
+                dataPlane);
+
+        manager.ensureStarted();
+
+        ArgumentCaptor<String> backendUrlCaptor = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(dataPlane).start(Mockito.eq(BASE_PORT), backendUrlCaptor.capture());
+        assertEquals("http://127.0.0.1:51234", backendUrlCaptor.getValue());
+        assertTrue(manager.isStarted());
+    }
+
+    @Test
+    void ensureStarted_usesGlobalDockerNetworkWhenEcrNetworkUnset() {
+        when(config.services().dockerNetwork()).thenReturn(Optional.of("floci_default"));
+        when(containerDetector.isRunningInContainer()).thenReturn(false);
+
+        ArgumentCaptor<Optional<String>> networkCaptor = ArgumentCaptor.forClass(Optional.class);
+        Mockito.doAnswer(inv -> builder).when(builder).withDockerNetwork(networkCaptor.capture());
+
+        when(lifecycleManager.createAndStart(any()))
+                .thenReturn(new ContainerLifecycleManager.ContainerInfo("new-registry", Map.of()));
+
+        manager.ensureStarted();
+
+        assertEquals(Optional.of("floci_default"), networkCaptor.getValue());
     }
 }

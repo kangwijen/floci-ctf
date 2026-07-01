@@ -98,6 +98,10 @@ public final class ContainerCredentialsHttpServer {
         return uriBuilder.credentialsRelativeUri(credentialToken);
     }
 
+    public boolean injectRelativeUri() {
+        return uriBuilder.injectRelativeUri();
+    }
+
     public CompletableFuture<Void> start() {
         CompletableFuture<Void> future = new CompletableFuture<>();
         int port = portSupplier.getAsInt();

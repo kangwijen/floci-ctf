@@ -30,6 +30,15 @@ public final class ContainerCredentialsUriBuilder {
         return "/v2/credentials/" + credentialToken;
     }
 
+    /**
+     * Whether to inject {@code AWS_CONTAINER_CREDENTIALS_RELATIVE_URI} into workloads.
+     * Botocore prefers that variable and resolves it against {@code http://169.254.170.2}
+     * on port 80. Floci credential servers use 9170/9171/9172 unless configured for port 80.
+     */
+    public boolean injectRelativeUri() {
+        return portSupplier.getAsInt() == 80;
+    }
+
     public String credentialsFullUri(String hostAddress, String credentialToken) {
         if (config.ctf().containerCredentialsUseLinkLocalUri()) {
             int port = portSupplier.getAsInt();
