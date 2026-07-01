@@ -177,8 +177,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Account context | `AccountResolver`, `AccountContextFilter`, `RegionResolver` (presigned `X-Amz-Credential`, 12-digit AKID, STS session keys) |
 | Identity policies | `IamPolicyEvaluator`, `IamActionRegistry`, `IamService`, `ResourceArnBuilder` |
 | Resource policies | `ResourcePolicyResolver`, `PolicyPrincipalMatcher` |
-| STS / federated trust | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `FederatedTokenParser`, `PolicyPrincipalMatcher` |
-| S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator.validatePresignedUrl` |
+| STS / federated trust | `StsQueryHandler`, `AssumeRoleTrustPolicyEvaluator`, `FederatedTokenParser`, `SamlAssertionSignatureVerifier`, `PolicyPrincipalMatcher` |
+| S3 SigV4 presign | `PreSignedUrlGenerator`, `PreSignedUrlFilter`, `SigV4RequestValidator`, `SigV4aPresignSupport`, `SigV4aPublicKeyResolver` |
 | API Gateway integrations | `ApiGatewayExecuteController`, `AwsServiceRouter` (JSON credentials for IAM; path-style SQS query `invokeQuery` + Lambda path invoke; CloudTrail audit on query integrations) |
 | Scoped IAM ARNs | `IamActionRegistry`, `ResourceArnBuilder`, `SnsService`, `SecretsManagerKmsSupport` |
 | KMS grants (HTTP) | `KmsService.isGrantAuthorized`, `IamEnforcementFilter` grant fallback |
@@ -197,9 +197,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- SigV4a presign verification (GET/PUT/POST reject with 403; full ECDSA-P256 verification not implemented)
-- Federated JWT/SAML full X.509/XML signature validation against provider metadata (structural checks + HS256/RS256 when `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`; SAML requires `SignatureValue` when validation is on)
-- ECR repository policy enforcement at registry data plane (docker push/pull; control-plane HTTP IAM wired)
+_(None from the former SigV4a / SAML X.509 / ECR data-plane / presigned POST operator list; see recently closed below.)_
 
 **Recently closed (CTF security / test stability):**
 
@@ -246,6 +244,10 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |
+| SigV4a presign ECDSA-P256 verification (GET query URLs + POST policy) | Closed | `SigV4aPresignSupportTest`, `SigV4aPresignedUrlIntegrationTest`, `S3PresignedPostIntegrationTest` |
+| SAML assertion XML-DSig against pinned IdP metadata PEMs | Closed | `SamlAssertionSignatureVerifierTest`, `StsSamlSignatureValidationIntegrationTest`, `FederatedTokenParserTest` |
+| ECR docker push/pull IAM via registry auth proxy (`/v2/*`) | Closed | `EcrRegistryAuthServiceTest`, `EcrRegistryRouteResolverTest`, `EcrRegistryPolicyDataPlaneIntegrationTest` |
+| Presigned POST `in` / `not-eq` condition operators | Closed | `S3PresignedPostIntegrationTest` |
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
@@ -331,7 +333,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `dynamodb:PutItem` scoped IAM | Closed | `DynamoDbPutItemScopedIntegrationTest` |
 | `sns:Publish` scoped IAM | Closed | `SnsPublishScopedIamIntegrationTest` |
 
-**Still open (downstream / out of emulator scope):** SigV4a presign verification (reject-only today). Full SAML X.509 signature validation against provider metadata. Extended presigned POST condition operators (`in`, `not-eq`) only when compat tests require them.
+**Still open (downstream / out of emulator scope):** None from the prior SigV4a / SAML metadata / ECR data-plane / presigned POST operator backlog.
 
 **Recently closed (S3 presign parity):**
 
