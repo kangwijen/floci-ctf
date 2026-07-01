@@ -43,6 +43,12 @@ public final class FederatedTokenParser {
     private static final Pattern SAML_DIGEST_VALUE = Pattern.compile(
             "<(?:[\\w]+:)?DigestValue[^>]*>([^<]+)</(?:[\\w]+:)?DigestValue>",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAML_NOT_BEFORE = Pattern.compile(
+            "NotBefore\\s*=\\s*\"([^\"]+)\"",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAML_NOT_ON_OR_AFTER = Pattern.compile(
+            "NotOnOrAfter\\s*=\\s*\"([^\"]+)\"",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern SAML_SIGNATURE_VALUE = Pattern.compile(
             "<(?:[\\w]+:)?SignatureValue[^>]*>([^<]+)</(?:[\\w]+:)?SignatureValue>",
             Pattern.CASE_INSENSITIVE);
@@ -92,6 +98,12 @@ public final class FederatedTokenParser {
         }
         String provider = resolveOidcProviderPrincipal(providerId, roleAccountId);
         String providerHost = oidcProviderHost(provider);
+        if (validateFederatedTokens) {
+            String iss = claimAsString(claims.get("iss"));
+            if (iss != null && !issuerMatchesProvider(iss, providerHost, providerId)) {
+                return null;
+            }
+        }
         if (validateFederatedTokens
                 && !verifyJwtCrypto(webIdentityToken, providerHost, validationConfig)) {
             return null;
@@ -133,6 +145,9 @@ public final class FederatedTokenParser {
             return null;
         }
         if (validateFederatedTokens && !validateSamlSignatureStructure(xml)) {
+            return null;
+        }
+        if (validateFederatedTokens && !isSamlAssertionTimeValid(xml)) {
             return null;
         }
         Map<String, String> samlClaims = extractSamlClaims(xml, principalArn);
@@ -538,6 +553,78 @@ public final class FederatedTokenParser {
             return claimAsMultiValue(list);
         }
         return claim.toString();
+    }
+
+    static String sanitizeSessionName(String candidate, String fallback) {
+        String raw = candidate != null && !candidate.isBlank() ? candidate : fallback;
+        if (raw == null || raw.isBlank()) {
+            return "federated-session";
+        }
+        String sanitized = raw.replaceAll("[^a-zA-Z0-9+=,.@-]", "-");
+        if (sanitized.length() > 64) {
+            sanitized = sanitized.substring(0, 64);
+        }
+        return sanitized.isBlank() ? "federated-session" : sanitized;
+    }
+
+    static boolean issuerMatchesProvider(String iss, String providerHost, String providerId) {
+        if (iss == null || iss.isBlank()) {
+            return false;
+        }
+        String host = providerHost == null ? "" : providerHost.trim();
+        if (host.isBlank() && providerId != null && !providerId.isBlank()) {
+            host = providerId.contains(":oidc-provider/")
+                    ? providerId.substring(providerId.indexOf(":oidc-provider/") + ":oidc-provider/".length())
+                    : providerId.trim();
+        }
+        if (host.isBlank()) {
+            return true;
+        }
+        String normalizedIss = iss.trim();
+        if (normalizedIss.equals(host) || normalizedIss.equals("https://" + host) || normalizedIss.equals("http://" + host)) {
+            return true;
+        }
+        return normalizedIss.endsWith("/" + host) || normalizedIss.contains("://" + host);
+    }
+
+    static boolean isSamlAssertionTimeValid(String xml) {
+        Instant now = Instant.now();
+        Instant notBefore = firstSamlInstant(xml, SAML_NOT_BEFORE);
+        if (notBefore != null && now.isBefore(notBefore)) {
+            return false;
+        }
+        Instant notOnOrAfter = firstSamlInstant(xml, SAML_NOT_ON_OR_AFTER);
+        if (notOnOrAfter != null && !now.isBefore(notOnOrAfter)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static Instant firstSamlInstant(String xml, Pattern pattern) {
+        Matcher matcher = pattern.matcher(xml);
+        while (matcher.find()) {
+            Instant parsed = parseSamlInstant(matcher.group(1).trim());
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private static Instant parseSamlInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (Exception ignored) {
+            // SAML often uses offset datetime without Z
+        }
+        try {
+            return java.time.OffsetDateTime.parse(value).toInstant();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static byte[] decodeBase64Url(String value) {

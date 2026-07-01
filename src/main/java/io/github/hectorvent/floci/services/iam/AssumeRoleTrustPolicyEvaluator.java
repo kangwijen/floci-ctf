@@ -91,8 +91,16 @@ public class AssumeRoleTrustPolicyEvaluator {
                 stmtList.add(statements);
             }
             for (JsonNode stmt : stmtList) {
-                if (matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx,
-                        requestedAction, federatedPrincipal)) {
+                if ("Deny".equalsIgnoreCase(stmt.path("Effect").asText())
+                        && matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx,
+                        requestedAction, federatedPrincipal, "Deny")) {
+                    return false;
+                }
+            }
+            for (JsonNode stmt : stmtList) {
+                if ("Allow".equalsIgnoreCase(stmt.path("Effect").asText())
+                        && matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx,
+                        requestedAction, federatedPrincipal, "Allow")) {
                     return true;
                 }
             }
@@ -108,7 +116,18 @@ public class AssumeRoleTrustPolicyEvaluator {
                                           Map<String, String> conditionCtx,
                                           String requestedAction,
                                           String federatedPrincipal) {
-        if (!"Allow".equalsIgnoreCase(stmt.path("Effect").asText())) {
+        return matchesTrustStatement(stmt, callerArn, callerAccount, conditionCtx,
+                requestedAction, federatedPrincipal, "Allow");
+    }
+
+    private boolean matchesTrustStatement(JsonNode stmt,
+                                          String callerArn,
+                                          String callerAccount,
+                                          Map<String, String> conditionCtx,
+                                          String requestedAction,
+                                          String federatedPrincipal,
+                                          String requiredEffect) {
+        if (!requiredEffect.equalsIgnoreCase(stmt.path("Effect").asText())) {
             return false;
         }
         if (!matchesTrustAction(stmt.get("Action"), requestedAction)) {

@@ -52,9 +52,13 @@ users with `create-access-key`, not fake account-id AKIDs.
   `StringEquals` / `StringLike` conditions on that key match any individual audience, matching
   AWS `ForAnyValue` semantics. The bare `aud` key and `:oaud` key retain the first audience value.
   If `azp` is present it overrides the multi-value list for both keys, as AWS specifies.
-- **`nbf` (not-before) enforcement:** When `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`, tokens
-  whose `nbf` claim is in the future are rejected.
+- **`nbf` (not-before) enforcement:** When `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`, tokens whose `nbf` claim is in the future are rejected.
+- **`iss` alignment:** When validation is enabled and the JWT carries an `iss` claim, it must match the OIDC provider host from `ProviderId`.
+- **SAML time conditions:** When validation is enabled, `NotBefore` / `NotOnOrAfter` on the assertion (including `SubjectConfirmationData`) are enforced.
 - **SAML `SignatureValue` trivial-sig rejection:** When validation is enabled, SAML assertions must include a `SignatureValue` element decoding to at least 64 bytes; digest-only `Signature` blocks are rejected.
+- **`AssumeRoleWithSAML` response fields** use parsed assertion claims (`Issuer`, `Subject`, `Audience`) and optional `RoleSessionName` (defaulting from `NameID`).
+- **Invalid federated tokens** on known roles return `InvalidIdentityToken` (400) when parsing fails; trust failures remain `AccessDenied` (403).
+- **Trust policy explicit `Deny`** is evaluated before `Allow` statements.
 
 ## Examples
 

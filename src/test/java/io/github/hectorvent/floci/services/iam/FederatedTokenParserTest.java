@@ -351,6 +351,46 @@ class FederatedTokenParserTest {
                 "SAML with DigestValue but no SignatureValue must be rejected when validation is on");
     }
 
+    @Test
+    void validateFederatedTokensRejectsMismatchedIssuer() {
+        long futureExp = java.time.Instant.now().getEpochSecond() + 3600;
+        String jwt = hs256Jwt(Map.of(
+                "iss", "https://evil.example.com",
+                "aud", "client",
+                "sub", "user",
+                "exp", futureExp), "lab-secret");
+        FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
+                true, Optional.of("lab-secret"), Map.of(), Optional.empty());
+        assertNull(FederatedTokenParser.parseWebIdentityToken(
+                jwt, PROVIDER_HOST, "111122223333", config));
+    }
+
+    @Test
+    void issuerMatchesProviderAcceptsHttpsIssuer() {
+        assertTrue(FederatedTokenParser.issuerMatchesProvider(
+                "https://accounts.google.com", "accounts.google.com", null));
+    }
+
+    @Test
+    void validateFederatedTokensRejectsExpiredSamlAssertion() {
+        java.time.Instant expired = java.time.Instant.now().minusSeconds(3600);
+        byte[] sigBytes = new byte[128];
+        new java.security.SecureRandom().nextBytes(sigBytes);
+        String longSig = Base64.getEncoder().encodeToString(sigBytes);
+        String xml = """
+                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
+                  <saml:Issuer>https://idp.example.com</saml:Issuer>
+                  <saml:Subject><saml:NameID>alice@example.com</saml:NameID></saml:Subject>
+                  <saml:Conditions NotOnOrAfter="%s"/>
+                  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                    <ds:SignatureValue>%s</ds:SignatureValue>
+                  </ds:Signature>
+                </saml:Assertion>""".formatted(expired.toString(), longSig);
+        String assertion = Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
+        assertNull(FederatedTokenParser.parseSamlAssertion(
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true));
+    }
+
     private static String jwt(Map<String, Object> claims) {
         try {
             ObjectMapper mapper = new ObjectMapper();

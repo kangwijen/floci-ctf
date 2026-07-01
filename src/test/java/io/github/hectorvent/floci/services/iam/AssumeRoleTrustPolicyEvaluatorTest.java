@@ -206,6 +206,17 @@ class AssumeRoleTrustPolicyEvaluatorTest {
     }
 
     @Test
+    void explicitDenyOnTrustPolicyBlocksAllow() {
+        String trust = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"%s"},"Action":"sts:AssumeRole"},
+              {"Effect":"Deny","Principal":{"AWS":"%s"},"Action":"sts:AssumeRole"}
+            ]}""".formatted(CALLER, CALLER);
+        assertFalse(evaluator.isAssumeRoleTrusted(trust, CALLER, null),
+                "explicit Deny must win over Allow on trust policy");
+    }
+
+    @Test
     void deniesMismatchedOidcProviderArn() {
         String account = "226767940554";
         String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";

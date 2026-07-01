@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.startsWith;
 
 @QuarkusTest
@@ -56,6 +57,22 @@ class StsWebIdentityTrustIntegrationTest {
 
     @Test
     @Order(2)
+    void assumeRoleWithWebIdentityRejectsInvalidToken() {
+        given()
+            .formParam("Action", "AssumeRoleWithWebIdentity")
+            .formParam("RoleArn", roleArn)
+            .formParam("RoleSessionName", "web-session")
+            .formParam("ProviderId", "accounts.google.com")
+            .formParam("WebIdentityToken", "not-a-jwt")
+            .header("Authorization", STS_AUTH)
+        .when().post("/")
+        .then()
+            .statusCode(400)
+            .body(containsString("InvalidIdentityToken"));
+    }
+
+    @Test
+    @Order(3)
     void assumeRoleWithWebIdentityDeniesWrongSubject() {
         String token = jwt(Map.of("aud", "my-client-id", "sub", "wrong-subject"));
 
@@ -73,7 +90,7 @@ class StsWebIdentityTrustIntegrationTest {
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     void assumeRoleWithWebIdentityAllowsMatchingClaims() {
         String token = jwt(Map.of("aud", "my-client-id", "sub", "user-123"));
 
@@ -94,7 +111,7 @@ class StsWebIdentityTrustIntegrationTest {
     }
 
     @Test
-    @Order(4)
+    @Order(5)
     void assumeRoleWithSamlAllowsMatchingTrustPolicy() {
         String samlRoleArn = "arn:aws:iam::" + ACCOUNT + ":role/saml-role";
         String samlProviderArn = "arn:aws:iam::" + ACCOUNT + ":saml-provider/CorpIdP";
@@ -126,7 +143,11 @@ class StsWebIdentityTrustIntegrationTest {
         .then()
             .statusCode(200)
             .body("AssumeRoleWithSAMLResponse.AssumeRoleWithSAMLResult.Credentials.AccessKeyId",
-                    startsWith("ASIA"));
+                    startsWith("ASIA"))
+            .body("AssumeRoleWithSAMLResponse.AssumeRoleWithSAMLResult.Issuer",
+                    equalTo("https://idp.example.com"))
+            .body("AssumeRoleWithSAMLResponse.AssumeRoleWithSAMLResult.Subject",
+                    equalTo("alice@example.com"));
     }
 
     private static String jwt(Map<String, Object> claims) {

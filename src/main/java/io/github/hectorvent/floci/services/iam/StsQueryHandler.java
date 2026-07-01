@@ -227,7 +227,14 @@ public class StsQueryHandler {
             return trustDeny;
         }
         String roleArn = getParam(params, "RoleArn");
-        String sessionName = "saml-session";
+        String principalArn = getParam(params, "PrincipalArn");
+        FederatedTrustContext federatedContext = FederatedTokenParser.parseSamlAssertion(
+                getParam(params, "SAMLAssertion"),
+                principalArn,
+                FederatedTokenValidationConfig.from(config.ctf()));
+        String sessionName = FederatedTokenParser.sanitizeSessionName(
+                getParam(params, "RoleSessionName"),
+                federatedContext == null ? null : federatedContext.conditionClaims().get("saml:sub"));
         int durationSeconds = getIntParam(params, "DurationSeconds", 3600);
 
         String accessKeyId = "ASIA" + randomId(16);
@@ -241,8 +248,16 @@ public class StsQueryHandler {
         String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId, "assumed-role/" + roleName + "/" + sessionName).toString();
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
 
-        iamService.registerSession(accessKeyId, roleArn, expiration, null, secretKey,
+        String sessionPolicy = getParam(params, "Policy");
+        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
                 assumedRoleId, assumedRoleArn, null, sessionToken, callerAccountId);
+
+        String issuer = federatedContext == null ? null : federatedContext.conditionClaims().get("saml:iss");
+        String audience = federatedContext == null ? null : federatedContext.conditionClaims().get("saml:aud");
+        String subject = federatedContext == null ? null : federatedContext.conditionClaims().get("saml:sub");
+        String nameQualifier = issuer != null && issuer.contains("://")
+                ? issuer.substring(issuer.indexOf("://") + 3)
+                : (issuer != null ? issuer : "saml-qualifier");
 
         String result = new XmlBuilder()
                 .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
@@ -251,11 +266,11 @@ public class StsQueryHandler {
                   .elem("AssumedRoleId", assumedRoleId)
                 .end("AssumedRoleUser")
                 .elem("PackedPolicySize", "0")
-                .elem("Issuer", "https://saml.example.com")
-                .elem("Audience", "urn:amazon:webservices")
-                .elem("NameQualifier", "saml-qualifier")
+                .elem("Issuer", issuer != null ? issuer : "https://saml.example.com")
+                .elem("Audience", audience != null ? audience : "urn:amazon:webservices")
+                .elem("NameQualifier", nameQualifier)
                 .elem("SubjectType", "persistent")
-                .elem("Subject", "saml-subject")
+                .elem("Subject", subject != null ? subject : "saml-subject")
                 .build();
         return Response.ok(AwsQueryResponse.envelope("AssumeRoleWithSAML", AwsNamespaces.STS, result)).build();
     }
@@ -316,9 +331,9 @@ public class StsQueryHandler {
         FederatedTrustContext federatedContext = buildFederatedTrustContext(params, stsAction, roleArn);
         if (isFederatedAssumeRoleAction(stsAction)) {
             if (federatedContext == null) {
-                return AwsQueryResponse.error("AccessDenied",
-                        "User is not authorized to perform: " + stsAction + " on resource: " + roleArn,
-                        AwsNamespaces.STS, 403);
+                return AwsQueryResponse.error("InvalidIdentityToken",
+                        "The identity token is invalid.",
+                        AwsNamespaces.STS, 400);
             }
             try {
                 iamService.validateAssumeRoleTrust(
