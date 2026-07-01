@@ -237,6 +237,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | API Gateway `TestInvokeMethod` with `AWS_PROXY` Lambda integration | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
 | Lambda execution-role creds on Compose bridge (link-local `extra_hosts` + port in URI) | Closed | `ContainerLauncherTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
+| ECR registry reconcile on Compose bridge (`list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |

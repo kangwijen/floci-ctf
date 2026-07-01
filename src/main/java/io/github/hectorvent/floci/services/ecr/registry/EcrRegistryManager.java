@@ -104,18 +104,43 @@ public class EcrRegistryManager {
         return hostPort;
     }
 
-    /** Internal namespace prefix used to isolate cross-account/region repos within the shared registry. */
+    /** Internal registry repository path used for Docker Registry HTTP API calls. */
     public String internalRepoName(String accountId, String region, String repoName) {
-        return accountId + "/" + region + "/" + repoName;
+        if (usesPathUriStyle()) {
+            return accountId + "/" + region + "/" + repoName;
+        }
+        return repoName;
+    }
+
+    private boolean usesPathUriStyle() {
+        return "path".equalsIgnoreCase(config.services().ecr().uriStyle());
     }
 
     /** Returns a {@link RegistryHttpClient} bound to the current registry endpoint. */
     public RegistryHttpClient httpClient() {
-        if (containerDetector.isRunningInContainer()) {
-            return new RegistryHttpClient("http://" + config.services().ecr().registryContainerName()
-                    + ":" + CONTAINER_INTERNAL_PORT);
+        return new RegistryHttpClient(resolveRegistryBaseUrl());
+    }
+
+    private String resolveRegistryBaseUrl() {
+        if (!containerDetector.isRunningInContainer()) {
+            return "http://localhost:" + effectivePort();
         }
-        return new RegistryHttpClient("http://localhost:" + effectivePort());
+
+        String containerName = config.services().ecr().registryContainerName();
+        if (containerId != null) {
+            String preferredNetwork = currentContainerNetworkResolver.resolveNetworkName().orElse(null);
+            var containerIp = lifecycleManager.resolveContainerIp(containerId, preferredNetwork);
+            if (containerIp.isPresent()) {
+                return "http://" + containerIp.get() + ":" + CONTAINER_INTERNAL_PORT;
+            }
+
+            var hostPublished = lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT);
+            if (hostPublished.isPresent()) {
+                return "http://host.docker.internal:" + hostPublished.getAsInt();
+            }
+        }
+
+        return "http://" + containerName + ":" + CONTAINER_INTERNAL_PORT;
     }
 
     /**
@@ -133,6 +158,7 @@ public class EcrRegistryManager {
      */
     public synchronized void ensureStarted() {
         if (started) {
+            runReconcileOnce();
             return;
         }
         String name = config.services().ecr().registryContainerName();
@@ -176,6 +202,7 @@ public class EcrRegistryManager {
             this.containerId = info.containerId();
             this.hostPort = chosenPort;
             this.started = true;
+            ensureConnectedToCurrentNetwork();
             LOG.infov("Started ECR backing registry {0} on host port {1}", name, String.valueOf(chosenPort));
 
             // Attach log streaming (new feature)
@@ -231,6 +258,14 @@ public class EcrRegistryManager {
             return currentContainerNetworkResolver.resolveNetworkName();
         }
         return java.util.Optional.empty();
+    }
+
+    private void ensureConnectedToCurrentNetwork() {
+        if (containerId == null || !containerDetector.isRunningInContainer()) {
+            return;
+        }
+        currentContainerNetworkResolver.resolveNetworkName()
+                .ifPresent(network -> lifecycleManager.connectToNetwork(containerId, network));
     }
 
     private void runReconcileOnce() {
@@ -336,11 +371,10 @@ public class EcrRegistryManager {
     private void adoptExisting(Container existing) {
         this.containerId = existing.getId();
         try {
-            ContainerInfo info = lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
-            var endpoint = info.getEndpoint(CONTAINER_INTERNAL_PORT);
-            if (endpoint != null) {
-                this.hostPort = endpoint.port();
-            }
+            ensureConnectedToCurrentNetwork();
+            lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
+            lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
+                    .ifPresent(port -> this.hostPort = port);
             this.started = true;
             LOG.infov("Adopted existing ECR registry container {0} on host port {1}",
                     containerId, String.valueOf(hostPort));

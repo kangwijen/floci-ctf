@@ -119,16 +119,7 @@ public class ContainerLifecycleManager {
         LOG.infov("Started container {0}", containerId);
 
         if (spec.networkMode() != null && !spec.networkMode().isBlank() && spec.hasPortBindings()) {
-            try {
-                dockerClient.connectToNetworkCmd()
-                        .withContainerId(containerId)
-                        .withNetworkId(spec.networkMode())
-                        .exec();
-                LOG.debugv("Connected container {0} to network {1}", containerId, spec.networkMode());
-            } catch (Exception e) {
-                LOG.warnv("Could not connect container {0} to network {1}: {2}",
-                        containerId, spec.networkMode(), e.getMessage());
-            }
+            connectToNetwork(containerId, spec.networkMode());
         }
 
         Map<Integer, EndpointInfo> endpoints = resolveEndpoints(containerId, spec);
@@ -308,6 +299,69 @@ public class ContainerLifecycleManager {
     public EndpointInfo resolveEndpoint(String containerId, int containerPort) {
         InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
         return resolveEndpoint(inspect, containerPort);
+    }
+
+    /**
+     * Connects a running container to a Docker network. Idempotent when the
+     * container is already attached.
+     */
+    public void connectToNetwork(String containerId, String networkName) {
+        if (networkName == null || networkName.isBlank()) {
+            return;
+        }
+        try {
+            dockerClient.connectToNetworkCmd()
+                    .withContainerId(containerId)
+                    .withNetworkId(networkName)
+                    .exec();
+            LOG.debugv("Connected container {0} to network {1}", containerId, networkName);
+        } catch (Exception e) {
+            LOG.debugv("Could not connect container {0} to network {1}: {2}",
+                    containerId, networkName, e.getMessage());
+        }
+    }
+
+    /**
+     * Returns the host-published port for a container port binding, regardless of
+     * whether Floci runs natively or inside Docker. Used by ECR so repository URIs
+     * always reference the port host-side {@code docker push} clients reach.
+     */
+    public java.util.OptionalInt resolveHostPublishedPort(String containerId, int containerPort) {
+        try {
+            InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
+            var bindings = inspect.getNetworkSettings().getPorts().getBindings();
+            if (bindings == null) {
+                return java.util.OptionalInt.empty();
+            }
+            var binding = bindings.get(ExposedPort.tcp(containerPort));
+            if (binding != null && binding.length > 0) {
+                String hostPortSpec = binding[0].getHostPortSpec();
+                if (hostPortSpec != null && !hostPortSpec.isBlank()) {
+                    return java.util.OptionalInt.of(Integer.parseInt(hostPortSpec));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debugv("Could not resolve host port for container {0} port {1}: {2}",
+                    containerId, containerPort, e.getMessage());
+        }
+        return java.util.OptionalInt.empty();
+    }
+
+    /**
+     * Returns the IP address of a container on the preferred Docker network, or
+     * the first usable network when the preferred name is absent.
+     */
+    public java.util.Optional<String> resolveContainerIp(String containerId, String preferredNetwork) {
+        try {
+            InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
+            String ip = resolveContainerIp(inspect, preferredNetwork);
+            if (ip != null && !ip.isBlank()) {
+                return java.util.Optional.of(ip);
+            }
+        } catch (Exception e) {
+            LOG.debugv("Could not resolve IP for container {0}: {1}", containerId, e.getMessage());
+        }
+        return java.util.Optional.empty();
     }
 
     /**

@@ -42,6 +42,7 @@ class EcrServiceTest {
 
     private EcrService service;
     private EcrRegistryManager registryManager;
+    private EmulatorConfig config;
 
     @BeforeEach
     void setUp() {
@@ -54,7 +55,12 @@ class EcrServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0) + "/" + inv.getArgument(1) + "/" + inv.getArgument(2));
         // ensureStarted() is a no-op on the mock — no Docker calls in any test below.
 
-        EmulatorConfig config = Mockito.mock(EmulatorConfig.class);
+        config = Mockito.mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = Mockito.mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.EcrServiceConfig ecrConfig = Mockito.mock(EmulatorConfig.EcrServiceConfig.class);
+        when(config.services()).thenReturn(services);
+        when(services.ecr()).thenReturn(ecrConfig);
+        when(ecrConfig.uriStyle()).thenReturn("path");
         RegionResolver regionResolver = new RegionResolver(REGION, ACCOUNT);
 
         service = new EcrService(
@@ -320,7 +326,7 @@ class EcrServiceTest {
 
     @Test
     void reconcileFromCatalog_recreatesMissingMetadata() {
-        // Internal namespace pattern: <account>/<region>/<repoName>
+        // Path URI style catalog entries: <account>/<region>/<repoName>
         service.reconcileFromCatalog(List.of(
                 ACCOUNT + "/" + REGION + "/recovered/one",
                 ACCOUNT + "/" + REGION + "/recovered/two",
@@ -332,6 +338,46 @@ class EcrServiceTest {
     }
 
     @Test
+    void hostnameStyleSeededRegistryEntriesAreVisibleViaListAndDescribeImages() throws Exception {
+        String repositoryName = "backend-user";
+        String tag = "1";
+        String digest = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+        String manifest = """
+                {
+                  "schemaVersion": 2,
+                  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                  "config": {
+                    "mediaType": "application/vnd.docker.container.image.v1+json",
+                    "size": 123,
+                    "digest": "sha256:config"
+                  },
+                  "layers": [
+                    {
+                      "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                      "size": 456,
+                      "digest": "sha256:layer"
+                    }
+                  ]
+                }
+                """;
+
+        try (FakeRegistryServer registry = new FakeRegistryServer(repositoryName, tag, digest, manifest)) {
+            when(registryManager.getRepositoryUri(ACCOUNT, REGION, repositoryName))
+                    .thenReturn(ACCOUNT + ".dkr.ecr." + REGION + ".localhost:" + registry.port() + "/" + repositoryName);
+            when(registryManager.httpClient())
+                    .thenReturn(new RegistryHttpClient("http://localhost:" + registry.port()));
+            when(registryManager.internalRepoName(ACCOUNT, REGION, repositoryName)).thenReturn(repositoryName);
+
+            service.createRepository(repositoryName, null, null, null, null, null, null, REGION);
+
+            List<ImageIdentifier> imageIds = service.listImages(repositoryName, null, REGION);
+            assertEquals(1, imageIds.size());
+            assertEquals(tag, imageIds.get(0).getImageTag());
+            assertEquals(digest, imageIds.get(0).getImageDigest());
+        }
+    }
+
+    @Test
     void reconcileFromCatalog_skipsExistingEntries() {
         service.createRepository(REPO, null, null, null, null, null,
                 Map.of("preserved", "yes"), REGION);
@@ -339,6 +385,16 @@ class EcrServiceTest {
         Repository existing = service.describeRepositories(List.of(REPO), null, REGION).get(0);
         // Tag is still present → existing entry was NOT overwritten by reconcile
         assertEquals("yes", existing.getTags().get("preserved"));
+    }
+
+    @Test
+    void reconcileFromCatalog_hostnameStyleUsesBareRepoNames() {
+        when(config.services().ecr().uriStyle()).thenReturn("hostname");
+        service.reconcileFromCatalog(List.of("recovered/app", "another/repo"));
+        List<Repository> repos = service.describeRepositories(null, null, REGION);
+        assertEquals(2, repos.size());
+        assertTrue(repos.stream().anyMatch(r -> "recovered/app".equals(r.getRepositoryName())));
+        assertTrue(repos.stream().anyMatch(r -> "another/repo".equals(r.getRepositoryName())));
     }
 
     private static final class FakeRegistryServer implements AutoCloseable {

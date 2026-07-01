@@ -68,23 +68,39 @@ public class EcrService {
     }
 
     /**
-     * Recreates {@link Repository} metadata entries for any internal-namespaced
-     * repos found in the registry catalog that are missing from local storage.
-     * Internal names are of the form {@code <account>/<region>/<repoName>}.
+     * Recreates {@link Repository} metadata entries for any repos found in the registry
+     * catalog that are missing from local storage.
+     *
+     * <p>Path URI style stores repos as {@code account/region/repoName}. Hostname URI
+     * style (the default) stores bare {@code repoName} paths because account and region
+     * are encoded in the docker hostname.
      */
     void reconcileFromCatalog(List<String> catalog) {
         if (catalog == null || catalog.isEmpty()) {
             return;
         }
         int recreated = 0;
-        for (String internal : catalog) {
-            String[] parts = internal.split("/", 3);
-            if (parts.length < 3) {
-                continue;
+        boolean pathStyle = "path".equalsIgnoreCase(config.services().ecr().uriStyle());
+        for (String catalogEntry : catalog) {
+            String account;
+            String region;
+            String repoName;
+            if (pathStyle) {
+                String[] parts = catalogEntry.split("/", 3);
+                if (parts.length < 3) {
+                    continue;
+                }
+                account = parts[0];
+                region = parts[1];
+                repoName = parts[2];
+            } else {
+                if (catalogEntry.isBlank()) {
+                    continue;
+                }
+                account = regionResolver.getAccountId();
+                region = regionResolver.getDefaultRegion();
+                repoName = catalogEntry;
             }
-            String account = parts[0];
-            String region = parts[1];
-            String repoName = parts[2];
             String key = key(region, account, repoName);
             if (repoStore.get(key).isPresent()) {
                 continue;

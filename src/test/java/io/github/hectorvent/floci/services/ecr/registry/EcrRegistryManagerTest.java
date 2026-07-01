@@ -38,6 +38,7 @@ class EcrRegistryManagerTest {
     private ContainerLifecycleManager lifecycleManager;
     private ContainerDetector containerDetector;
     private CurrentContainerNetworkResolver currentContainerNetworkResolver;
+    private EmulatorConfig.EcrServiceConfig ecrConfig;
     private EcrRegistryManager manager;
 
     @BeforeEach
@@ -59,18 +60,19 @@ class EcrRegistryManagerTest {
         RegionResolver regionResolver = new RegionResolver("us-east-1", "000000000000");
 
         EmulatorConfig config = Mockito.mock(EmulatorConfig.class);
-        EmulatorConfig.EcrServiceConfig ecr = Mockito.mock(EmulatorConfig.EcrServiceConfig.class);
+        ecrConfig = Mockito.mock(EmulatorConfig.EcrServiceConfig.class);
         EmulatorConfig.StorageConfig storage = Mockito.mock(EmulatorConfig.StorageConfig.class);
         when(config.services()).thenReturn(Mockito.mock(EmulatorConfig.ServicesConfig.class));
-        when(config.services().ecr()).thenReturn(ecr);
+        when(config.services().ecr()).thenReturn(ecrConfig);
         when(config.storage()).thenReturn(storage);
         // Empty host-persistent-path selects named-volume mode (no host bind-mount logic).
         when(storage.hostPersistentPath()).thenReturn("");
-        when(ecr.registryContainerName()).thenReturn(REGISTRY_NAME);
-        when(ecr.registryImage()).thenReturn("registry:2");
-        when(ecr.registryBasePort()).thenReturn(BASE_PORT);
-        when(ecr.registryMaxPort()).thenReturn(MAX_PORT);
-        when(ecr.dockerNetwork()).thenReturn(Optional.empty());
+        when(ecrConfig.registryContainerName()).thenReturn(REGISTRY_NAME);
+        when(ecrConfig.registryImage()).thenReturn("registry:2");
+        when(ecrConfig.registryBasePort()).thenReturn(BASE_PORT);
+        when(ecrConfig.registryMaxPort()).thenReturn(MAX_PORT);
+        when(ecrConfig.dockerNetwork()).thenReturn(Optional.empty());
+        when(ecrConfig.uriStyle()).thenReturn("hostname");
 
         manager = new EcrRegistryManager(containerBuilder, lifecycleManager, logStreamer,
                 containerDetector, currentContainerNetworkResolver, portAllocator, config, regionResolver);
@@ -95,9 +97,29 @@ class EcrRegistryManagerTest {
     }
 
     @Test
-    void httpClient_usesRegistryContainerDnsWhenRunningInsideDocker() {
+    void httpClient_usesRegistryContainerDnsWhenRunningInsideDockerBeforeStart() {
         when(containerDetector.isRunningInContainer()).thenReturn(true);
 
         assertEquals("http://" + REGISTRY_NAME + ":5000", manager.httpClient().baseUrl());
+    }
+
+    @Test
+    void httpClient_usesLocalhostWhenRunningOnDockerHost() {
+        when(containerDetector.isRunningInContainer()).thenReturn(false);
+
+        assertEquals("http://localhost:" + BASE_PORT, manager.httpClient().baseUrl());
+    }
+
+    @Test
+    void internalRepoName_usesBareRepoForHostnameUriStyle() {
+        assertEquals("floci-it/app", manager.internalRepoName("000000000000", "us-east-1", "floci-it/app"));
+    }
+
+    @Test
+    void internalRepoName_usesAccountRegionPrefixForPathUriStyle() {
+        when(ecrConfig.uriStyle()).thenReturn("path");
+
+        assertEquals("000000000000/us-east-1/floci-it/app",
+                manager.internalRepoName("000000000000", "us-east-1", "floci-it/app"));
     }
 }
