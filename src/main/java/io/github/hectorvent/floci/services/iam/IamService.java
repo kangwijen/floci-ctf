@@ -374,6 +374,7 @@ public class IamService implements SessionAccountLookup {
                         "The role with name " + roleName + " cannot be found.", 404));
     }
 
+
     public IamRole getRoleByArn(String roleArn) {
         AwsArnUtils.Arn parsed = AwsArnUtils.parse(roleArn);
         if (!"iam".equals(parsed.service())) {
@@ -423,6 +424,19 @@ public class IamService implements SessionAccountLookup {
                             + roleArn,
                     403);
         }
+    }
+
+    /**
+     * Looks up a role by name in a specific account's namespace, without throwing when absent.
+     *
+     * <p>Roles are account-namespaced, so a cross-account caller (e.g. STS AssumeRole) must resolve
+     * the role in its owning account — taken from the role ARN — rather than the request's account.
+     */
+    public Optional<IamRole> findRole(String accountId, String roleName) {
+        if (roles instanceof AccountAwareStorageBackend<IamRole> aware) {
+            return aware.getForAccount(accountId, roleName);
+        }
+        return roles.get(roleName);
     }
 
     public void deleteRole(String roleName) {

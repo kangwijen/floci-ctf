@@ -20,11 +20,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 @ApplicationScoped
 public class CloudWatchLogsService {
 
     private static final Logger LOG = Logger.getLogger(CloudWatchLogsService.class);
+
+    /**
+     * Orders events by timestamp, then by ingestion sequence so that events sharing the same
+     * millisecond timestamp are returned in the order they were ingested (matching CloudWatch Logs).
+     * Falls back to {@code eventId} so ordering stays deterministic even for legacy events that
+     * predate {@code sequence} and therefore share the default value of {@code 0}.
+     */
+    private static final Comparator<LogEvent> EVENT_ORDER =
+            Comparator.comparingLong(LogEvent::getTimestamp)
+                    .thenComparingLong(LogEvent::getSequence)
+                    .thenComparing(LogEvent::getEventId);
 
     private final StorageBackend<String, LogGroup> groupStore;
     private final StorageBackend<String, LogStream> streamStore;
@@ -33,6 +45,11 @@ public class CloudWatchLogsService {
     private final RegionResolver regionResolver;
     private final CloudWatchLogsSubscriptionDispatcher subscriptionDispatcher;
     private final int maxEventsPerQuery;
+    /**
+     * Monotonic counter assigning an ingestion sequence to each stored event. Seeded from
+     * the highest sequence already in the store so ordering survives persistence reloads.
+     */
+    private final AtomicLong ingestionSequence;
 
     @Inject
     public CloudWatchLogsService(StorageFactory storageFactory,
@@ -68,6 +85,11 @@ public class CloudWatchLogsService {
         this.maxEventsPerQuery = maxEventsPerQuery;
         this.regionResolver = regionResolver;
         this.subscriptionDispatcher = subscriptionDispatcher;
+        long maxSequence = eventStore.scan(k -> true).stream()
+                .mapToLong(LogEvent::getSequence)
+                .max()
+                .orElse(0L);
+        this.ingestionSequence = new AtomicLong(maxSequence);
     }
 
     // ──────────────────────────── Log Groups ────────────────────────────
@@ -253,6 +275,7 @@ public class CloudWatchLogsService {
             logEvent.setTimestamp(ts);
             logEvent.setMessage(msg);
             logEvent.setIngestionTime(now);
+            logEvent.setSequence(ingestionSequence.incrementAndGet());
 
             String eventKey = eventKey(region, groupName, streamName, ts, logEvent.getEventId());
             eventStore.put(eventKey, logEvent);
@@ -308,7 +331,7 @@ public class CloudWatchLogsService {
 
         String eventPrefix = eventKeyPrefix(region, groupName, streamName);
         List<LogEvent> all = eventStore.scan(k -> k.startsWith(eventPrefix));
-        all.sort(Comparator.comparingLong(LogEvent::getTimestamp));
+        all.sort(EVENT_ORDER);
 
         List<LogEvent> filtered = all.stream()
                 .filter(e -> (startTime == null || e.getTimestamp() >= startTime)
@@ -369,7 +392,7 @@ public class CloudWatchLogsService {
             all.addAll(eventStore.scan(k -> k.startsWith(groupPrefix)));
         }
 
-        all.sort(Comparator.comparingLong(LogEvent::getTimestamp));
+        all.sort(EVENT_ORDER);
 
         List<LogEvent> result = all.stream()
                 .filter(e -> (startTime == null || e.getTimestamp() >= startTime)

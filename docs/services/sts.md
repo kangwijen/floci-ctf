@@ -20,6 +20,30 @@
 |---|---|---|
 | `FLOCI_SERVICES_STS_ENABLED` | `true` | Enable or disable the service |
 
+## Trust Policy Enforcement
+
+By default `AssumeRole` succeeds for any caller. When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`,
+`AssumeRole` evaluates the target role's trust policy (`AssumeRolePolicyDocument`) against the caller
+and returns `AccessDenied` if it is not permitted. AWS principal forms are matched — `"*"`, an
+account id, an account-root ARN (`arn:aws:iam::<acct>:root`), and exact principal ARNs — and an
+explicit `Deny` always wins. Both `Action` and `NotAction` elements are honored when matching
+`sts:AssumeRole`. Roles that Floci has no record of stay permissive, so this only affects roles
+created through IAM with a real trust policy.
+
+### Known limitations (upstream default)
+
+- **`Condition` blocks are not evaluated** by upstream `AssumeRolePolicyEvaluator`. A trust policy
+  that requires `sts:ExternalId` is matched on its principal alone; the `ExternalId` request
+  parameter is ignored. This matches moto/LocalStack.
+- **Only the trust policy is checked.** Cross-account `AssumeRole` in AWS also requires the caller's
+  own identity policy to allow `sts:AssumeRole`; that side is not enforced.
+
+Under CTF hardening (`FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`), `StsQueryHandler` uses
+`AssumeRoleTrustPolicyEvaluator` instead: `sts:ExternalId` conditions are enforced, federated
+WebIdentity/SAML trust is evaluated, and unknown roles (not in IAM storage) stay permissive.
+Strict mode still requires registered access keys; integration tests must use operator root or IAM
+users with `create-access-key`, not fake account-id AKIDs.
+
 ## Examples
 
 ```bash

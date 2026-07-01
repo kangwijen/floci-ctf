@@ -296,6 +296,11 @@ public class StsQueryHandler {
         if (roleArn == null || roleArn.isBlank()) {
             return null;
         }
+        String roleName = roleArn.contains("/") ? roleArn.substring(roleArn.lastIndexOf('/') + 1) : "";
+        String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
+        if (roleName.isBlank() || iamService.findRole(roleAccountId, roleName).isEmpty()) {
+            return null;
+        }
         FederatedTrustContext federatedContext = buildFederatedTrustContext(params, stsAction, roleArn);
         if (isFederatedAssumeRoleAction(stsAction)) {
             if (federatedContext == null) {
