@@ -13,8 +13,11 @@ import io.github.hectorvent.floci.services.ecr.model.ImageIdentifier;
 import io.github.hectorvent.floci.services.ecr.model.ImageMetadata;
 import io.github.hectorvent.floci.services.ecr.model.Image;
 import io.github.hectorvent.floci.services.ecr.model.Repository;
+import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryAuthSession;
+import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryAuthTokenStore;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.ecr.registry.RegistryHttpClient;
+import io.github.hectorvent.floci.services.iam.IamService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -28,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.security.SecureRandom;
+import java.util.UUID;
 
 @ApplicationScoped
 public class EcrService {
@@ -35,6 +40,7 @@ public class EcrService {
     private static final Logger LOG = Logger.getLogger(EcrService.class);
     private static final Pattern REPO_NAME = Pattern.compile(
             "(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*");
+    private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
     private static final int MAX_REPO_NAME_LENGTH = 256;
 
     private final StorageBackend<String, Repository> repoStore;
@@ -42,29 +48,37 @@ public class EcrService {
     private final EcrRegistryManager registryManager;
     private final EmulatorConfig config;
     private final RegionResolver regionResolver;
+    private final EcrRegistryAuthTokenStore registryAuthTokenStore;
+    private final IamService iamService;
 
     @Inject
     public EcrService(StorageFactory factory,
                       EcrRegistryManager registryManager,
                       EmulatorConfig config,
-                      RegionResolver regionResolver) {
+                      RegionResolver regionResolver,
+                      EcrRegistryAuthTokenStore registryAuthTokenStore,
+                      IamService iamService) {
         this(factory.create("ecr", "repositories.json",
                         new TypeReference<Map<String, Repository>>() {}),
                 factory.create("ecr", "image-metadata.json",
                         new TypeReference<Map<String, ImageMetadata>>() {}),
-                registryManager, config, regionResolver);
+                registryManager, config, regionResolver, registryAuthTokenStore, iamService);
     }
 
     EcrService(StorageBackend<String, Repository> repoStore,
                StorageBackend<String, ImageMetadata> imageMetaStore,
                EcrRegistryManager registryManager,
                EmulatorConfig config,
-               RegionResolver regionResolver) {
+               RegionResolver regionResolver,
+               EcrRegistryAuthTokenStore registryAuthTokenStore,
+               IamService iamService) {
         this.repoStore = repoStore;
         this.imageMetaStore = imageMetaStore;
         this.registryManager = registryManager;
         this.config = config;
         this.regionResolver = regionResolver;
+        this.registryAuthTokenStore = registryAuthTokenStore;
+        this.iamService = iamService;
         this.registryManager.setReconcileHook(this::reconcileFromCatalog);
     }
 
@@ -234,12 +248,45 @@ public class EcrService {
     // ============================================================
 
     public AuthorizationData getAuthorizationToken() {
+        return getAuthorizationToken(null);
+    }
+
+    public AuthorizationData getAuthorizationToken(String accessKeyId) {
         registryManager.ensureStarted();
-        String token = Base64.getEncoder()
-                .encodeToString("AWS:floci".getBytes(StandardCharsets.UTF_8));
-        Instant expires = Instant.now().plusSeconds(12 * 60 * 60);
+        int ttlSeconds = config.services().ecr().registryAuthTokenTtlSeconds();
+        Instant expires = Instant.now().plusSeconds(ttlSeconds);
         String proxy = registryManager.getProxyEndpoint();
+
+        if (!registryAuthEffective()) {
+            String token = Base64.getEncoder()
+                    .encodeToString("AWS:floci".getBytes(StandardCharsets.UTF_8));
+            return new AuthorizationData(token, expires, proxy);
+        }
+
+        String accountId = regionResolver.getAccountId();
+        String region = regionResolver.getDefaultRegion();
+        String principalArn = iamService.resolveCallerArn(accessKeyId)
+                .orElse("arn:aws:iam::" + accountId + ":root");
+        String effectiveAkid = accessKeyId != null && !accessKeyId.isBlank()
+                ? accessKeyId
+                : syntheticAccessKeyId();
+        EcrRegistryAuthSession session = new EcrRegistryAuthSession(
+                principalArn, effectiveAkid, accountId, region, expires);
+        String password = registryAuthTokenStore.issue(session);
+        String token = Base64.getEncoder()
+                .encodeToString(("AWS:" + password).getBytes(StandardCharsets.UTF_8));
         return new AuthorizationData(token, expires, proxy);
+    }
+
+    private boolean registryAuthEffective() {
+        return config.services().ecr().registryAuthEnabled()
+                && config.services().iam().enforcementEnabled();
+    }
+
+    private static String syntheticAccessKeyId() {
+        byte[] bytes = new byte[8];
+        TOKEN_RANDOM.nextBytes(bytes);
+        return "AKIA" + UUID.nameUUIDFromBytes(bytes).toString().replace("-", "").substring(0, 16).toUpperCase();
     }
 
     // ============================================================

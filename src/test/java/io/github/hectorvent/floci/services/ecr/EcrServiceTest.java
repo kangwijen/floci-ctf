@@ -9,8 +9,10 @@ import io.github.hectorvent.floci.services.ecr.model.ImageIdentifier;
 import io.github.hectorvent.floci.services.ecr.model.AuthorizationData;
 import io.github.hectorvent.floci.services.ecr.model.ImageMetadata;
 import io.github.hectorvent.floci.services.ecr.model.Repository;
+import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryAuthTokenStore;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.ecr.registry.RegistryHttpClient;
+import io.github.hectorvent.floci.services.iam.IamService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -62,14 +64,22 @@ class EcrServiceTest {
         when(config.services()).thenReturn(services);
         when(services.ecr()).thenReturn(ecrConfig);
         when(ecrConfig.uriStyle()).thenReturn("path");
+        when(ecrConfig.registryAuthEnabled()).thenReturn(false);
+        EmulatorConfig.IamServiceConfig iamConfig = Mockito.mock(EmulatorConfig.IamServiceConfig.class);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(false);
         RegionResolver regionResolver = new RegionResolver(REGION, ACCOUNT);
+        EcrRegistryAuthTokenStore tokenStore = new EcrRegistryAuthTokenStore();
+        IamService iamService = Mockito.mock(IamService.class);
 
         service = new EcrService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
                 registryManager,
                 config,
-                regionResolver);
+                regionResolver,
+                tokenStore,
+                iamService);
     }
 
     // ------------------------------------------------------------

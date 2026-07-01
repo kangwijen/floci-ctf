@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsErrorResponse;
 import io.github.hectorvent.floci.services.ecr.model.AuthorizationData;
@@ -31,21 +32,23 @@ public class EcrJsonHandler {
 
     private final EcrService service;
     private final ObjectMapper objectMapper;
+    private final AccountResolver accountResolver;
 
     @Inject
-    public EcrJsonHandler(EcrService service, ObjectMapper objectMapper) {
+    public EcrJsonHandler(EcrService service, ObjectMapper objectMapper, AccountResolver accountResolver) {
         this.service = service;
         this.objectMapper = objectMapper;
+        this.accountResolver = accountResolver;
     }
 
-    public Response handle(String action, JsonNode request, String region) {
+    public Response handle(String action, JsonNode request, String region, String authorizationHeader) {
         return switch (action) {
             case "CreateRepository" -> handleCreateRepository(request, region);
             case "DescribeRepositories" -> handleDescribeRepositories(request, region);
             case "BatchGetRepositoryScanningConfiguration" ->
                     handleBatchGetRepositoryScanningConfiguration(request, region);
             case "DeleteRepository" -> handleDeleteRepository(request, region);
-            case "GetAuthorizationToken" -> handleGetAuthorizationToken(request);
+            case "GetAuthorizationToken" -> handleGetAuthorizationToken(request, authorizationHeader);
             case "ListImages" -> handleListImages(request, region);
             case "DescribeImages" -> handleDescribeImages(request, region);
             case "BatchGetImage" -> handleBatchGetImage(request, region);
@@ -141,8 +144,9 @@ public class EcrJsonHandler {
         return Response.ok(response).build();
     }
 
-    private Response handleGetAuthorizationToken(JsonNode request) {
-        AuthorizationData data = service.getAuthorizationToken();
+    private Response handleGetAuthorizationToken(JsonNode request, String authorizationHeader) {
+        String accessKeyId = accountResolver.extractAccessKeyId(authorizationHeader);
+        AuthorizationData data = service.getAuthorizationToken(accessKeyId);
         ObjectNode response = objectMapper.createObjectNode();
         ArrayNode arr = objectMapper.createArrayNode();
         ObjectNode entry = objectMapper.createObjectNode();

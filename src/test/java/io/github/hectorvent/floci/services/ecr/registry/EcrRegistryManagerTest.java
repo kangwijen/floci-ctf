@@ -73,9 +73,14 @@ class EcrRegistryManagerTest {
         when(ecrConfig.registryMaxPort()).thenReturn(MAX_PORT);
         when(ecrConfig.dockerNetwork()).thenReturn(Optional.empty());
         when(ecrConfig.uriStyle()).thenReturn("hostname");
+        when(ecrConfig.registryAuthEnabled()).thenReturn(false);
+        EmulatorConfig.IamServiceConfig iamConfig = Mockito.mock(EmulatorConfig.IamServiceConfig.class);
+        when(config.services().iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(false);
 
         manager = new EcrRegistryManager(containerBuilder, lifecycleManager, logStreamer,
-                containerDetector, currentContainerNetworkResolver, portAllocator, config, regionResolver);
+                containerDetector, currentContainerNetworkResolver, portAllocator, config, regionResolver,
+                Mockito.mock(EcrRegistryDataPlane.class));
     }
 
     @Test

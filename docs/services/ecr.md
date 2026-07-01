@@ -31,7 +31,7 @@
 
 - **Real OCI registry backing.** A single shared `registry:2` container per Floci instance serves all repositories. The container is started lazily on the first ECR API call and reused across Floci restarts (`keep-running-on-shutdown: true` by default), so pushed image bytes survive restarts.
 - **Loopback URI scheme.** Repository URIs follow `<account>.dkr.ecr.<region>.localhost:<registryPort>/<repoName>`. RFC 6761 reserves `*.localhost` to resolve to the loopback address, and the docker daemon auto-trusts loopback as an insecure registry, so **no daemon configuration changes are required** — `docker push` and `docker pull` work out of the box. A `path` URI style fallback (`localhost:<port>/<account>/<region>/<repo>`) is available via `floci.services.ecr.uri-style: path` for environments where `*.localhost` resolution misbehaves.
-- **Authorization.** `GetAuthorizationToken` returns `Base64("AWS:floci")` plus a proxy endpoint. The backing `registry:2` runs without auth, so any `aws ecr get-login-password | docker login` succeeds.
+- **Authorization.** `GetAuthorizationToken` returns a caller-bound `Base64("AWS:<token>")` plus a proxy endpoint. When `floci.services.ecr.registry-auth-enabled=true` (default) and IAM enforcement is on, Floci fronts the registry with a Vert.x proxy on the public registry port: clients authenticate with the issued token, Floci maps OCI routes to `ecr:*` IAM actions, and evaluates identity plus repository policies before forwarding to the internal `registry:2` sidecar. Operator root credentials bypass IAM. With auth disabled or enforcement off, behavior matches upstream (open registry).
 - **Manifest format negotiation.** `BatchGetImage` forwards the caller's `acceptedMediaTypes` as the upstream `Accept` header. Modern OCI manifests (`application/vnd.oci.image.manifest.v1+json`) and Docker v2 schema 2 are both supported.
 - **Cross-account / cross-region isolation.** With `uri-style: path`, the backing registry namespaces repositories as `<account>/<region>/<repoName>`. With the default hostname URI style, account and region are encoded in the docker hostname and registry paths use bare `<repoName>` (matching real AWS ECR and stock docker clients).
 - **Reconcile on first start.** When the registry container starts, Floci queries `GET /v2/_catalog` and recreates `Repository` metadata entries for any namespaces present in the registry but missing from local storage. This means image bytes are never orphaned across restarts.
@@ -50,6 +50,8 @@
 | `FLOCI_SERVICES_ECR_KEEP_RUNNING_ON_SHUTDOWN` | `true` | Leave the registry container running so the next Floci start adopts it |
 | `FLOCI_SERVICES_ECR_URI_STYLE` | `hostname` | `hostname` = `*.dkr.ecr.<region>.localhost`; `path` = `localhost:<port>/<account>/<region>/<repo>` |
 | `FLOCI_SERVICES_ECR_TLS_ENABLED` | `false` | Reserved for future ACM-backed TLS |
+| `FLOCI_SERVICES_ECR_REGISTRY_AUTH_ENABLED` | `true` | When `true` with IAM enforcement, proxy docker `/v2/*` through Floci for token + policy checks |
+| `FLOCI_SERVICES_ECR_REGISTRY_AUTH_TOKEN_TTL_SECONDS` | `43200` | TTL for issued registry bearer tokens |
 
 ### Docker Compose port mapping
 

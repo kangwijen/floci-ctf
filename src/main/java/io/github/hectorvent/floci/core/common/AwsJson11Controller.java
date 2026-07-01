@@ -208,7 +208,7 @@ public class AwsJson11Controller {
                 case "cognito-idp" -> cognitoJsonHandler.handle(action, request, region);
                 case "acm" -> acmJsonHandler.handle(action, request, region);
                 case "ecs" -> ecsJsonHandler.handle(action, request, region);
-                case "ecr" -> ecrJsonHandler.handle(action, request, region);
+                case "ecr" -> ecrJsonHandler.handle(action, request, region, httpHeaders.getHeaderString("Authorization"));
                 case "glue" -> glueJsonHandler.handle(action, request, region);
                 case "athena" -> athenaJsonHandler.handle(action, request, region);
                 case "firehose" -> firehoseJsonHandler.handle(action, request, region);

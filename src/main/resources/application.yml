@@ -151,6 +151,10 @@ floci:
     # federated-jwt-hmac-secrets:          # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>
     #   accounts.google.com: lab-secret
     # federated-jwt-rs256-public-key-pem:  # FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM
+    # federated-saml-signing-cert-pem:     # FLOCI_CTF_FEDERATED_SAML_SIGNING_CERT_PEM
+    # federated-saml-signing-certs:        # FLOCI_CTF_FEDERATED_SAML_SIGNING_CERTS__<provider_name>
+    # sigv4a-signing-public-key-pem:       # FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEY_PEM (root AKIA SigV4a verify)
+    # sigv4a-signing-public-keys:          # FLOCI_CTF_SIGV4A_SIGNING_PUBLIC_KEYS__<access_key_id>
 
   auth:
     validate-signatures: false
@@ -344,6 +348,9 @@ floci:
       tls-enabled: false
       keep-running-on-shutdown: true
       uri-style: hostname
+      # When true and IAM enforcement is on, docker push/pull requires caller-bound registry tokens and repository IAM.
+      registry-auth-enabled: true
+      registry-auth-token-ttl-seconds: 43200
     ui:
       enabled: true
       image: "floci/floci-ui:latest"

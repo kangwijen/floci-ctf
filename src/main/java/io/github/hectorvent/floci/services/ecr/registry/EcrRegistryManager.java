@@ -55,10 +55,12 @@ public class EcrRegistryManager {
     private final PortAllocator portAllocator;
     private final EmulatorConfig config;
     private final RegionResolver regionResolver;
+    private final EcrRegistryDataPlane dataPlane;
 
     private volatile boolean started;
     private volatile boolean reconciled;
     private volatile int hostPort;
+    private volatile int internalBackendPort;
     private volatile String containerId;
     private volatile Closeable logStream;
     private volatile java.util.function.Consumer<List<String>> reconcileHook;
@@ -71,7 +73,8 @@ public class EcrRegistryManager {
                               CurrentContainerNetworkResolver currentContainerNetworkResolver,
                               PortAllocator portAllocator,
                               EmulatorConfig config,
-                              RegionResolver regionResolver) {
+                              RegionResolver regionResolver,
+                              EcrRegistryDataPlane dataPlane) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
@@ -80,7 +83,14 @@ public class EcrRegistryManager {
         this.portAllocator = portAllocator;
         this.config = config;
         this.regionResolver = regionResolver;
+        this.dataPlane = dataPlane;
         this.hostPort = config.services().ecr().registryBasePort();
+    }
+
+    /** True when the IAM-aware registry auth proxy fronts the backing registry container. */
+    public boolean registryAuthProxyEnabled() {
+        return config.services().ecr().registryAuthEnabled()
+                && config.services().iam().enforcementEnabled();
     }
 
     /** Returns the docker-pullable repository URI for the given account/region/name. */
@@ -123,7 +133,12 @@ public class EcrRegistryManager {
 
     private String resolveRegistryBaseUrl() {
         if (!containerDetector.isRunningInContainer()) {
-            return "http://localhost:" + effectivePort();
+            if (!registryAuthProxyEnabled()) {
+                return "http://localhost:" + effectivePort();
+            }
+            if (internalBackendPort > 0) {
+                return "http://127.0.0.1:" + internalBackendPort;
+            }
         }
 
         String containerName = config.services().ecr().registryContainerName();
@@ -134,9 +149,11 @@ public class EcrRegistryManager {
                 return "http://" + containerIp.get() + ":" + CONTAINER_INTERNAL_PORT;
             }
 
-            var hostPublished = lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT);
-            if (hostPublished.isPresent()) {
-                return "http://host.docker.internal:" + hostPublished.getAsInt();
+            if (!registryAuthProxyEnabled()) {
+                var hostPublished = lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT);
+                if (hostPublished.isPresent()) {
+                    return "http://host.docker.internal:" + hostPublished.getAsInt();
+                }
             }
         }
 
@@ -189,9 +206,15 @@ public class EcrRegistryManager {
             ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(image)
                     .withName(name)
                     .withEnv(env)
-                    .withPortBinding(CONTAINER_INTERNAL_PORT, chosenPort)
                     .withDockerNetwork(resolveRegistryDockerNetwork())
                     .withLogRotation();
+
+            if (!registryAuthProxyEnabled()) {
+                specBuilder.withPortBinding(CONTAINER_INTERNAL_PORT, chosenPort);
+            } else if (!containerDetector.isRunningInContainer()) {
+                // Loopback-only backend port for the auth proxy; docker clients use chosenPort.
+                specBuilder.withDynamicPort(CONTAINER_INTERNAL_PORT);
+            }
 
             // Handle persistence mounting based on storage configuration
             addPersistenceMounts(specBuilder, env);
@@ -203,6 +226,13 @@ public class EcrRegistryManager {
             this.hostPort = chosenPort;
             this.started = true;
             ensureConnectedToCurrentNetwork();
+            if (registryAuthProxyEnabled() && !containerDetector.isRunningInContainer()) {
+                lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
+                        .ifPresent(port -> this.internalBackendPort = port);
+            }
+            if (registryAuthProxyEnabled()) {
+                dataPlane.start(chosenPort, resolveRegistryBaseUrl());
+            }
             LOG.infov("Started ECR backing registry {0} on host port {1}", name, String.valueOf(chosenPort));
 
             // Attach log streaming (new feature)
@@ -358,6 +388,7 @@ public class EcrRegistryManager {
 
     /** Stops the container if {@code keepRunningOnShutdown=false}. Called from EmulatorLifecycle hooks. */
     public void shutdown() {
+        dataPlane.stop();
         if (!started || containerId == null) {
             return;
         }
@@ -372,9 +403,17 @@ public class EcrRegistryManager {
         this.containerId = existing.getId();
         try {
             ensureConnectedToCurrentNetwork();
-            lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
-            lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
-                    .ifPresent(port -> this.hostPort = port);
+            if (registryAuthProxyEnabled()) {
+                int chosenPort = portAllocator.allocate(
+                        config.services().ecr().registryBasePort(),
+                        config.services().ecr().registryMaxPort());
+                this.hostPort = chosenPort;
+                dataPlane.start(chosenPort, resolveRegistryBaseUrl());
+            } else {
+                lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
+                lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
+                        .ifPresent(port -> this.hostPort = port);
+            }
             this.started = true;
             LOG.infov("Adopted existing ECR registry container {0} on host port {1}",
                     containerId, String.valueOf(hostPort));
