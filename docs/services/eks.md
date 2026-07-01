@@ -46,7 +46,7 @@ This webhook is enabled by default (`iam-auth-webhook: true`). Set it to `false`
 
 When `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` is `true` (default in [docker-compose.yml](../../docker-compose.yml)), `POST /_floci/eks/token-webhook` returns **404** like other `/_floci/*` routes. Operators who need kubectl against real-mode clusters must set `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=false` or run k3s in mock mode.
 
-With `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, `EksTokenAuthenticator` requires a plausible presigned STS `GetCallerIdentity` URL inside `k8s-aws-v1.*` tokens (upstream accepted any token as cluster-admin). See [AGENTS.md](../../AGENTS.md) and [iam.md](./iam.md#ctf-hardening).
+With `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, `EksTokenValidator` verifies SigV4 on the embedded presigned STS `GetCallerIdentity` URL inside `k8s-aws-v1.*` tokens (upstream accepted any token as cluster-admin). Rejects expired URLs, unknown access keys, tampered signatures, and SigV4a. Regression: `EksTokenSigV4IntegrationTest`. See [AGENTS.md](../../AGENTS.md) and [iam.md](./iam.md#ctf-hardening).
 
 !!! note "Webhook reachability & networking"
     The k3s API server must be able to reach Floci's webhook URL. When Floci runs natively, k3s containers reach it via `host.docker.internal`; when Floci runs in a container (`floci start`), Floci and the k3s containers share a Docker network. The k3s network is taken from `FLOCI_SERVICES_EKS_DOCKER_NETWORK` if set, otherwise the global `FLOCI_SERVICES_DOCKER_NETWORK`, otherwise the network Floci is itself attached to (auto-detected) — so no EKS-specific network configuration is required in the standard compose setup.

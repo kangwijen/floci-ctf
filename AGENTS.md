@@ -27,7 +27,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 
 **Fork-only HTTP auth (`core.common`):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `SigV4RequestValidator`, `SecurityBypassPaths`, `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode`, `ContainerEnvHardening`, `OperatorCredentialEnv`, `ClientSourceIpResolver`, `AccountResolver`, `AccountContextFilter`, `CtfVelocityEngineFactory` (VTL `SecureUberspector` sandbox).
 
-**Related fork deltas:** `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA, not upstream account-id signing), `ResourcePolicyResolver`, `PolicyPrincipalMatcher`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `StsQueryHandler`, `SecretsManagerKmsSupport`, `EksTokenAuthenticator`, `InProcessTargetAuthorizer`.
+**Related fork deltas:** `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA, not upstream account-id signing), `ResourcePolicyResolver`, `PolicyPrincipalMatcher`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `StsQueryHandler`, `SecretsManagerKmsSupport`, `EksTokenValidator`, `InProcessTargetAuthorizer`.
 
 ---
 
@@ -185,6 +185,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | In-process IAM | `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `AslExecutor` (SFN aws-sdk KMS/Secrets/S3), `AwsServiceRouter`, `Integration.credentials` |
 | In-process CloudTrail audit | `InProcessCloudTrailRecorder`, `CloudTrailEventRecorder` (SQS `queueUrl` from Query form and JSON 1.0/1.1 bodies), wired in SFN/APIGW/EventBridge/SNS/Firehose/Config/EC2 flow logs |
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
+| EKS token webhook | `EksTokenValidator`, `EksTokenWebhookController` |
 | Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner`; regressions `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
 | Compose / image | `docker-compose.yml`, `docker/Dockerfile` (no `test`/`test`) |
@@ -196,9 +197,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- SigV4a presign verification (GET/PUT reject with 403; full ECDSA-P256 verification not implemented)
-- Federated JWT/SAML full X.509/XML signature validation (structural checks + HS256/RS256 when `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`; SAML provider metadata crypto still deferred)
-- Operator event injection API for CloudTrail is implemented (`CloudTrailEventInjectionController`, `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`)
+- SigV4a presign verification (GET/PUT/POST reject with 403; full ECDSA-P256 verification not implemented)
+- Federated JWT/SAML full X.509/XML signature validation against provider metadata (structural checks + HS256/RS256 when `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`; SAML requires `SignatureValue` when validation is on)
+- ECR repository policy enforcement at registry data plane (policies round-trip via API only)
 
 **Recently closed (CTF security / test stability):**
 
@@ -239,6 +240,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | STS `AssumeRole` same-account caller identity (trust-only unless explicit Deny) | Closed | `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
 | Presigned POST unknown condition operators fail-closed | Closed | `S3PresignedPostIntegrationTest` |
 | OIDC multi-value `aud` trust conditions + federated `nbf`/SAML sig floor | Closed | `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest`, `StsWebIdentityTrustIntegrationTest` |
+| EKS `k8s-aws-v1.*` token SigV4 verify on presigned STS GetCallerIdentity | Closed | `EksTokenSigV4IntegrationTest`, `EksTokenValidatorTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |
@@ -422,7 +424,7 @@ After merge: run CTF regression below; update `README.md` and this file; verify 
 **Core hardening:**
 
 ```bash
-./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenAuthenticatorTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest,SecurityBypassPathsTest,OperatorCredentialEnvTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsGetCallerIdentityIntegrationTest,AnonymousAccessGateBypassIntegrationTest,S3PublicBucketPolicyAnonymousGetIntegrationTest,ApiGatewayNoneAuthAnonymousInvokeIntegrationTest,LambdaFunctionUrlNoneAuthIntegrationTest
+./mvnw test -Dtest=IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,IamActionRegistryTest,ApiGatewayIamScopeBypassIntegrationTest,ApiGatewayExecuteApiScopeIntegrationTest,HealthServicesReportingIntegrationTest,CtfHideInternalEndpointsIntegrationTest,CtfComposeParityIntegrationTest,ContainerEnvHardeningTest,EksTokenValidatorTest,EksTokenSigV4IntegrationTest,IamEnforcementIntegrationTest,IamEnforcementFilterTest,StsAssumeRoleTrustIntegrationTest,SigV4RequestValidatorTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,S3PresignedPostIntegrationTest,IamPolicyEvaluatorTest,FederatedTokenParserTest,SecurityBypassPathsTest,OperatorCredentialEnvTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsGetCallerIdentityIntegrationTest,AnonymousAccessGateBypassIntegrationTest,S3PublicBucketPolicyAnonymousGetIntegrationTest,ApiGatewayNoneAuthAnonymousInvokeIntegrationTest,LambdaFunctionUrlNoneAuthIntegrationTest
 ```
 
 **Scoped IAM + realism (enforcement profile tests):**

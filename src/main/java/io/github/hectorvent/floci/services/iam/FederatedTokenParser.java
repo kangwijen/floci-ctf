@@ -239,19 +239,20 @@ public final class FederatedTokenParser {
             }
         }
         Matcher sigMatcher = SAML_SIGNATURE_VALUE.matcher(xml);
-        if (sigMatcher.find()) {
-            String sigValue = sigMatcher.group(1).trim();
-            if (sigValue.isBlank()) {
+        if (!sigMatcher.find()) {
+            return false;
+        }
+        String sigValue = sigMatcher.group(1).trim();
+        if (sigValue.isBlank()) {
+            return false;
+        }
+        try {
+            byte[] decoded = Base64.getDecoder().decode(sigValue);
+            if (decoded.length < SAML_SIGNATURE_MIN_BYTES) {
                 return false;
             }
-            try {
-                byte[] decoded = Base64.getDecoder().decode(sigValue);
-                if (decoded.length < SAML_SIGNATURE_MIN_BYTES) {
-                    return false;
-                }
-            } catch (IllegalArgumentException e) {
-                return false;
-            }
+        } catch (IllegalArgumentException e) {
+            return false;
         }
         return true;
     }

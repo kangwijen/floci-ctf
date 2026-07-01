@@ -1,6 +1,5 @@
 package io.github.hectorvent.floci.services.eks;
 
-import io.github.hectorvent.floci.config.EmulatorConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -26,7 +25,7 @@ import java.util.Map;
  *
  * <p>This is Floci plumbing under the {@code _floci/...} namespace, not an AWS API. With CTF
  * defaults, {@code CtfInternalEndpointFilter} returns 404 for this path. When reachable and IAM
- * enforcement is on, only plausible presigned STS {@code GetCallerIdentity} URLs are accepted.
+ * enforcement is on, only SigV4-valid presigned STS {@code GetCallerIdentity} URLs are accepted.
  */
 @ApplicationScoped
 @Path("_floci/eks/token-webhook")
@@ -36,11 +35,11 @@ public class EksTokenWebhookController {
 
     private static final Logger LOG = Logger.getLogger(EksTokenWebhookController.class);
 
-    private final EmulatorConfig config;
+    private final EksTokenValidator tokenValidator;
 
     @Inject
-    public EksTokenWebhookController(EmulatorConfig config) {
-        this.config = config;
+    public EksTokenWebhookController(EksTokenValidator tokenValidator) {
+        this.tokenValidator = tokenValidator;
     }
 
     @POST
@@ -51,8 +50,7 @@ public class EksTokenWebhookController {
                 ? v : "authentication.k8s.io/v1";
 
         String token = extractToken(tokenReview);
-        boolean authenticated = EksTokenAuthenticator.accepts(
-                token, config.services().iam().enforcementEnabled());
+        boolean authenticated = tokenValidator.accepts(token);
 
         if (authenticated) {
             LOG.debug("EKS token-webhook: authenticated aws-iam token as cluster-admin");

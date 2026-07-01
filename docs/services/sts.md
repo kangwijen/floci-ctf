@@ -54,9 +54,7 @@ users with `create-access-key`, not fake account-id AKIDs.
   If `azp` is present it overrides the multi-value list for both keys, as AWS specifies.
 - **`nbf` (not-before) enforcement:** When `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`, tokens
   whose `nbf` claim is in the future are rejected.
-- **SAML `SignatureValue` trivial-sig rejection:** When validation is enabled, SAML assertions
-  whose `SignatureValue` element decodes to fewer than 64 bytes are rejected as structurally
-  inadequate.
+- **SAML `SignatureValue` trivial-sig rejection:** When validation is enabled, SAML assertions must include a `SignatureValue` element decoding to at least 64 bytes; digest-only `Signature` blocks are rejected.
 
 ## Examples
 

@@ -333,7 +333,7 @@ class FederatedTokenParserTest {
     }
 
     @Test
-    void validateFederatedTokensAcceptsSamlWithSignatureAndDigest() {
+    void validateFederatedTokensRejectsSamlWithDigestOnlySignature() {
         String xml = """
                 <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
                   <saml:Issuer>https://idp.example.com</saml:Issuer>
@@ -346,10 +346,9 @@ class FederatedTokenParserTest {
                   </ds:Signature>
                 </saml:Assertion>""";
         String assertion = Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
-        FederatedTrustContext ctx = FederatedTokenParser.parseSamlAssertion(
-                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true);
-        assertNotNull(ctx);
-        assertEquals("alice@example.com", ctx.conditionClaims().get("saml:sub"));
+        assertNull(FederatedTokenParser.parseSamlAssertion(
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true),
+                "SAML with DigestValue but no SignatureValue must be rejected when validation is on");
     }
 
     private static String jwt(Map<String, Object> claims) {
