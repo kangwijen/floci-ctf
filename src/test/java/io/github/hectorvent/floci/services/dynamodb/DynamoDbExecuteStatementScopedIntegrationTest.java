@@ -11,6 +11,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.not;
 
 /**
  * {@code dynamodb:PartiQLSelect} scoped via PartiQL {@code Statement} table extraction.
@@ -130,6 +131,49 @@ class DynamoDbExecuteStatementScopedIntegrationTest {
                         }""".formatted(ALLOWED_TABLE))
                 .when().post("/")
                 .then().statusCode(403);
+    }
+
+    @Test
+    void executeStatementMultiTableJoinDeniedWhenSecondaryTableNotAllowed() {
+        given()
+                .header("Authorization", playerAuth())
+                .header("X-Amz-Target", "DynamoDB_20120810.ExecuteStatement")
+                .contentType(DYNAMODB_CONTENT_TYPE)
+                .body("""
+                        {
+                          "Statement": "SELECT * FROM \\"%s\\" JOIN \\"%s\\" ON %s.pk = %s.pk"
+                        }""".formatted(ALLOWED_TABLE, DECOY_TABLE, ALLOWED_TABLE, DECOY_TABLE))
+                .when().post("/")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void executeStatementMultiTableJoinAllowedWhenBothTablesInPolicy() {
+        String user = "partiql-multi-both";
+        CtfLabIamTestSupport.createUser(user);
+        String akid = CtfLabIamTestSupport.createAccessKey(user);
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":["dynamodb:PartiQLSelect"],
+               "Resource":[
+                 "arn:aws:dynamodb:us-east-1:%s:table/%s",
+                 "arn:aws:dynamodb:us-east-1:%s:table/%s"
+               ]}
+            ]}""".formatted(
+                CtfLabIamEnforcementProfile.ACCOUNT, ALLOWED_TABLE,
+                CtfLabIamEnforcementProfile.ACCOUNT, DECOY_TABLE);
+        CtfLabIamTestSupport.putUserPolicy(user, "partiql-read-both", policy);
+
+        given()
+                .header("Authorization", CtfLabIamTestSupport.scopedAuth(akid, "dynamodb"))
+                .header("X-Amz-Target", "DynamoDB_20120810.ExecuteStatement")
+                .contentType(DYNAMODB_CONTENT_TYPE)
+                .body("""
+                        {
+                          "Statement": "SELECT * FROM \\"%s\\" JOIN \\"%s\\" ON %s.pk = %s.pk"
+                        }""".formatted(ALLOWED_TABLE, DECOY_TABLE, ALLOWED_TABLE, DECOY_TABLE))
+                .when().post("/")
+                .then().statusCode(not(equalTo(403)));
     }
 
     private String playerAuth() {

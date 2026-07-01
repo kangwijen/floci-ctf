@@ -22,8 +22,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,6 +61,11 @@ public class ResourceArnBuilder {
             Pattern.compile("\\bUPDATE\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTIQL_UPDATE_IDENT =
             Pattern.compile("\\bUPDATE\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
+    /** PartiQL {@code JOIN "table"} / {@code JOIN table} (multi-table SELECT). */
+    private static final Pattern PARTIQL_JOIN_QUOTED =
+            Pattern.compile("\\bJOIN\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTIQL_JOIN_IDENT =
+            Pattern.compile("\\bJOIN\\s+([A-Za-z_][A-Za-z0-9_]*)", Pattern.CASE_INSENSITIVE);
 
     /** AWS IAM suffix wildcard for the six random ARN characters when the secret is not stored yet. */
     private static final String SECRETS_MANAGER_IAM_SUFFIX_PLACEHOLDER = "-??????";
@@ -654,12 +661,60 @@ public class ResourceArnBuilder {
     }
 
     /**
-     * Extracts the first DynamoDB table name from a PartiQL {@code Statement} string.
+     * Extracts every DynamoDB table name referenced in a PartiQL {@code Statement}.
      *
-     * <p>Supports {@code SELECT}/{@code DELETE} {@code FROM} clauses, {@code INSERT INTO},
-     * and {@code UPDATE} table targets per the
+     * <p>Collects targets from {@code FROM}, {@code JOIN}, {@code INTO}, and {@code UPDATE}
+     * clauses per the
      * <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html">PartiQL reference</a>.
      */
+    static List<String> extractAllPartiQLTableNames(String statement) {
+        if (statement == null || statement.isBlank()) {
+            return List.of();
+        }
+        String trimmed = statement.trim();
+        if (trimmed.regionMatches(true, 0, "INSERT", 0, 6)) {
+            return allRegexGroups(PARTIQL_INTO_QUOTED, PARTIQL_INTO_IDENT, trimmed);
+        }
+        if (trimmed.regionMatches(true, 0, "UPDATE", 0, 6)) {
+            String table = firstRegexGroup(PARTIQL_UPDATE_QUOTED, trimmed, PARTIQL_UPDATE_IDENT, trimmed);
+            return table != null ? List.of(table) : List.of();
+        }
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        addAllRegexGroups(PARTIQL_FROM_QUOTED, trimmed, names);
+        addAllRegexGroups(PARTIQL_FROM_IDENT, trimmed, names);
+        addAllRegexGroups(PARTIQL_JOIN_QUOTED, trimmed, names);
+        addAllRegexGroups(PARTIQL_JOIN_IDENT, trimmed, names);
+        return List.copyOf(names);
+    }
+
+    /**
+     * Extracts the first DynamoDB table name from a PartiQL {@code Statement} string.
+     */
+    static String extractPartiQLTableName(String statement) {
+        List<String> all = extractAllPartiQLTableNames(statement);
+        return all.isEmpty() ? null : all.getFirst();
+    }
+
+    /**
+     * Builds table ARNs for every table referenced in a single {@code ExecuteStatement} body.
+     */
+    public List<String> buildAllDynamoDbExecuteStatementPartiQLResources(ContainerRequestContext ctx,
+                                                                         String region, String accountId) {
+        String statement = readJsonStringField(ctx, "Statement");
+        if (statement == null || statement.isBlank()) {
+            return List.of();
+        }
+        return buildDynamoDbTableArnsFromPartiQL(statement, region, accountId);
+    }
+
+    /**
+     * Returns true when {@code ExecuteStatement} references more than one DynamoDB table.
+     */
+    public boolean isMultiTablePartiQLExecuteStatement(ContainerRequestContext ctx) {
+        String statement = readJsonStringField(ctx, "Statement");
+        return statement != null && extractAllPartiQLTableNames(statement).size() > 1;
+    }
+
     /**
      * Builds table ARNs for every PartiQL statement in a {@code BatchExecuteStatement} body.
      */
@@ -674,20 +729,6 @@ public class ResourceArnBuilder {
             arns.add(dynamoDbTableArnFromPartiQL(statement, region, accountId));
         }
         return arns;
-    }
-
-    static String extractPartiQLTableName(String statement) {
-        if (statement == null || statement.isBlank()) {
-            return null;
-        }
-        String trimmed = statement.trim();
-        if (trimmed.regionMatches(true, 0, "INSERT", 0, 6)) {
-            return firstRegexGroup(PARTIQL_INTO_QUOTED, trimmed, PARTIQL_INTO_IDENT, trimmed);
-        }
-        if (trimmed.regionMatches(true, 0, "UPDATE", 0, 6)) {
-            return firstRegexGroup(PARTIQL_UPDATE_QUOTED, trimmed, PARTIQL_UPDATE_IDENT, trimmed);
-        }
-        return firstRegexGroup(PARTIQL_FROM_QUOTED, trimmed, PARTIQL_FROM_IDENT, trimmed);
     }
 
     private String partiQLTableNameFromRequest(ContainerRequestContext ctx) {
@@ -754,8 +795,24 @@ public class ResourceArnBuilder {
         return Collections.unmodifiableList(out);
     }
 
+    private static List<String> buildDynamoDbTableArnsFromPartiQL(String statement, String region, String accountId) {
+        List<String> tableNames = extractAllPartiQLTableNames(statement);
+        if (tableNames.isEmpty()) {
+            return List.of(AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString());
+        }
+        List<String> arns = new ArrayList<>(tableNames.size());
+        for (String tableName : tableNames) {
+            arns.add(dynamoDbTableArnFromTableName(tableName, region, accountId));
+        }
+        return arns;
+    }
+
     private static String dynamoDbTableArnFromPartiQL(String statement, String region, String accountId) {
         String tableName = extractPartiQLTableName(statement);
+        return dynamoDbTableArnFromTableName(tableName, region, accountId);
+    }
+
+    private static String dynamoDbTableArnFromTableName(String tableName, String region, String accountId) {
         if (tableName == null || tableName.isBlank()) {
             return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
         }
@@ -763,6 +820,20 @@ public class ResourceArnBuilder {
             return tableName;
         }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
+    }
+
+    private static List<String> allRegexGroups(Pattern quoted, Pattern ident, String input) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        addAllRegexGroups(quoted, input, names);
+        addAllRegexGroups(ident, input, names);
+        return List.copyOf(names);
+    }
+
+    private static void addAllRegexGroups(Pattern pattern, String input, Set<String> out) {
+        Matcher m = pattern.matcher(input);
+        while (m.find()) {
+            out.add(m.group(1));
+        }
     }
 
     private static String firstRegexGroup(Pattern quoted, String quotedInput,

@@ -12,6 +12,7 @@ import org.mockito.Mockito;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -325,6 +326,31 @@ class ResourceArnBuilderTest {
     @Test
     void extractPartiQLTableNameReturnsNullForBlankStatement() {
         assertNull(ResourceArnBuilder.extractPartiQLTableName("  "));
+    }
+
+    @Test
+    void extractAllPartiQLTableNamesMultiTableSelectJoinExtractsBothTables() {
+        List<String> tables = ResourceArnBuilder.extractAllPartiQLTableNames(
+                "SELECT * FROM \"tableA\" JOIN \"tableB\" ON tableA.pk = tableB.pk");
+        assertEquals(List.of("tableA", "tableB"), tables);
+    }
+
+    @Test
+    void dynamodbExecuteStatementMultiTableJoinBuildsAllTableArns() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"SELECT * FROM \\"Orders\\" JOIN \\"Other\\" ON Orders.pk = Other.pk"}""");
+        var arns = builder.buildAllDynamoDbExecuteStatementPartiQLResources(ctx, REGION, ACCOUNT);
+        assertEquals(2, arns.size());
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Orders", arns.get(0));
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Other", arns.get(1));
+    }
+
+    @Test
+    void dynamodbExecuteStatementMultiTableJoinBuildUsesFirstTableArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Statement":"SELECT * FROM \\"Orders\\" JOIN \\"Other\\" ON Orders.pk = Other.pk"}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/Orders", arn);
     }
 
     // ── Secrets Manager ───────────────────────────────────────────────────────

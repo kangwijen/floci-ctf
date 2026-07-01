@@ -169,7 +169,7 @@ When IAM enforcement is enabled, PartiQL statements map to scoped DynamoDB IAM a
 | `UPDATE` | `dynamodb:PartiQLUpdate` |
 | `DELETE` | `dynamodb:PartiQLDelete` |
 
-Policies must allow the action on the target table ARN (for example `arn:aws:dynamodb:us-east-1:000000000000:table/MyTable`). Multi-table batch statements use the first resolved table ARN for scoping.
+Policies must allow the action on every target table ARN (for example `arn:aws:dynamodb:us-east-1:000000000000:table/MyTable`). `ExecuteStatement` with a JOIN or other multi-table PartiQL evaluates IAM against each `FROM`/`JOIN`/`INTO`/`UPDATE` table reference; explicit Deny on any table denies the request. `BatchExecuteStatement` evaluates each statement in the batch independently (one table ARN per statement entry). Regression: `DynamoDbExecuteStatementScopedIntegrationTest`, `DynamoDbBatchExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest`.
 
 ### CloudTrail audit (HTTP)
 

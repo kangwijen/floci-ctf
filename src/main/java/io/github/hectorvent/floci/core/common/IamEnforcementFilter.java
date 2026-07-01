@@ -234,6 +234,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             evaluateDynamoDbBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
         }
+        if (isDynamoDbMultiTableExecuteStatement(credentialScope, ctx)) {
+            evaluateDynamoDbMultiTableExecuteAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
         if (isEmrMultiClusterRequest(credentialScope, ctx)) {
             evaluateEmrMultiClusterAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
@@ -293,6 +297,69 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return false;
         }
         return "dynamodb".equals(credentialScope);
+    }
+
+    private boolean isDynamoDbMultiTableExecuteStatement(String credentialScope, ContainerRequestContext ctx) {
+        if (!"dynamodb".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || !target.endsWith(".ExecuteStatement")) {
+            return false;
+        }
+        return arnBuilder.isMultiTablePartiQLExecuteStatement(ctx);
+    }
+
+    private void evaluateDynamoDbMultiTableExecuteAndAbortIfDenied(ContainerRequestContext ctx,
+                                                                  String credentialScope,
+                                                                  String akid,
+                                                                  String region,
+                                                                  String accountId,
+                                                                  boolean strict) {
+        String action = actionRegistry.resolve(credentialScope, ctx);
+        if (action == null) {
+            if (strict) {
+                String unknownAction = credentialScope + ":*";
+                LOG.infov("IAM strict enforcement DENY: unmapped ExecuteStatement scope={0}", credentialScope);
+                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
+        List<String> resources = arnBuilder.buildAllDynamoDbExecuteStatementPartiQLResources(ctx, region, accountId);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+
+        for (String resource : resources) {
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+            if (decision == Decision.DENY
+                    && "kms".equals(credentialScope)
+                    && kmsService.isGrantAuthorized(
+                            conditionCtx.get("aws:principalarn"),
+                            conditionCtx.get("aws:principalaccount"),
+                            resource,
+                            action,
+                            region)) {
+                continue;
+            }
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} partiqlMultiTable",
+                        akid, action, resource);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+        }
     }
 
     private void evaluateDynamoDbBatchAndAbortIfDenied(ContainerRequestContext ctx,
