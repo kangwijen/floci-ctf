@@ -111,7 +111,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `iam:CreateAccessKey` | `arn:aws:iam::ACCOUNT:user/name` | `UserName` in form body |
 | `dynamodb:GetItem` / `Query` | `arn:aws:dynamodb:REGION:ACCOUNT:table/name` (and `.../index/name` for GSI) | `TableName`, `IndexName`, or `RequestItems` key in JSON |
 | `dynamodb:PutItem` | `arn:aws:dynamodb:REGION:ACCOUNT:table/name` | `TableName` in JSON body |
-| `dynamodb:PartiQL*` | Same table ARN | `Statement` SQL (`FROM`/`INTO`/`UPDATE` table) on `ExecuteStatement` |
+| `dynamodb:PartiQL*` | Same table ARN(s) | `Statement` SQL (`FROM`/`JOIN`/`INTO`/`UPDATE` tables) on `ExecuteStatement`; all referenced tables on multi-table statements; each batch entry on `BatchExecuteStatement` |
 | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:REGION:ACCOUNT:secret:path/*` (path prefix) or `secret:name-*` / `secret:name-??????` (single secret; AWS six-char suffix) | `SecretId`; IAM uses stored full ARN when secret exists |
 | `kms:Decrypt` | `arn:aws:kms:REGION:ACCOUNT:key/KEY-ID` | `KeyId` or Floci `kms:v2:` blob in `CiphertextBlob` |
 | `sqs:ReceiveMessage` | `arn:aws:sqs:REGION:ACCOUNT:queue` | `QueueUrl` (Query form or JSON 1.0 body) |
@@ -196,11 +196,10 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- SigV4a presign, SSE query params in S3 presign
+- SigV4a presign
 - Federated JWT/SAML full crypto validation (structural parse only unless `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`)
-- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping
-- Multi-table PartiQL / `BatchExecuteStatement` (only first table in batch used for ARN)
-- In-process IAM grants not checked (`InProcessIamAuthorizer` uses identity + resource policies only)
+- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping (nested object claims, multi-value `aud`)
+- STS `AssumeRole` caller identity policy (trust policy only today; see `docs/services/sts.md`)
 - Operator event injection API for CloudTrail is implemented (`CloudTrailEventInjectionController`, `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`)
 
 **Recently closed (CTF security / test stability):**
@@ -237,6 +236,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | API Gateway `TestInvokeMethod` without stage deploy | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | API Gateway `TestInvokeMethod` with `AWS_PROXY` Lambda integration | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
+| Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
+| `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
+| In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |
 
 **Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
 
@@ -323,6 +325,13 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `sns:Publish` scoped IAM | Closed | `SnsPublishScopedIamIntegrationTest` |
 
 **Still open (downstream / out of emulator scope):** SigV4a presign. Extended presigned POST condition operators beyond current parity only when compat tests require them.
+
+**Recently closed (S3 presign parity):**
+
+| Gap | Status | Regression |
+|-----|--------|------------|
+| SSE query params on presigned PUT (data plane + generator) | Closed | `S3PresignedPutSseIntegrationTest`, `PreSignedUrlGeneratorTest`, `SigV4RequestValidatorTest` |
+| ASIA session token required on presigned URLs | Closed | `PreSignedUrlFilterIntegrationTest` |
 
 ---
 
