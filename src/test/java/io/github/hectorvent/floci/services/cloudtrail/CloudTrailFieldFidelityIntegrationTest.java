@@ -13,6 +13,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -218,8 +221,13 @@ class CloudTrailFieldFidelityIntegrationTest {
                 .then().statusCode(200);
 
         JsonNode listBucketsEvent = lookupSingleEvent("ListAllMyBuckets", "s3.amazonaws.com");
-        JsonNode createBucketEvent = lookupSingleEvent("CreateBucket", "s3.amazonaws.com");
-        JsonNode putObjectEvent = lookupSingleEvent("PutObject", "s3.amazonaws.com");
+        JsonNode createBucketEvent = lookupFilteredEvent("CreateBucket", "s3.amazonaws.com",
+                node -> dataBucket.equals(node.path("requestParameters").path("bucketName").asText()));
+        JsonNode putObjectEvent = lookupFilteredEvent("PutObject", "s3.amazonaws.com",
+                node -> objectKey.equals(node.path("requestParameters").path("key").asText()));
+
+        assertEquals("CreateBucket", createBucketEvent.path("eventName").asText());
+        assertEquals("PutObject", putObjectEvent.path("eventName").asText());
 
         Instant listTime = Instant.parse(listBucketsEvent.path("eventTime").asText());
         Instant createTime = Instant.parse(createBucketEvent.path("eventTime").asText());
@@ -244,6 +252,38 @@ class CloudTrailFieldFidelityIntegrationTest {
                 .body("{\"Name\":\"%s\"}".formatted(trailName))
                 .when().post("/")
                 .then().statusCode(200);
+    }
+
+    private JsonNode lookupFilteredEvent(String eventName, String eventSource, Predicate<JsonNode> filter)
+            throws Exception {
+        ArrayNode events = (ArrayNode) objectMapper.readTree(given()
+                .header("X-Amz-Target", CLOUDTRAIL_TARGET + "LookupEvents")
+                .contentType(CONTENT_TYPE)
+                .body("""
+                        {
+                            "LookupAttributes": [
+                                {"AttributeKey": "EventName", "AttributeValue": "%s"}
+                            ]
+                        }
+                        """.formatted(eventName))
+                .when().post("/")
+                .then()
+                .statusCode(200)
+                .extract().asString()).path("Events");
+
+        List<JsonNode> matches = new ArrayList<>();
+        for (JsonNode event : events) {
+            if (!eventName.equals(event.path("EventName").asText())
+                    || !eventSource.equals(event.path("EventSource").asText())) {
+                continue;
+            }
+            JsonNode cloudTrail = objectMapper.readTree(event.path("CloudTrailEvent").asText());
+            if (filter.test(cloudTrail)) {
+                matches.add(cloudTrail);
+            }
+        }
+        assertEquals(1, matches.size(), "expected one matching " + eventName + " event");
+        return matches.getFirst();
     }
 
     private JsonNode lookupSingleEvent(String eventName, String eventSource) throws Exception {

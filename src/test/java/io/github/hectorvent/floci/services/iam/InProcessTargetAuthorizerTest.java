@@ -349,7 +349,7 @@ class InProcessTargetAuthorizerTest {
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.APIGW_SERVICE), eq("lambda"), eq("InvokeFunction"),
-                eq(LAMBDA_ARN), eq(REGION));
+                eq(LAMBDA_ARN), eq(REGION), isNull());
     }
 
     @Test
