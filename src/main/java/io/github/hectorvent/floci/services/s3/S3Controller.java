@@ -550,7 +550,12 @@ public class S3Controller {
             String persistedEncoding = toPersistedContentEncoding(contentEncoding);
             String contentDisposition = httpHeaders.getHeaderString("Content-Disposition");
             String cacheControl = httpHeaders.getHeaderString("Cache-Control");
-            String serverSideEncryption = httpHeaders.getHeaderString("x-amz-server-side-encryption");
+            String serverSideEncryption = resolvePresignedOrRequestHeader(
+                    "x-amz-server-side-encryption", uriInfo, httpHeaders);
+            String kmsKeyId = resolvePresignedOrRequestHeader(
+                    "x-amz-server-side-encryption-aws-kms-key-id", uriInfo, httpHeaders);
+            String sseEncryptionContext = resolvePresignedOrRequestHeader(
+                    "x-amz-server-side-encryption-context", uriInfo, httpHeaders);
             String sseCustomerAlgorithm = httpHeaders.getHeaderString("x-amz-server-side-encryption-customer-algorithm");
             String sseCustomerKey = httpHeaders.getHeaderString("x-amz-server-side-encryption-customer-key");
             String sseCustomerKeyMd5 = httpHeaders.getHeaderString("x-amz-server-side-encryption-customer-key-MD5");
@@ -565,6 +570,8 @@ public class S3Controller {
                             .withContentDisposition(contentDisposition)
                             .withCacheControl(cacheControl)
                             .withServerSideEncryption(serverSideEncryption)
+                            .withKmsKeyId(kmsKeyId)
+                            .withSseEncryptionContext(sseEncryptionContext)
                             .withSseCustomerAlgorithm(sseCustomerAlgorithm)
                             .withSseCustomerKey(sseCustomerKey)
                             .withSseCustomerKeyMd5(sseCustomerKeyMd5)
@@ -1694,6 +1701,9 @@ public class S3Controller {
         if (obj.getServerSideEncryption() != null) {
             resp.header("x-amz-server-side-encryption", obj.getServerSideEncryption());
         }
+        if (obj.getKmsKeyId() != null) {
+            resp.header("x-amz-server-side-encryption-aws-kms-key-id", obj.getKmsKeyId());
+        }
         appendSseCustomerHeaders(resp, obj);
         appendChecksumHeaders(resp, obj.getChecksum());
         appendLockHeaders(resp, obj);
@@ -1725,6 +1735,9 @@ public class S3Controller {
         }
         if (obj.getServerSideEncryption() != null) {
             resp.header("x-amz-server-side-encryption", obj.getServerSideEncryption());
+        }
+        if (obj.getKmsKeyId() != null) {
+            resp.header("x-amz-server-side-encryption-aws-kms-key-id", obj.getKmsKeyId());
         }
         appendSseCustomerHeaders(resp, obj);
         if (overrides.contentLanguage() != null) {
@@ -2901,6 +2914,34 @@ public class S3Controller {
             return new String[] {"SigV4", "QueryString"};
         }
         return new String[] {"-", "-"};
+    }
+
+    private static boolean isPresignedRequest(UriInfo uriInfo) {
+        return uriInfo.getQueryParameters().containsKey("X-Amz-Algorithm")
+                || uriInfo.getQueryParameters().containsKey("x-amz-algorithm");
+    }
+
+    private static String resolvePresignedOrRequestHeader(String headerName,
+                                                          UriInfo uriInfo,
+                                                          HttpHeaders httpHeaders) {
+        if (isPresignedRequest(uriInfo)) {
+            String rawQuery = uriInfo.getRequestUri().getRawQuery();
+            String host = httpHeaders.getHeaderString("Host");
+            return SigV4RequestValidator.presignedHeaderValue(
+                    headerName, host, rawQuery, collectLowercaseHeaders(httpHeaders));
+        }
+        return httpHeaders.getHeaderString(headerName);
+    }
+
+    private static Map<String, String> collectLowercaseHeaders(HttpHeaders httpHeaders) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (String name : httpHeaders.getRequestHeaders().keySet()) {
+            String value = httpHeaders.getHeaderString(name);
+            if (value != null) {
+                headers.put(name.toLowerCase(Locale.ROOT), value);
+            }
+        }
+        return headers;
     }
 
     /**

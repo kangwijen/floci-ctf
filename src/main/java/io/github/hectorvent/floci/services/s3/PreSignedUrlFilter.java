@@ -118,6 +118,10 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
                 return;
             }
 
+            if (IamService.isTemporaryAccessKey(accessKeyId) && !validatePresignSessionToken(requestContext, accessKeyId)) {
+                return;
+            }
+
             SigV4RequestValidator.Result sigv4Result = SigV4RequestValidator.validatePresignedUrl(
                     requestContext.getMethod(),
                     path,
@@ -158,6 +162,26 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             return rootSecret;
         }
         return iamService.findSecretKey(accessKeyId);
+    }
+
+    private boolean validatePresignSessionToken(ContainerRequestContext requestContext, String accessKeyId) {
+        String rawQuery = requestContext.getUriInfo().getRequestUri().getRawQuery();
+        String provided = SigV4RequestValidator.queryParam(rawQuery, "X-Amz-Security-Token");
+        if (provided == null || provided.isBlank()) {
+            provided = requestContext.getHeaderString("x-amz-security-token");
+        }
+        if (provided == null || provided.isBlank()) {
+            requestContext.abortWith(errorResponse(403, "InvalidClientTokenId",
+                    "The security token included in the request is invalid."));
+            return false;
+        }
+        Optional<String> expected = iamService.findSessionToken(accessKeyId);
+        if (expected.isEmpty() || !expected.get().equals(provided)) {
+            requestContext.abortWith(errorResponse(403, "InvalidClientTokenId",
+                    "The security token included in the request is invalid."));
+            return false;
+        }
+        return true;
     }
 
     private Response expiredResponse(Instant signedAt, int expiresSeconds) {

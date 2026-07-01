@@ -25,6 +25,7 @@ public class S3Object {
     private String contentDisposition;
     private String cacheControl;
     private String serverSideEncryption;
+    private String kmsKeyId;
     private String sseCustomerAlgorithm;
     private String sseCustomerKeyMd5;
     private long size;
@@ -94,6 +95,9 @@ public class S3Object {
 
     public String getServerSideEncryption() { return serverSideEncryption; }
     public void setServerSideEncryption(String serverSideEncryption) { this.serverSideEncryption = serverSideEncryption; }
+
+    public String getKmsKeyId() { return kmsKeyId; }
+    public void setKmsKeyId(String kmsKeyId) { this.kmsKeyId = kmsKeyId; }
 
     public String getSseCustomerAlgorithm() { return sseCustomerAlgorithm; }
     public void setSseCustomerAlgorithm(String sseCustomerAlgorithm) { this.sseCustomerAlgorithm = sseCustomerAlgorithm; }

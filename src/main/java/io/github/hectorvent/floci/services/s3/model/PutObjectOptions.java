@@ -12,6 +12,8 @@ public class PutObjectOptions {
     private String contentDisposition;
     private String cacheControl;
     private String serverSideEncryption;
+    private String kmsKeyId;
+    private String sseEncryptionContext;
     private String sseCustomerAlgorithm;
     private String sseCustomerKey;
     private String sseCustomerKeyMd5;
@@ -44,6 +46,12 @@ public class PutObjectOptions {
 
     public String getServerSideEncryption() { return serverSideEncryption; }
     public PutObjectOptions withServerSideEncryption(String serverSideEncryption) { this.serverSideEncryption = serverSideEncryption; return this; }
+
+    public String getKmsKeyId() { return kmsKeyId; }
+    public PutObjectOptions withKmsKeyId(String kmsKeyId) { this.kmsKeyId = kmsKeyId; return this; }
+
+    public String getSseEncryptionContext() { return sseEncryptionContext; }
+    public PutObjectOptions withSseEncryptionContext(String sseEncryptionContext) { this.sseEncryptionContext = sseEncryptionContext; return this; }
 
     public String getSseCustomerAlgorithm() { return sseCustomerAlgorithm; }
     public PutObjectOptions withSseCustomerAlgorithm(String sseCustomerAlgorithm) { this.sseCustomerAlgorithm = sseCustomerAlgorithm; return this; }

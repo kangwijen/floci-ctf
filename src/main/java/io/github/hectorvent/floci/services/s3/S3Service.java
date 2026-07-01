@@ -323,6 +323,9 @@ public class S3Service implements Resettable {
         object.setContentDisposition(effectiveOptions.getContentDisposition());
         object.setCacheControl(effectiveOptions.getCacheControl());
         object.setServerSideEncryption(normalizedServerSideEncryption);
+        if (effectiveOptions.getKmsKeyId() != null && !effectiveOptions.getKmsKeyId().isBlank()) {
+            object.setKmsKeyId(effectiveOptions.getKmsKeyId());
+        }
         if (sseCustomerKey != null) {
             object.setSseCustomerAlgorithm(sseCustomerKey.algorithm());
             object.setSseCustomerKeyMd5(sseCustomerKey.keyMd5());
@@ -2283,6 +2286,7 @@ public class S3Service implements Resettable {
         copy.setContentDisposition(source.getContentDisposition());
         copy.setCacheControl(source.getCacheControl());
         copy.setServerSideEncryption(source.getServerSideEncryption());
+        copy.setKmsKeyId(source.getKmsKeyId());
         copy.setSseCustomerAlgorithm(source.getSseCustomerAlgorithm());
         copy.setSseCustomerKeyMd5(source.getSseCustomerKeyMd5());
         copy.setSize(source.getSize());

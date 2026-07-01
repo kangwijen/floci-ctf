@@ -371,7 +371,11 @@ public final class SigV4RequestValidator {
                 + UNSIGNED_PAYLOAD;
     }
 
-    private static String presignedHeaderValue(String headerName,
+    /**
+     * Resolves a signed header for presigned URL validation or S3 PUT handling.
+     * Query parameters ({@code X-Amz-*}) take precedence over request headers.
+     */
+    public static String presignedHeaderValue(String headerName,
                                                String hostHeader,
                                                String rawQuery,
                                                Map<String, String> requestHeaders) {
@@ -409,7 +413,7 @@ public final class SigV4RequestValidator {
         return sb.toString();
     }
 
-    static String queryParam(String rawQuery, String paramName) {
+    public static String queryParam(String rawQuery, String paramName) {
         if (rawQuery == null || paramName == null) {
             return null;
         }

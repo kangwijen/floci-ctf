@@ -9,7 +9,11 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -69,13 +73,26 @@ public class PreSignedUrlGenerator {
 
     public String generatePresignedUrl(String baseUrl, String bucket, String key,
                                          String method, int expiresSeconds) {
+        return generatePresignedUrl(baseUrl, bucket, key, method, expiresSeconds, Map.of());
+    }
+
+    /**
+     * Generates a presigned URL, optionally including extra signed query parameters
+     * (for example SSE {@code X-Amz-Server-Side-Encryption} headers moved to the query string).
+     */
+    public String generatePresignedUrl(String baseUrl, String bucket, String key,
+                                         String method, int expiresSeconds,
+                                         Map<String, String> extraSignedQueryParams) {
         int expiry = expiresSeconds > 0 ? expiresSeconds : defaultExpiry;
         Instant now = Instant.now();
         String amzDate = AMZ_DATE_FORMAT.format(now);
         String dateStamp = amzDate.substring(0, 8);
         String credentialScope = dateStamp + "/" + defaultRegion + "/s3/aws4_request";
         String credentialValue = accessKeyId + "/" + credentialScope;
-        String signedHeaders = "host";
+        Map<String, String> signedQueryParams = extraSignedQueryParams != null
+                ? new LinkedHashMap<>(extraSignedQueryParams)
+                : Collections.emptyMap();
+        String signedHeaders = buildPresignedSignedHeaders(signedQueryParams);
 
         URI base = URI.create(baseUrl);
         String host = base.getHost();
@@ -85,7 +102,7 @@ public class PreSignedUrlGenerator {
 
         String rawPath = "/" + bucket + "/" + key;
         String rawQueryWithoutSignature = buildPresignQueryWithoutSignature(
-                credentialValue, amzDate, expiry, signedHeaders);
+                credentialValue, amzDate, expiry, signedHeaders, signedQueryParams);
 
         try {
             String signature = SigV4RequestValidator.computePresignedSignature(
@@ -139,11 +156,22 @@ public class PreSignedUrlGenerator {
     public boolean verifySignature(String method, String bucket, String key,
                                      String amzDate, int expiresSeconds, String signature,
                                      String host) {
+        return verifySignature(method, bucket, key, amzDate, expiresSeconds, signature, host, Map.of());
+    }
+
+    public boolean verifySignature(String method, String bucket, String key,
+                                     String amzDate, int expiresSeconds, String signature,
+                                     String host, Map<String, String> extraSignedQueryParams) {
         String dateStamp = amzDate.substring(0, 8);
         String credentialScope = dateStamp + "/" + defaultRegion + "/s3/aws4_request";
         String credentialValue = accessKeyId + "/" + credentialScope;
+        Map<String, String> signedQueryParams = extraSignedQueryParams != null
+                ? new LinkedHashMap<>(extraSignedQueryParams)
+                : Collections.emptyMap();
+        String signedHeaders = buildPresignedSignedHeaders(signedQueryParams);
         String rawPath = "/" + bucket + "/" + key;
-        String rawQuery = buildPresignQueryWithoutSignature(credentialValue, amzDate, expiresSeconds, "host")
+        String rawQuery = buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, expiresSeconds, signedHeaders, signedQueryParams)
                 + "&X-Amz-Signature=" + signature;
 
         SigV4RequestValidator.Result result = SigV4RequestValidator.validatePresignedUrl(
@@ -155,16 +183,53 @@ public class PreSignedUrlGenerator {
                                                     String amzDate,
                                                     int expiresSeconds,
                                                     String signedHeaders) {
+        return buildPresignQueryWithoutSignature(
+                credentialValue, amzDate, expiresSeconds, signedHeaders, Map.of());
+    }
+
+    public static String buildPresignQueryWithoutSignature(String credentialValue,
+                                                    String amzDate,
+                                                    int expiresSeconds,
+                                                    String signedHeaders,
+                                                    Map<String, String> extraSignedQueryParams) {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
         params.put("X-Amz-Credential", credentialValue);
         params.put("X-Amz-Date", amzDate);
         params.put("X-Amz-Expires", Integer.toString(expiresSeconds));
         params.put("X-Amz-SignedHeaders", signedHeaders);
+        if (extraSignedQueryParams != null) {
+            params.putAll(extraSignedQueryParams);
+        }
         return params.entrySet().stream()
                 .map(e -> SigV4RequestValidator.awsUriEncode(e.getKey(), true)
                         + "="
                         + SigV4RequestValidator.awsUriEncode(e.getValue(), true))
                 .collect(Collectors.joining("&"));
+    }
+
+    public static String buildPresignedSignedHeaders(Map<String, String> extraSignedQueryParams) {
+        List<String> headers = new ArrayList<>();
+        headers.add("host");
+        if (extraSignedQueryParams != null) {
+            extraSignedQueryParams.keySet().stream()
+                    .map(PreSignedUrlGenerator::queryParamToHeaderName)
+                    .filter(name -> name.startsWith("x-amz-"))
+                    .sorted()
+                    .forEach(headers::add);
+        }
+        return String.join(";", headers);
+    }
+
+    static String queryParamToHeaderName(String queryParam) {
+        if (queryParam == null || queryParam.length() < 6
+                || !queryParam.regionMatches(true, 0, "X-Amz-", 0, 6)) {
+            return queryParam == null ? "" : queryParam.toLowerCase(Locale.ROOT);
+        }
+        StringBuilder sb = new StringBuilder("x-amz-");
+        for (int i = 6; i < queryParam.length(); i++) {
+            sb.append(Character.toLowerCase(queryParam.charAt(i)));
+        }
+        return sb.toString();
     }
 }

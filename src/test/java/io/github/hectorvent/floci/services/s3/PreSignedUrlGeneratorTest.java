@@ -70,4 +70,28 @@ class PreSignedUrlGeneratorTest {
                 "GET", "b", "k.txt", "20260205T120000Z", 300, "deadbeef", "localhost:4566"));
     }
 
+    @Test
+    void generatePresignedUrlWithSseQueryParamsIncludesSignedParams() {
+        String kmsKeyId = "arn:aws:kms:us-east-1:000000000000:key/12345678-1234-1234-1234-123456789012";
+        java.util.Map<String, String> sseParams = java.util.Map.of(
+                "X-Amz-Server-Side-Encryption", "aws:kms",
+                "X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id", kmsKeyId);
+
+        String presignedUrl = generator.generatePresignedUrl(
+                "http://localhost:4566", "b", "k.txt", "PUT", 300, sseParams);
+        URI uri = URI.create(presignedUrl);
+        String host = uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+
+        assertTrue(uri.getRawQuery().contains("X-Amz-Server-Side-Encryption=aws%3Akms"));
+        assertTrue(uri.getRawQuery().contains("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id="));
+
+        String sigParam = uri.getRawQuery().substring(
+                uri.getRawQuery().indexOf("X-Amz-Signature=") + "X-Amz-Signature=".length());
+        String dateParam = uri.getRawQuery().substring(
+                uri.getRawQuery().indexOf("X-Amz-Date=") + "X-Amz-Date=".length(),
+                uri.getRawQuery().indexOf("&X-Amz-Expires="));
+
+        assertTrue(generator.verifySignature("PUT", "b", "k.txt", dateParam, 300, sigParam, host, sseParams));
+    }
+
 }
