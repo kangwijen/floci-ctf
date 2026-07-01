@@ -69,7 +69,8 @@ public final class FederatedTokenParser {
                                                               String roleAccountId,
                                                               boolean validateFederatedTokens) {
         FederatedTokenValidationConfig config = validateFederatedTokens
-                ? new FederatedTokenValidationConfig(true, Optional.empty(), Map.of(), Optional.empty())
+                ? new FederatedTokenValidationConfig(
+                        true, Optional.empty(), Map.of(), Optional.empty(), Optional.empty(), Map.of())
                 : FederatedTokenValidationConfig.disabled();
         return parseWebIdentityToken(webIdentityToken, providerId, roleAccountId, config);
     }
@@ -121,7 +122,8 @@ public final class FederatedTokenParser {
                                                            String principalArn,
                                                            boolean validateFederatedTokens) {
         FederatedTokenValidationConfig config = validateFederatedTokens
-                ? new FederatedTokenValidationConfig(true, Optional.empty(), Map.of(), Optional.empty())
+                ? new FederatedTokenValidationConfig(
+                        true, Optional.empty(), Map.of(), Optional.empty(), Optional.empty(), Map.of())
                 : FederatedTokenValidationConfig.disabled();
         return parseSamlAssertion(samlAssertionBase64, principalArn, config);
     }
@@ -148,6 +150,10 @@ public final class FederatedTokenParser {
             return null;
         }
         if (validateFederatedTokens && !isSamlAssertionTimeValid(xml)) {
+            return null;
+        }
+        if (validateFederatedTokens
+                && !verifySamlCrypto(xml, principalArn, validationConfig)) {
             return null;
         }
         Map<String, String> samlClaims = extractSamlClaims(xml, principalArn);
@@ -240,7 +246,7 @@ public final class FederatedTokenParser {
         }
         Matcher digestMatcher = SAML_DIGEST_VALUE.matcher(xml);
         if (digestMatcher.find()) {
-            String digestValue = digestMatcher.group(1).trim();
+            String digestValue = normalizeXmlBase64Content(digestMatcher.group(1));
             if (digestValue.isBlank()) {
                 return false;
             }
@@ -257,7 +263,7 @@ public final class FederatedTokenParser {
         if (!sigMatcher.find()) {
             return false;
         }
-        String sigValue = sigMatcher.group(1).trim();
+        String sigValue = normalizeXmlBase64Content(sigMatcher.group(1));
         if (sigValue.isBlank()) {
             return false;
         }
@@ -311,6 +317,22 @@ public final class FederatedTokenParser {
                     .orElse(false);
         }
         return false;
+    }
+
+    static boolean verifySamlCrypto(String xml, String principalArn, FederatedTokenValidationConfig config) {
+        if (config == null || !config.validateFederatedTokens()) {
+            return true;
+        }
+        String providerName = samlProviderName(principalArn);
+        return SamlAssertionSignatureVerifier.verify(xml, config.resolveSamlSigningCertPems(providerName));
+    }
+
+    static String samlProviderName(String principalArn) {
+        if (principalArn == null || !principalArn.contains(":saml-provider/")) {
+            return null;
+        }
+        int idx = principalArn.indexOf(":saml-provider/");
+        return principalArn.substring(idx + ":saml-provider/".length());
     }
 
     static Map<String, Object> parseJwtPayload(String jwt) {
@@ -491,6 +513,17 @@ public final class FederatedTokenParser {
             result |= left[i] ^ right[i];
         }
         return result == 0;
+    }
+
+    private static String normalizeXmlBase64Content(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replaceAll("\\s", "")
+                .replace("&#13;", "")
+                .replace("&#10;", "")
+                .replace("&#9;", "");
     }
 
     private static String firstXmlValue(String xml, String tagName) {

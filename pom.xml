@@ -178,6 +178,13 @@
             <version>2.4.1</version>
         </dependency>
 
+        <!-- Apache Santuario XMLSec for SAML assertion XML signature verification -->
+        <dependency>
+            <groupId>org.apache.santuario</groupId>
+            <artifactId>xmlsec</artifactId>
+            <version>4.0.4</version>
+        </dependency>
+
         <!-- GraphQL schema parsing and type system (AppSync execution engine) -->
         <dependency>
             <groupId>com.graphql-java</groupId>

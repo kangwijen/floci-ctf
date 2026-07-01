@@ -55,7 +55,7 @@ users with `create-access-key`, not fake account-id AKIDs.
 - **`nbf` (not-before) enforcement:** When `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`, tokens whose `nbf` claim is in the future are rejected.
 - **`iss` alignment:** When validation is enabled and the JWT carries an `iss` claim, it must match the OIDC provider host from `ProviderId`.
 - **SAML time conditions:** When validation is enabled, `NotBefore` / `NotOnOrAfter` on the assertion (including `SubjectConfirmationData`) are enforced.
-- **SAML `SignatureValue` trivial-sig rejection:** When validation is enabled, SAML assertions must include a `SignatureValue` element decoding to at least 64 bytes; digest-only `Signature` blocks are rejected.
+- **SAML XML signature verification:** When validation is enabled and `FLOCI_CTF_FEDERATED_SAML_SIGNING_CERT_PEM` or per-provider `FLOCI_CTF_FEDERATED_SAML_SIGNING_CERTS__*` is set, SAML assertions must carry a valid enveloped XML signature from a pinned trust anchor (Apache Santuario). Structural checks still require a non-trivial `SignatureValue` when no cert is configured.
 - **`AssumeRoleWithSAML` response fields** use parsed assertion claims (`Issuer`, `Subject`, `Audience`) and optional `RoleSessionName` (defaulting from `NameID`).
 - **Invalid federated tokens** on known roles return `InvalidIdentityToken` (400) when parsing fails; trust failures remain `AccessDenied` (403).
 - **Trust policy explicit `Deny`** is evaluated before `Allow` statements.

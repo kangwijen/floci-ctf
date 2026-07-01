@@ -24,7 +24,8 @@ class FederatedTokenParserTest {
 
     private static final String PROVIDER_HOST = "accounts.google.com";
     private static final FederatedTokenValidationConfig STRUCTURAL_ONLY =
-            new FederatedTokenValidationConfig(true, Optional.empty(), Map.of(), Optional.empty());
+            new FederatedTokenValidationConfig(
+                    true, Optional.empty(), Map.of(), Optional.empty(), Optional.empty(), Map.of());
 
     @Test
     void parseWebIdentityTokenBuildsProviderArnAndClaims() {
@@ -122,7 +123,7 @@ class FederatedTokenParserTest {
     void validateFederatedTokensAcceptsValidUnexpiredJwt() {
         long future = java.time.Instant.now().getEpochSecond() + 3600;
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.of("lab-secret"), Map.of(), Optional.empty());
+                true, Optional.of("lab-secret"), Map.of(), Optional.empty(), Optional.empty(), Map.of());
         String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user", "exp", future), "lab-secret");
         FederatedTrustContext ctx = FederatedTokenParser.parseWebIdentityToken(
                 jwt, PROVIDER_HOST, "111122223333", config);
@@ -171,7 +172,7 @@ class FederatedTokenParserTest {
         long future = java.time.Instant.now().getEpochSecond() + 3600;
         String secret = "provider-specific-secret";
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.empty(), Map.of(PROVIDER_HOST, secret), Optional.empty());
+                true, Optional.empty(), Map.of(PROVIDER_HOST, secret), Optional.empty(), Optional.empty(), Map.of());
         String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user", "exp", future), secret);
         FederatedTrustContext ctx = FederatedTokenParser.parseWebIdentityToken(
                 jwt, PROVIDER_HOST, "111122223333", config);
@@ -188,7 +189,7 @@ class FederatedTokenParserTest {
                 + "\n-----END PUBLIC KEY-----";
         long future = java.time.Instant.now().getEpochSecond() + 3600;
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.empty(), Map.of(), Optional.of(pem));
+                true, Optional.empty(), Map.of(), Optional.of(pem), Optional.empty(), Map.of());
         String jwt = rs256Jwt(Map.of("aud", "client", "sub", "user", "exp", future), keyPair);
         FederatedTrustContext ctx = FederatedTokenParser.parseWebIdentityToken(
                 jwt, PROVIDER_HOST, "111122223333", config);
@@ -271,7 +272,7 @@ class FederatedTokenParserTest {
         String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user",
                 "exp", futureExp, "nbf", futureNbf), "lab-secret");
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.of("lab-secret"), Map.of(), Optional.empty());
+                true, Optional.of("lab-secret"), Map.of(), Optional.empty(), Optional.empty(), Map.of());
         assertNull(FederatedTokenParser.parseWebIdentityToken(jwt, PROVIDER_HOST, "111122223333", config),
                 "token with nbf in the future must be rejected");
     }
@@ -283,17 +284,18 @@ class FederatedTokenParserTest {
         String jwt = hs256Jwt(Map.of("aud", "client", "sub", "user",
                 "exp", futureExp, "nbf", pastNbf), "lab-secret");
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.of("lab-secret"), Map.of(), Optional.empty());
+                true, Optional.of("lab-secret"), Map.of(), Optional.empty(), Optional.empty(), Map.of());
         FederatedTrustContext ctx = FederatedTokenParser.parseWebIdentityToken(
                 jwt, PROVIDER_HOST, "111122223333", config);
         assertNotNull(ctx, "token with past nbf must be accepted");
     }
 
     @Test
-    void validateFederatedTokensRejectsSamlWithTrivialSignatureValue() {
+    void validateFederatedTokensRejectsSamlWithTrivialSignatureValue() throws Exception {
+        SamlAssertionTestSupport.SigningMaterial material = SamlAssertionTestSupport.generateSigningMaterial();
         String shortSig = Base64.getEncoder().encodeToString(new byte[8]);
         String xml = """
-                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
+                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_assertion-id">
                   <saml:Issuer>https://idp.example.com</saml:Issuer>
                   <saml:Subject><saml:NameID>alice@example.com</saml:NameID></saml:Subject>
                   <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
@@ -304,32 +306,40 @@ class FederatedTokenParserTest {
                   </ds:Signature>
                 </saml:Assertion>""".formatted(shortSig);
         String assertion = Base64.getEncoder().encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
+                true, Optional.empty(), Map.of(), Optional.empty(), Optional.of(material.certificatePem()), Map.of());
         assertNull(FederatedTokenParser.parseSamlAssertion(
-                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true),
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", config),
                 "SAML with SignatureValue shorter than 64 bytes decoded must be rejected");
     }
 
     @Test
-    void validateFederatedTokensAcceptsSamlWithAdequateSignatureValue() {
-        byte[] sigBytes = new byte[128];
-        new java.security.SecureRandom().nextBytes(sigBytes);
-        String longSig = Base64.getEncoder().encodeToString(sigBytes);
-        String xml = """
-                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
-                  <saml:Issuer>https://idp.example.com</saml:Issuer>
-                  <saml:Subject><saml:NameID>alice@example.com</saml:NameID></saml:Subject>
-                  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-                    <ds:SignedInfo>
-                      <ds:DigestValue>dGVzdA==</ds:DigestValue>
-                    </ds:SignedInfo>
-                    <ds:SignatureValue>%s</ds:SignatureValue>
-                  </ds:Signature>
-                </saml:Assertion>""".formatted(longSig);
-        String assertion = Base64.getEncoder().encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    void validateFederatedTokensAcceptsSignedSamlAssertion() throws Exception {
+        SamlAssertionTestSupport.SigningMaterial material = SamlAssertionTestSupport.generateSigningMaterial();
+        String signedXml = SamlAssertionTestSupport.signAssertion(
+                SamlAssertionTestSupport.baseAssertionXml("alice@example.com"),
+                material.certificate(),
+                material.keyPair().getPrivate());
+        String assertion = Base64.getEncoder().encodeToString(signedXml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
+                true, Optional.empty(), Map.of(), Optional.empty(), Optional.of(material.certificatePem()), Map.of());
         FederatedTrustContext ctx = FederatedTokenParser.parseSamlAssertion(
-                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true);
-        assertNotNull(ctx, "SAML with SignatureValue >= 64 bytes decoded must be accepted");
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", config);
+        assertNotNull(ctx, "cryptographically signed SAML must be accepted when trust anchor is configured");
         assertEquals("alice@example.com", ctx.conditionClaims().get("saml:sub"));
+    }
+
+    @Test
+    void validateFederatedTokensRejectsSamlWithoutConfiguredTrustAnchor() throws Exception {
+        SamlAssertionTestSupport.SigningMaterial material = SamlAssertionTestSupport.generateSigningMaterial();
+        String signedXml = SamlAssertionTestSupport.signAssertion(
+                SamlAssertionTestSupport.baseAssertionXml("alice@example.com"),
+                material.certificate(),
+                material.keyPair().getPrivate());
+        String assertion = Base64.getEncoder().encodeToString(signedXml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertNull(FederatedTokenParser.parseSamlAssertion(
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", STRUCTURAL_ONLY),
+                "signed SAML must be rejected when no trust anchor PEM is configured");
     }
 
     @Test
@@ -360,7 +370,7 @@ class FederatedTokenParserTest {
                 "sub", "user",
                 "exp", futureExp), "lab-secret");
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
-                true, Optional.of("lab-secret"), Map.of(), Optional.empty());
+                true, Optional.of("lab-secret"), Map.of(), Optional.empty(), Optional.empty(), Map.of());
         assertNull(FederatedTokenParser.parseWebIdentityToken(
                 jwt, PROVIDER_HOST, "111122223333", config));
     }
@@ -372,23 +382,25 @@ class FederatedTokenParserTest {
     }
 
     @Test
-    void validateFederatedTokensRejectsExpiredSamlAssertion() {
+    void validateFederatedTokensRejectsExpiredSamlAssertion() throws Exception {
         java.time.Instant expired = java.time.Instant.now().minusSeconds(3600);
-        byte[] sigBytes = new byte[128];
-        new java.security.SecureRandom().nextBytes(sigBytes);
-        String longSig = Base64.getEncoder().encodeToString(sigBytes);
+        java.time.Instant notBefore = expired.minusSeconds(7200);
+        SamlAssertionTestSupport.SigningMaterial material = SamlAssertionTestSupport.generateSigningMaterial();
         String xml = """
-                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
+                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" \
+                ID="_expired-assertion" IssueInstant="%s" Version="2.0">
                   <saml:Issuer>https://idp.example.com</saml:Issuer>
                   <saml:Subject><saml:NameID>alice@example.com</saml:NameID></saml:Subject>
-                  <saml:Conditions NotOnOrAfter="%s"/>
-                  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-                    <ds:SignatureValue>%s</ds:SignatureValue>
-                  </ds:Signature>
-                </saml:Assertion>""".formatted(expired.toString(), longSig);
-        String assertion = Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
+                  <saml:Conditions NotBefore="%s" NotOnOrAfter="%s"/>
+                </saml:Assertion>""".formatted(
+                expired.toString(), notBefore.toString(), expired.toString());
+        String signedXml = SamlAssertionTestSupport.signAssertion(
+                xml, material.certificate(), material.keyPair().getPrivate());
+        String assertion = Base64.getEncoder().encodeToString(signedXml.getBytes(StandardCharsets.UTF_8));
+        FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
+                true, Optional.empty(), Map.of(), Optional.empty(), Optional.of(material.certificatePem()), Map.of());
         assertNull(FederatedTokenParser.parseSamlAssertion(
-                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", true));
+                assertion, "arn:aws:iam::111122223333:saml-provider/CorpIdP", config));
     }
 
     private static String jwt(Map<String, Object> claims) {

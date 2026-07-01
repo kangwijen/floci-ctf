@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.iam;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -13,16 +14,22 @@ public record FederatedTokenValidationConfig(
         boolean validateFederatedTokens,
         Optional<String> federatedJwtHmacSecret,
         Map<String, String> federatedJwtHmacSecrets,
-        Optional<String> federatedJwtRs256PublicKeyPem) {
+        Optional<String> federatedJwtRs256PublicKeyPem,
+        Optional<String> federatedSamlSigningCertPem,
+        Map<String, String> federatedSamlSigningCerts) {
 
     public FederatedTokenValidationConfig {
         federatedJwtHmacSecrets = federatedJwtHmacSecrets == null
                 ? Map.of()
                 : Collections.unmodifiableMap(federatedJwtHmacSecrets);
+        federatedSamlSigningCerts = federatedSamlSigningCerts == null
+                ? Map.of()
+                : Collections.unmodifiableMap(federatedSamlSigningCerts);
     }
 
     public static FederatedTokenValidationConfig disabled() {
-        return new FederatedTokenValidationConfig(false, Optional.empty(), Map.of(), Optional.empty());
+        return new FederatedTokenValidationConfig(
+                false, Optional.empty(), Map.of(), Optional.empty(), Optional.empty(), Map.of());
     }
 
     public static FederatedTokenValidationConfig from(EmulatorConfig.CtfConfig ctf) {
@@ -30,7 +37,9 @@ public record FederatedTokenValidationConfig(
                 ctf.validateFederatedTokens(),
                 ctf.federatedJwtHmacSecret(),
                 ctf.federatedJwtHmacSecrets() == null ? Map.of() : ctf.federatedJwtHmacSecrets(),
-                ctf.federatedJwtRs256PublicKeyPem());
+                ctf.federatedJwtRs256PublicKeyPem(),
+                ctf.federatedSamlSigningCertPem(),
+                ctf.federatedSamlSigningCerts() == null ? Map.of() : ctf.federatedSamlSigningCerts());
     }
 
     public Optional<String> resolveHmacSecret(String providerHost) {
@@ -41,5 +50,18 @@ public record FederatedTokenValidationConfig(
             }
         }
         return federatedJwtHmacSecret.filter(secret -> !secret.isBlank());
+    }
+
+    public List<String> resolveSamlSigningCertPems(String providerName) {
+        if (providerName != null && !providerName.isBlank()) {
+            String perProvider = federatedSamlSigningCerts.get(providerName);
+            if (perProvider != null && !perProvider.isBlank()) {
+                return List.of(perProvider);
+            }
+        }
+        if (federatedSamlSigningCertPem.isPresent() && !federatedSamlSigningCertPem.get().isBlank()) {
+            return List.of(federatedSamlSigningCertPem.get());
+        }
+        return List.of();
     }
 }
