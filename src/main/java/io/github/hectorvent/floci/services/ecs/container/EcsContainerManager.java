@@ -3,12 +3,14 @@ package io.github.hectorvent.floci.services.ecs.container;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.ContainerInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecs.model.Container;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
@@ -51,6 +53,7 @@ public class EcsContainerManager {
     private final RegionResolver regionResolver;
     private final DockerHostResolver dockerHostResolver;
     private final EcsContainerCredentialsServer credentialsServer;
+    private final CurrentContainerNetworkResolver currentContainerNetworkResolver;
 
     @Inject
     public EcsContainerManager(ContainerBuilder containerBuilder,
@@ -60,7 +63,8 @@ public class EcsContainerManager {
                                EmulatorConfig config,
                                RegionResolver regionResolver,
                                DockerHostResolver dockerHostResolver,
-                               EcsContainerCredentialsServer credentialsServer) {
+                               EcsContainerCredentialsServer credentialsServer,
+                               CurrentContainerNetworkResolver currentContainerNetworkResolver) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
@@ -69,6 +73,7 @@ public class EcsContainerManager {
         this.regionResolver = regionResolver;
         this.dockerHostResolver = dockerHostResolver;
         this.credentialsServer = credentialsServer;
+        this.currentContainerNetworkResolver = currentContainerNetworkResolver;
     }
 
     /**
@@ -196,6 +201,11 @@ public class EcsContainerManager {
                                 mp.sourceVolume(), def.getName());
                     }
                 }
+            }
+
+            if (credentialToken != null) {
+                ContainerCredentialsHostSetup.applyLinkLocalExtraHost(
+                        specBuilder, config, containerDetector, currentContainerNetworkResolver, flociHost);
             }
 
             ContainerSpec spec = specBuilder.build();

@@ -3,10 +3,12 @@ package io.github.hectorvent.floci.services.lambda.launcher;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerReachableEndpoint;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
@@ -47,11 +49,14 @@ class ContainerLauncherTest {
     @Mock RuntimeApiServerFactory runtimeApiServerFactory;
     @Mock DockerHostResolver dockerHostResolver;
     @Mock EmulatorConfig config;
+    @Mock EmulatorConfig.CtfConfig ctf;
     @Mock EcrRegistryManager ecrRegistryManager;
     @Mock EmbeddedDnsServer embeddedDnsServer;
     @Mock RuntimeApiServer runtimeApiServer;
     @Mock DockerClient dockerClient;
     @Mock LambdaContainerCredentialsServer credentialsServer;
+    @Mock ContainerDetector containerDetector;
+    @Mock CurrentContainerNetworkResolver currentContainerNetworkResolver;
 
     @TempDir
     Path tempDir;
@@ -67,6 +72,9 @@ class ContainerLauncherTest {
         EmulatorConfig.DockerConfig docker = mock(EmulatorConfig.DockerConfig.class);
 
         when(config.services()).thenReturn(services);
+        lenient().when(config.ctf()).thenReturn(ctf);
+        lenient().when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(false);
+        lenient().when(ctf.containerCredentialsLinkLocalHost()).thenReturn("169.254.170.2");
         when(services.lambda()).thenReturn(lambda);
         when(lambda.dockerNetwork()).thenReturn(Optional.empty());
         lenient().when(lambda.awsConfigPath()).thenReturn(Optional.empty());
@@ -86,7 +94,7 @@ class ContainerLauncherTest {
         launcher = new ContainerLauncher(containerBuilder, lifecycleManager, logStreamer, imageResolver,
                 runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager,
                 mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class),
-                credentialsServer, reachableEndpoint);
+                credentialsServer, reachableEndpoint, containerDetector, currentContainerNetworkResolver);
 
         lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 
@@ -463,6 +471,32 @@ class ContainerLauncherTest {
                 "operator credentials must not be injected when execution role is set");
         assertTrue(env.stream().noneMatch(e -> e.startsWith("AWS_SECRET_ACCESS_KEY=")),
                 "operator credentials must not be injected when execution role is set");
+    }
+
+    @Test
+    void launchFunction_withExecutionRole_addsLinkLocalExtraHostWhenEnabled() throws Exception {
+        when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(true);
+        when(containerDetector.isRunningInContainer()).thenReturn(true);
+        when(currentContainerNetworkResolver.resolveContainerIp()).thenReturn(Optional.of("172.20.0.5"));
+
+        Path codePath = Files.createDirectory(tempDir.resolve("link-local-creds"));
+
+        LambdaFunction fn = new LambdaFunction();
+        fn.setFunctionName("link-local-fn");
+        fn.setRuntime("nodejs20.x");
+        fn.setHandler("index.handler");
+        fn.setCodeLocalPath(codePath.toString());
+        fn.setRole("arn:aws:iam::000000000000:role/lambda-exec");
+
+        when(credentialsServer.registerFunction(any(), any(), any())).thenReturn("cred-token-link");
+        when(credentialsServer.credentialsFullUri("127.0.0.1", "cred-token-link"))
+                .thenReturn("http://169.254.170.2:9171/v2/credentials/cred-token-link");
+
+        launcher.launch(fn);
+
+        ArgumentCaptor<ContainerSpec> specCaptor = ArgumentCaptor.forClass(ContainerSpec.class);
+        verify(lifecycleManager).create(specCaptor.capture());
+        assertTrue(specCaptor.getValue().extraHosts().contains("169.254.170.2:172.20.0.5"));
     }
 
     @Test

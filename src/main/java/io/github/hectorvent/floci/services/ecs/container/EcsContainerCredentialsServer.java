@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.ecs.container;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.container.ContainerCredentialsUriBuilder;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
@@ -51,12 +52,13 @@ public class EcsContainerCredentialsServer {
     private volatile HttpServer httpServer;
 
     @Inject
-    public EcsContainerCredentialsServer(Vertx vertx, EmulatorConfig config, IamService iamService) {
+    public EcsContainerCredentialsServer(Vertx vertx, EmulatorConfig config, IamService iamService,
+                                         ContainerDetector containerDetector) {
         this.vertx = vertx;
         this.config = config;
         this.iamService = iamService;
         this.uriBuilder = new ContainerCredentialsUriBuilder(
-                config, () -> config.services().ecs().containerCredentialsPort());
+                config, () -> config.services().ecs().containerCredentialsPort(), containerDetector);
     }
 
     /**

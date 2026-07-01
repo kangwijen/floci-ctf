@@ -32,7 +32,7 @@ Floci is configured exclusively through environment variables. Every option belo
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per OIDC provider host HMAC secret for HS256 verification (for example `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__accounts_google_com`) |
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM-encoded RSA public key for RS256 web identity JWT verification |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | When link-local URI mode is off: bind credential HTTP servers to `127.0.0.1` only (ports 9170/9171/9172). Ignored when link-local URI mode is on (servers bind `0.0.0.0`) |
-| `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2/v2/credentials/{token}` (no port) and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; credential servers bind `0.0.0.0`. Lambda/ECS/CodeBuild containers need `extra_hosts: ["169.254.170.2:host-gateway"]` |
+| `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2:PORT/v2/credentials/{token}` and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; credential servers bind `0.0.0.0`. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers (`169.254.170.2:host-gateway` on native Docker, or `169.254.170.2:<floci-container-ip>` in Compose) |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
 
 ### Audit profile (Compose defaults)

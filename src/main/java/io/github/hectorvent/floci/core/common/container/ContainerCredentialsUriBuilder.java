@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.core.common.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 
 import java.util.function.IntSupplier;
 
@@ -12,10 +13,17 @@ public final class ContainerCredentialsUriBuilder {
 
     private final EmulatorConfig config;
     private final IntSupplier portSupplier;
+    private final ContainerDetector containerDetector;
 
     public ContainerCredentialsUriBuilder(EmulatorConfig config, IntSupplier portSupplier) {
+        this(config, portSupplier, null);
+    }
+
+    public ContainerCredentialsUriBuilder(EmulatorConfig config, IntSupplier portSupplier,
+                                          ContainerDetector containerDetector) {
         this.config = config;
         this.portSupplier = portSupplier;
+        this.containerDetector = containerDetector;
     }
 
     public String credentialsRelativeUri(String credentialToken) {
@@ -24,8 +32,9 @@ public final class ContainerCredentialsUriBuilder {
 
     public String credentialsFullUri(String hostAddress, String credentialToken) {
         if (config.ctf().containerCredentialsUseLinkLocalUri()) {
+            int port = portSupplier.getAsInt();
             return "http://" + config.ctf().containerCredentialsLinkLocalHost()
-                    + credentialsRelativeUri(credentialToken);
+                    + ":" + port + credentialsRelativeUri(credentialToken);
         }
         int port = portSupplier.getAsInt();
         return "http://" + hostAddress + ":" + port + credentialsRelativeUri(credentialToken);
@@ -33,6 +42,9 @@ public final class ContainerCredentialsUriBuilder {
 
     public String resolveBindHost() {
         if (config.ctf().containerCredentialsUseLinkLocalUri()) {
+            return "0.0.0.0";
+        }
+        if (containerDetector != null && containerDetector.isRunningInContainer()) {
             return "0.0.0.0";
         }
         return config.ctf().containerCredentialsBindLocalhost() ? "127.0.0.1" : "0.0.0.0";

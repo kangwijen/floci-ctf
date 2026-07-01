@@ -248,7 +248,9 @@ class LambdaImageConfigTest {
             launcher = new ContainerLauncher(containerBuilder, lifecycleManager, logStreamer, imageResolver,
                     runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager,
                     mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class),
-                    credentialsServer, reachableEndpoint);
+                    credentialsServer, reachableEndpoint,
+                    mock(io.github.hectorvent.floci.core.common.docker.ContainerDetector.class),
+                    mock(io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver.class));
 
             lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 

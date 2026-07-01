@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.codebuild.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
@@ -62,7 +63,7 @@ class CodeBuildContainerCredentialsServerTest {
         role.setRoleId("AROA789");
         when(iamService.getRoleByArn("arn:aws:iam::000000000000:role/codebuild-service-role")).thenReturn(role);
 
-        server = new CodeBuildContainerCredentialsServer(vertx, config, iamService);
+        server = new CodeBuildContainerCredentialsServer(vertx, config, iamService, mock(ContainerDetector.class));
         server.start().get(5, TimeUnit.SECONDS);
     }
 
@@ -135,7 +136,7 @@ class CodeBuildContainerCredentialsServerTest {
     void credentialsFullUriUsesLinkLocalHostWhenEnabled() {
         when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(true);
         when(ctf.containerCredentialsLinkLocalHost()).thenReturn("169.254.170.2");
-        assertEquals("http://169.254.170.2/v2/credentials/abc-token",
+        assertEquals("http://169.254.170.2:" + port + "/v2/credentials/abc-token",
                 server.credentialsFullUri("ignored-host", "abc-token"));
     }
 

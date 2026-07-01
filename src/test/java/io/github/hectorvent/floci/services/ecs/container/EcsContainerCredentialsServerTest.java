@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.ecs.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
@@ -61,7 +62,7 @@ class EcsContainerCredentialsServerTest {
         role.setRoleId("AROA123");
         when(iamService.getRoleByArn("arn:aws:iam::000000000000:role/ecs-task-role")).thenReturn(role);
 
-        server = new EcsContainerCredentialsServer(vertx, config, iamService);
+        server = new EcsContainerCredentialsServer(vertx, config, iamService, mock(ContainerDetector.class));
         server.start().get(5, TimeUnit.SECONDS);
     }
 

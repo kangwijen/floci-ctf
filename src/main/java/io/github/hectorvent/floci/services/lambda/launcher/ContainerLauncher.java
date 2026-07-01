@@ -3,11 +3,14 @@ package io.github.hectorvent.floci.services.lambda.launcher;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerReachableEndpoint;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
 import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
@@ -68,6 +71,8 @@ public class ContainerLauncher {
     private final LambdaLayerService layerService;
     private final LambdaContainerCredentialsServer credentialsServer;
     private final ContainerReachableEndpoint reachableEndpoint;
+    private final ContainerDetector containerDetector;
+    private final CurrentContainerNetworkResolver currentContainerNetworkResolver;
 
     /** Matches an AWS-shaped ECR image URI: {@code <account>.dkr.ecr.<region>.amazonaws.com/<repo>[:tag]}. */
     private static final java.util.regex.Pattern AWS_ECR_URI =
@@ -84,7 +89,9 @@ public class ContainerLauncher {
                              EcrRegistryManager ecrRegistryManager,
                              LambdaLayerService layerService,
                              LambdaContainerCredentialsServer credentialsServer,
-                             ContainerReachableEndpoint reachableEndpoint) {
+                             ContainerReachableEndpoint reachableEndpoint,
+                             ContainerDetector containerDetector,
+                             CurrentContainerNetworkResolver currentContainerNetworkResolver) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
@@ -96,6 +103,8 @@ public class ContainerLauncher {
         this.layerService = layerService;
         this.credentialsServer = credentialsServer;
         this.reachableEndpoint = reachableEndpoint;
+        this.containerDetector = containerDetector;
+        this.currentContainerNetworkResolver = currentContainerNetworkResolver;
     }
 
     /**
@@ -220,6 +229,11 @@ public class ContainerLauncher {
                 .withLogRotation();
 
         specBuilder.withEmbeddedDns();
+
+        if (credentialToken != null) {
+            ContainerCredentialsHostSetup.applyLinkLocalExtraHost(
+                    specBuilder, config, containerDetector, currentContainerNetworkResolver, hostAddress);
+        }
 
         if (fn.isHotReload()) {
             specBuilder.withBind(fn.getHotReloadHostPath(), TASK_DIR);

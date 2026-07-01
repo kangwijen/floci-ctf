@@ -236,6 +236,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | API Gateway `TestInvokeMethod` without stage deploy | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | API Gateway `TestInvokeMethod` with `AWS_PROXY` Lambda integration | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
+| Lambda execution-role creds on Compose bridge (link-local `extra_hosts` + port in URI) | Closed | `ContainerLauncherTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |
@@ -353,7 +354,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | ELB / API Gateway / Cognito / CodeDeploy Lambda invoke | Yes (`elasticloadbalancing.amazonaws.com`, `apigateway.amazonaws.com`, `cognito-idp.amazonaws.com`, `codedeploy.amazonaws.com` on function resource policy) |
 | CloudTrail / Config / Firehose / VPC flow logs S3 delivery | Yes (`authorizeServiceS3Put` for CloudTrail and Config (`s3:ListBucket` for Config); Firehose stream `RoleARN` identity policy on `s3:PutObject`; VPC flow logs use `delivery.logs.amazonaws.com`) |
 | Inter-service delivery audit | CloudTrail audit when audit enabled (`invokedBy` AWSService events on Firehose, Config, flow logs, and other in-process delivery) |
-| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2` URIs with `extra_hosts`; `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`) |
+| Lambda / CodeBuild / ECS runtime creds | Yes when enforcement on (creds on 9171/9172/9170; link-local `169.254.170.2:PORT` URIs with auto `extra_hosts` on spawned containers; `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `ContainerLauncherTest`) |
 
 **CTF defaults:** `src/main/resources/application.yml` keeps IAM/SigV4 off for local dev; Compose turns them on. Test `application.yml` disables enforcement globally; dedicated `@QuarkusTestProfile` overrides cover CTF paths.
 

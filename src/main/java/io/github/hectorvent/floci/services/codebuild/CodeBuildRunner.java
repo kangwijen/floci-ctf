@@ -10,11 +10,13 @@ import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.services.codebuild.container.CodeBuildContainerCredentialsServer;
 import io.github.hectorvent.floci.services.codebuild.BuildspecParser.ParsedArtifacts;
@@ -74,6 +76,7 @@ public class CodeBuildRunner {
     private final RegionResolver regionResolver;
     private final DockerHostResolver dockerHostResolver;
     private final CodeBuildContainerCredentialsServer credentialsServer;
+    private final CurrentContainerNetworkResolver currentContainerNetworkResolver;
 
     private final ConcurrentHashMap<String, String> runningContainers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicBoolean> stopFlags = new ConcurrentHashMap<>();
@@ -90,7 +93,8 @@ public class CodeBuildRunner {
                            ContainerDetector containerDetector,
                            RegionResolver regionResolver,
                            DockerHostResolver dockerHostResolver,
-                           CodeBuildContainerCredentialsServer credentialsServer) {
+                           CodeBuildContainerCredentialsServer credentialsServer,
+                           CurrentContainerNetworkResolver currentContainerNetworkResolver) {
         this.dockerClient = dockerClient;
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
@@ -103,6 +107,7 @@ public class CodeBuildRunner {
         this.regionResolver = regionResolver;
         this.dockerHostResolver = dockerHostResolver;
         this.credentialsServer = credentialsServer;
+        this.currentContainerNetworkResolver = currentContainerNetworkResolver;
     }
 
     public void startBuild(String region, Build build, Project project, String buildspecOverride) {
@@ -207,15 +212,19 @@ public class CodeBuildRunner {
 
             // Keep the container alive so each phase can be run with docker exec.
             // No bind mount needed — source and artifacts are transferred with docker cp.
-            ContainerSpec spec = containerBuilder.newContainer(image)
+            ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(image)
                     .withCmd(List.of("sh", "-c", "tail -f /dev/null"))
                     .withEnv(envList)
                     .withDockerNetwork(config.services().codebuild().dockerNetwork())
                     .withEmbeddedDns()
                     .withHostDockerInternalOnLinux()
                     .withPrivileged(privileged)
-                    .withLogRotation()
-                    .build();
+                    .withLogRotation();
+            if (credentialToken != null) {
+                ContainerCredentialsHostSetup.applyLinkLocalExtraHost(
+                        specBuilder, config, containerDetector, currentContainerNetworkResolver, flociHost);
+            }
+            ContainerSpec spec = specBuilder.build();
 
             ContainerLifecycleManager.ContainerInfo info = lifecycleManager.createAndStart(spec);
             containerId = info.containerId();

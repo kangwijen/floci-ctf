@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.core.common.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.vertx.core.Vertx;
@@ -48,12 +49,18 @@ public final class ContainerCredentialsHttpServer {
 
     public ContainerCredentialsHttpServer(Vertx vertx, EmulatorConfig config, IamService iamService,
                                           IntSupplier portSupplier, String label) {
+        this(vertx, config, iamService, portSupplier, label, null);
+    }
+
+    public ContainerCredentialsHttpServer(Vertx vertx, EmulatorConfig config, IamService iamService,
+                                          IntSupplier portSupplier, String label,
+                                          ContainerDetector containerDetector) {
         this.vertx = vertx;
         this.config = config;
         this.iamService = iamService;
         this.portSupplier = portSupplier;
         this.label = label;
-        this.uriBuilder = new ContainerCredentialsUriBuilder(config, portSupplier);
+        this.uriBuilder = new ContainerCredentialsUriBuilder(config, portSupplier, containerDetector);
         this.log = Logger.getLogger(ContainerCredentialsHttpServer.class.getName() + "." + label);
     }
 

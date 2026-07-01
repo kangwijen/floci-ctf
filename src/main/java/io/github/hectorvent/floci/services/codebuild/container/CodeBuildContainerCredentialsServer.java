@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.codebuild.container;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHttpServer;
+import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.vertx.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -21,11 +22,12 @@ public class CodeBuildContainerCredentialsServer {
     private final ContainerCredentialsHttpServer delegate;
 
     @Inject
-    public CodeBuildContainerCredentialsServer(Vertx vertx, EmulatorConfig config, IamService iamService) {
+    public CodeBuildContainerCredentialsServer(Vertx vertx, EmulatorConfig config, IamService iamService,
+                                               ContainerDetector containerDetector) {
         this.delegate = new ContainerCredentialsHttpServer(
                 vertx, config, iamService,
                 () -> config.services().codebuild().containerCredentialsPort(),
-                "CodeBuild");
+                "CodeBuild", containerDetector);
     }
 
     public String registerBuild(String buildId, String serviceRoleArn, String region) {
