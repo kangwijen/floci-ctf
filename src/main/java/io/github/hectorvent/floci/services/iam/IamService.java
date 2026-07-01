@@ -64,6 +64,8 @@ public class IamService implements SessionAccountLookup {
     private final StorageBackend<String, SessionCredential> sessions;
     private final RegionResolver regionResolver;
     private final AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator;
+    private final IamPolicyEvaluator policyEvaluator;
+    private final EmulatorConfig emulatorConfig;
     private final AtomicInteger sessionLookupCount = new AtomicInteger();
     private final boolean seedDeployerPrincipal;
 
@@ -78,7 +80,8 @@ public class IamService implements SessionAccountLookup {
     public IamService(StorageFactory storageFactory,
                       EmulatorConfig config,
                       RegionResolver regionResolver,
-                      AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator) {
+                      AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator,
+                      IamPolicyEvaluator policyEvaluator) {
         boolean seedDeployer = config.services().iam().seedDeployerPrincipal()
                 && !config.services().iam().enforcementEnabled();
         this(
@@ -91,6 +94,8 @@ public class IamService implements SessionAccountLookup {
             storageFactory.create("iam", "iam-sessions.json", new TypeReference<>() {}),
             regionResolver,
             trustPolicyEvaluator,
+            policyEvaluator,
+            config,
             seedDeployer
         );
     }
@@ -103,10 +108,13 @@ public class IamService implements SessionAccountLookup {
                StorageBackend<String, InstanceProfile> instanceProfiles,
                StorageBackend<String, SessionCredential> sessions,
                RegionResolver regionResolver) {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper());
         this(users, groups, roles, policies, accessKeys, instanceProfiles, sessions, regionResolver,
                 new AssumeRoleTrustPolicyEvaluator(
                         new com.fasterxml.jackson.databind.ObjectMapper(),
-                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                        evaluator),
+                evaluator,
+                null,
                 false);
     }
 
@@ -119,6 +127,8 @@ public class IamService implements SessionAccountLookup {
                StorageBackend<String, SessionCredential> sessions,
                RegionResolver regionResolver,
                AssumeRoleTrustPolicyEvaluator trustPolicyEvaluator,
+               IamPolicyEvaluator policyEvaluator,
+               EmulatorConfig emulatorConfig,
                boolean seedDeployerPrincipal) {
         this.users = users;
         this.groups = groups;
@@ -129,6 +139,8 @@ public class IamService implements SessionAccountLookup {
         this.sessions = sessions;
         this.regionResolver = regionResolver;
         this.trustPolicyEvaluator = trustPolicyEvaluator;
+        this.policyEvaluator = policyEvaluator;
+        this.emulatorConfig = emulatorConfig;
         this.seedDeployerPrincipal = seedDeployerPrincipal;
     }
 
@@ -400,6 +412,50 @@ public class IamService implements SessionAccountLookup {
      *
      * @throws AwsException AccessDenied when trust policy rejects the caller
      */
+    /**
+     * Validates caller identity policy for {@code sts:AssumeRole} when IAM enforcement is enabled.
+     *
+     * <p>Same-account: trust policy alone is sufficient unless the caller has an explicit identity
+     * Deny on {@code sts:AssumeRole} for the role. Cross-account: caller identity must Allow the
+     * role ARN in addition to trust policy Allow.
+     */
+    public void validateCallerIdentityForAssumeRole(String accessKeyId,
+                                                    String callerPrincipalArn,
+                                                    String roleArn,
+                                                    String callerAccountId,
+                                                    String roleAccountId) {
+        if (emulatorConfig == null || !emulatorConfig.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (accessKeyId != null && emulatorConfig.auth().rootAccessKeyId().filter(accessKeyId::equals).isPresent()) {
+            return;
+        }
+        CallerContext callerContext = resolveCallerContext(accessKeyId);
+        if (callerContext == null) {
+            return;
+        }
+        String action = "sts:AssumeRole";
+        Map<String, String> condCtx = Map.of(
+                "aws:principalarn", callerPrincipalArn == null ? "" : callerPrincipalArn,
+                "aws:principalaccount", callerAccountId == null ? "" : callerAccountId);
+        if (callerAccountId != null && callerAccountId.equals(roleAccountId)) {
+            if (policyEvaluator.hasExplicitDeny(callerContext, action, roleArn, condCtx)) {
+                throw new AwsException("AccessDenied",
+                        "User: " + callerPrincipalArn + " is not authorized to perform: "
+                                + action + " on resource: " + roleArn,
+                        403);
+            }
+            return;
+        }
+        if (policyEvaluator.evaluate(callerContext, List.of(), action, roleArn, condCtx)
+                != IamPolicyEvaluator.Decision.ALLOW) {
+            throw new AwsException("AccessDenied",
+                    "User: " + callerPrincipalArn + " is not authorized to perform: "
+                            + action + " on resource: " + roleArn,
+                    403);
+        }
+    }
+
     public void validateAssumeRoleTrust(String roleArn, String callerPrincipalArn, String externalId) {
         validateAssumeRoleTrust(roleArn, callerPrincipalArn, externalId, "sts:AssumeRole");
     }

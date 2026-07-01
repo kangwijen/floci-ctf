@@ -78,10 +78,23 @@ public class StsQueryHandler {
             return trustDeny;
         }
         String roleArn = getParam(params, "RoleArn");
+        String callerAccessKeyId = accountResolver.extractAccessKeyId(authorization);
+        String callerAccountId = accountResolver.resolve(authorization);
+        String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, callerAccountId);
+        String callerPrincipalArn = iamService.resolveCallerIdentity(
+                callerAccessKeyId, callerAccountId, config.auth().rootAccessKeyId())
+                .map(CallerIdentity::arn)
+                .orElseGet(() -> CallerIdentity.root(callerAccountId).arn());
+        try {
+            iamService.validateCallerIdentityForAssumeRole(
+                    callerAccessKeyId, callerPrincipalArn, roleArn, callerAccountId, roleAccountId);
+        } catch (AwsException e) {
+            return AwsQueryResponse.error(e.getErrorCode(), e.getMessage(), AwsNamespaces.STS, e.getHttpStatus());
+        }
         String sessionName = getParam(params, "RoleSessionName");
         int durationSeconds = getIntParam(params, "DurationSeconds", 3600);
 
-        String accessKeyId = "ASIA" + randomId(16);
+        String sessionAccessKeyId = "ASIA" + randomId(16);
         String secretKey = randomSecret(40);
         String sessionToken = randomSecret(200);
         Instant expiration = Instant.now().plusSeconds(durationSeconds);
@@ -89,7 +102,6 @@ public class StsQueryHandler {
         String roleName = roleArn != null && roleArn.contains("/")
                 ? roleArn.substring(roleArn.lastIndexOf('/') + 1)
                 : "UnknownRole";
-        String callerAccountId = regionResolver.getAccountId();
         String accountId = AwsArnUtils.accountOrDefault(roleArn, callerAccountId);
         String assumedRoleArn = AwsArnUtils.Arn.of("sts", "", accountId, "assumed-role/" + roleName + "/" + sessionName).toString();
         String assumedRoleId = "AROA" + randomId(16) + ":" + sessionName;
@@ -98,11 +110,11 @@ public class StsQueryHandler {
         // IAM token validation can find the temporary secret key, and account routing can map
         // these temporary credentials to the assumed role's account.
         String sessionPolicy = getParam(params, "Policy");
-        iamService.registerSession(accessKeyId, roleArn, expiration, sessionPolicy, secretKey,
+        iamService.registerSession(sessionAccessKeyId, roleArn, expiration, sessionPolicy, secretKey,
                 assumedRoleId, assumedRoleArn, null, sessionToken, callerAccountId);
 
         String result = new XmlBuilder()
-                .raw(credentialsXml(accessKeyId, secretKey, sessionToken, expiration))
+                .raw(credentialsXml(sessionAccessKeyId, secretKey, sessionToken, expiration))
                 .start("AssumedRoleUser")
                   .elem("Arn", assumedRoleArn)
                   .elem("AssumedRoleId", assumedRoleId)

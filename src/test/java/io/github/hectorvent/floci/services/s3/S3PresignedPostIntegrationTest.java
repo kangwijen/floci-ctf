@@ -528,6 +528,66 @@ class S3PresignedPostIntegrationTest {
     }
 
     @Test
+    @Order(95)
+    void presignedPostRejectsUnknownConditionOperator() {
+        String key = "uploads/unknown-op.txt";
+        String fileContent = "blocked";
+        String expiration = Instant.now().plusSeconds(3600)
+                .atZone(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ISO_INSTANT);
+        String policy = """
+                {
+                  "expiration": "%s",
+                  "conditions": [
+                    {"bucket": "%s"},
+                    {"key": "%s"},
+                    ["not-eq", "$key", "%s"]
+                  ]
+                }
+                """.formatted(expiration, BUCKET, key, key);
+        String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
+
+        given()
+            .multiPart("key", key)
+            .multiPart("policy", policyBase64)
+            .multiPart("x-amz-algorithm", "AWS4-HMAC-SHA256")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
+            .multiPart("file", "unknown-op.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
+        .when()
+            .post("/" + BUCKET)
+        .then()
+            .statusCode(403)
+            .body(containsString("unsupported operator"));
+    }
+
+    @Test
+    @Order(96)
+    void presignedPostRejectsSigV4aAlgorithm() {
+        String key = "uploads/sigv4a.txt";
+        String fileContent = "blocked";
+        String policy = buildPolicy(BUCKET, key, "text/plain", 0, 10485760);
+        String policyBase64 = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
+        PostSigFields sig = signPost(policyBase64, Instant.now());
+
+        given()
+            .multiPart("key", key)
+            .multiPart("policy", policyBase64)
+            .multiPart("x-amz-algorithm", "AWS4-ECDSA-P256-SHA256")
+            .multiPart("x-amz-credential", sig.credential())
+            .multiPart("x-amz-date", sig.amzDate())
+            .multiPart("x-amz-signature", sig.signature())
+            .multiPart("file", "sigv4a.txt", fileContent.getBytes(StandardCharsets.UTF_8), "text/plain")
+        .when()
+            .post("/" + BUCKET)
+        .then()
+            .statusCode(403)
+            .body(containsString("SigV4a"));
+    }
+
+    @Test
     @Order(97)
     void presignedPostPersistsUserMetadata() {
         String key = "uploads/with-metadata.txt";

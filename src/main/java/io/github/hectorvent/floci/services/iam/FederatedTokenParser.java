@@ -43,6 +43,10 @@ public final class FederatedTokenParser {
     private static final Pattern SAML_DIGEST_VALUE = Pattern.compile(
             "<(?:[\\w]+:)?DigestValue[^>]*>([^<]+)</(?:[\\w]+:)?DigestValue>",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAML_SIGNATURE_VALUE = Pattern.compile(
+            "<(?:[\\w]+:)?SignatureValue[^>]*>([^<]+)</(?:[\\w]+:)?SignatureValue>",
+            Pattern.CASE_INSENSITIVE);
+    private static final int SAML_SIGNATURE_MIN_BYTES = 64;
 
     private FederatedTokenParser() {
     }
@@ -81,6 +85,9 @@ public final class FederatedTokenParser {
             return null;
         }
         if (validateFederatedTokens && isJwtExpired(claims)) {
+            return null;
+        }
+        if (validateFederatedTokens && isJwtNotYetValid(claims)) {
             return null;
         }
         String provider = resolveOidcProviderPrincipal(providerId, roleAccountId);
@@ -181,6 +188,24 @@ public final class FederatedTokenParser {
         return Instant.now().getEpochSecond() >= expSeconds;
     }
 
+    static boolean isJwtNotYetValid(Map<String, Object> claims) {
+        Object nbf = claims.get("nbf");
+        if (nbf == null) {
+            return false;
+        }
+        long nbfSeconds;
+        if (nbf instanceof Number number) {
+            nbfSeconds = number.longValue();
+        } else {
+            try {
+                nbfSeconds = Long.parseLong(nbf.toString());
+            } catch (NumberFormatException e) {
+                return true;
+            }
+        }
+        return Instant.now().getEpochSecond() < nbfSeconds;
+    }
+
     static boolean isStructurallyValidSamlAssertion(String xml) {
         if (xml == null || xml.isBlank()) {
             return false;
@@ -199,19 +224,36 @@ public final class FederatedTokenParser {
             return false;
         }
         Matcher digestMatcher = SAML_DIGEST_VALUE.matcher(xml);
-        if (!digestMatcher.find()) {
-            return true;
+        if (digestMatcher.find()) {
+            String digestValue = digestMatcher.group(1).trim();
+            if (digestValue.isBlank()) {
+                return false;
+            }
+            try {
+                byte[] decoded = Base64.getDecoder().decode(digestValue);
+                if (decoded.length == 0) {
+                    return false;
+                }
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
         }
-        String digestValue = digestMatcher.group(1).trim();
-        if (digestValue.isBlank()) {
-            return false;
+        Matcher sigMatcher = SAML_SIGNATURE_VALUE.matcher(xml);
+        if (sigMatcher.find()) {
+            String sigValue = sigMatcher.group(1).trim();
+            if (sigValue.isBlank()) {
+                return false;
+            }
+            try {
+                byte[] decoded = Base64.getDecoder().decode(sigValue);
+                if (decoded.length < SAML_SIGNATURE_MIN_BYTES) {
+                    return false;
+                }
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
         }
-        try {
-            byte[] decoded = Base64.getDecoder().decode(digestValue);
-            return decoded.length > 0;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
+        return true;
     }
 
     static boolean verifyJwtCrypto(String jwt, String providerHost, FederatedTokenValidationConfig config) {
@@ -316,11 +358,13 @@ public final class FederatedTokenParser {
     static Map<String, String> buildOidcConditionClaims(Map<String, Object> claims, String providerHost) {
         Map<String, String> ctx = new LinkedHashMap<>();
         String audClaim = claimAsString(claims.get("aud"));
+        String audMultiClaim = claimAsMultiValue(claims.get("aud"));
         String azpClaim = claimAsString(claims.get("azp"));
         String subClaim = claimAsString(claims.get("sub"));
         String amrClaim = claimAsMultiValue(claims.get("amr"));
 
         String audKeyValue = azpClaim != null && !azpClaim.isBlank() ? azpClaim : audClaim;
+        String audPrefixedValue = azpClaim != null && !azpClaim.isBlank() ? azpClaim : audMultiClaim;
         if (audKeyValue != null) {
             ctx.put("aud", audKeyValue);
         }
@@ -341,8 +385,8 @@ public final class FederatedTokenParser {
                     ctx.put(providerHost + ":" + claimName, value);
                 }
             }
-            if (audKeyValue != null) {
-                ctx.put(providerHost + ":aud", audKeyValue);
+            if (audPrefixedValue != null) {
+                ctx.put(providerHost + ":aud", audPrefixedValue);
             }
             if (audClaim != null) {
                 ctx.put(providerHost + ":oaud", audClaim);

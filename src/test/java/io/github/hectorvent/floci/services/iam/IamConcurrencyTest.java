@@ -34,13 +34,16 @@ class IamConcurrencyTest {
     private static final int THREADS = 8;
 
     private static IamService newIamService() {
+        IamPolicyEvaluator policyEvaluator = new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper());
         return new IamService(
                 new InMemoryStorage<>(), new InMemoryStorage<>(), new InMemoryStorage<>(),
                 new InMemoryStorage<>(), new InMemoryStorage<>(), new InMemoryStorage<>(),
                 new InMemoryStorage<>(), new RegionResolver("eu-central-1", "000000000000"),
                 new AssumeRoleTrustPolicyEvaluator(
                         new com.fasterxml.jackson.databind.ObjectMapper(),
-                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                        policyEvaluator),
+                policyEvaluator,
+                null,
                 false);
     }
 

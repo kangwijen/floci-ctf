@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class IamRolePolicyConcurrencyTest {
 
     private static IamService newIamService() {
+        IamPolicyEvaluator policyEvaluator = new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper());
         return new IamService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
@@ -34,7 +35,9 @@ class IamRolePolicyConcurrencyTest {
                 new RegionResolver("eu-central-1", "000000000000"),
                 new AssumeRoleTrustPolicyEvaluator(
                         new com.fasterxml.jackson.databind.ObjectMapper(),
-                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                        policyEvaluator),
+                policyEvaluator,
+                null,
                 false
         );
     }

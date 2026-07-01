@@ -196,10 +196,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- SigV4a presign
-- Federated JWT/SAML full crypto validation (structural parse only unless `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`)
-- OIDC provider-prefixed condition keys beyond default `aud`/`sub`/`amr` mapping (nested object claims, multi-value `aud`)
-- STS `AssumeRole` caller identity policy (trust policy only today; see `docs/services/sts.md`)
+- SigV4a presign verification (GET/PUT reject with 403; full ECDSA-P256 verification not implemented)
+- Federated JWT/SAML full X.509/XML signature validation (structural checks + HS256/RS256 when `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`; SAML provider metadata crypto still deferred)
 - Operator event injection API for CloudTrail is implemented (`CloudTrailEventInjectionController`, `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED`)
 
 **Recently closed (CTF security / test stability):**
@@ -238,6 +236,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Lambda APIGW invoke `SourceArn` resource policy | Closed | `ApiGatewayLambdaSourceArnPermissionIntegrationTest` |
 | Lambda execution-role creds on Compose bridge (link-local `extra_hosts` + port in URI) | Closed | `ContainerLauncherTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
 | ECR registry reconcile on Compose bridge (`list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
+| STS `AssumeRole` same-account caller identity (trust-only unless explicit Deny) | Closed | `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
+| Presigned POST unknown condition operators fail-closed | Closed | `S3PresignedPostIntegrationTest` |
+| OIDC multi-value `aud` trust conditions + federated `nbf`/SAML sig floor | Closed | `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest`, `StsWebIdentityTrustIntegrationTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |
 | In-process KMS grant fallback (`InProcessIamAuthorizer`) | Closed | `InProcessIamAuthorizerTest` |
@@ -326,7 +327,7 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | `dynamodb:PutItem` scoped IAM | Closed | `DynamoDbPutItemScopedIntegrationTest` |
 | `sns:Publish` scoped IAM | Closed | `SnsPublishScopedIamIntegrationTest` |
 
-**Still open (downstream / out of emulator scope):** SigV4a presign. Extended presigned POST condition operators beyond current parity only when compat tests require them.
+**Still open (downstream / out of emulator scope):** SigV4a presign verification (reject-only today). Full SAML X.509 signature validation against provider metadata. Extended presigned POST condition operators (`in`, `not-eq`) only when compat tests require them.
 
 **Recently closed (S3 presign parity):**
 

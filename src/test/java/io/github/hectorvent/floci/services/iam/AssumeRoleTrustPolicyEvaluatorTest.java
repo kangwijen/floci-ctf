@@ -146,6 +146,66 @@ class AssumeRoleTrustPolicyEvaluatorTest {
     }
 
     @Test
+    void multiValueAudStringEqualsMatchesAnyCommaValue() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{"StringEquals":{"accounts.google.com:aud":"client-b"}}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "accounts.google.com:aud", "client-a,client-b",
+                "aud", "client-a",
+                "sub", "user-xyz"));
+        assertTrue(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx),
+                "StringEquals on :aud with comma-joined value must match any individual audience");
+    }
+
+    @Test
+    void multiValueAudStringEqualsNoMatchWhenNonePresent() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{"StringEquals":{"accounts.google.com:aud":"client-c"}}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "accounts.google.com:aud", "client-a,client-b",
+                "aud", "client-a",
+                "sub", "user-xyz"));
+        assertFalse(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx),
+                "StringEquals on :aud must deny when none of the comma values matches");
+    }
+
+    @Test
+    void singleValueAudWithoutCommaUsesExactMatch() {
+        String account = "226767940554";
+        String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";
+        String trust = """
+            {"Version":"2012-10-17","Statement":[{
+              "Effect":"Allow",
+              "Principal":{"Federated":"%s"},
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{"StringEquals":{"accounts.google.com:aud":"client-a"}}
+            }]}""".formatted(providerArn);
+        FederatedTrustContext ctx = new FederatedTrustContext(providerArn, Map.of(
+                "accounts.google.com:aud", "client-a",
+                "aud", "client-a",
+                "sub", "user-xyz"));
+        assertTrue(evaluator.isAssumeRoleTrusted(
+                trust, CALLER, null, "sts:AssumeRoleWithWebIdentity", ctx),
+                "single-value aud without comma uses exact match");
+    }
+
+    @Test
     void deniesMismatchedOidcProviderArn() {
         String account = "226767940554";
         String providerArn = "arn:aws:iam::" + account + ":oidc-provider/accounts.google.com";

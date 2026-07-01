@@ -30,7 +30,12 @@ public final class IamUnrestrictedActions {
      */
     private static final Set<String> EXEMPT_FROM_POLICY_EVALUATION = Set.of(
             "sts:GetCallerIdentity",
-            "sts:GetSessionToken"
+            "sts:GetSessionToken",
+            // Caller identity for AssumeRole* is evaluated in StsQueryHandler (same-account
+            // trust-only; cross-account requires explicit identity Allow).
+            "sts:AssumeRole",
+            "sts:AssumeRoleWithWebIdentity",
+            "sts:AssumeRoleWithSAML"
     );
 
     /**

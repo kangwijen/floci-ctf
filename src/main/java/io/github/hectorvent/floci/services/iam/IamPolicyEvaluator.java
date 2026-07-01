@@ -160,6 +160,33 @@ public class IamPolicyEvaluator {
         return evaluate(CallerContext.of(policyDocuments), null, action, resource, conditionCtx);
     }
 
+    /**
+     * Returns true when any identity, session, or boundary policy explicitly denies the action.
+     * Used for same-account {@code sts:AssumeRole} where trust policy alone is sufficient unless
+     * the caller has an explicit identity Deny.
+     */
+    public boolean hasExplicitDeny(CallerContext caller,
+                                   String action,
+                                   String resource,
+                                   Map<String, String> conditionCtx) {
+        if (caller == null) {
+            return false;
+        }
+        Map<String, String> ctx = normalizeConditionContext(conditionCtx);
+        List<PolicyStatement> identityStmts = parseAll(caller.identityPolicies());
+        List<PolicyStatement> sessionStmts = caller.sessionPolicyDocument() == null
+                ? null : parseAll(List.of(caller.sessionPolicyDocument()));
+        List<PolicyStatement> boundaryStmts = caller.boundaryPolicyDocument() == null
+                ? null : parseAll(List.of(caller.boundaryPolicyDocument()));
+        if (anyExplicitDeny(identityStmts, action, resource, ctx)) {
+            return true;
+        }
+        if (sessionStmts != null && anyExplicitDeny(sessionStmts, action, resource, ctx)) {
+            return true;
+        }
+        return boundaryStmts != null && anyExplicitDeny(boundaryStmts, action, resource, ctx);
+    }
+
     public SimulationDecision simulatePrincipalPolicy(CallerContext caller,
                                                       String action,
                                                       String resource,

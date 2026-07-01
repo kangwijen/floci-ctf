@@ -35,6 +35,7 @@ class IamServiceTest {
     }
 
     private static IamService iamService(boolean seedDeployerPrincipal, InMemoryStorage<String, AccessKey> accessKeys) {
+        IamPolicyEvaluator policyEvaluator = new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper());
         return new IamService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
@@ -46,7 +47,9 @@ class IamServiceTest {
                 new RegionResolver("us-east-1", "000000000000"),
                 new AssumeRoleTrustPolicyEvaluator(
                         new com.fasterxml.jackson.databind.ObjectMapper(),
-                        new IamPolicyEvaluator(new com.fasterxml.jackson.databind.ObjectMapper())),
+                        policyEvaluator),
+                policyEvaluator,
+                null,
                 seedDeployerPrincipal
         );
     }

@@ -35,14 +35,28 @@ created through IAM with a real trust policy.
 - **`Condition` blocks are not evaluated** by upstream `AssumeRolePolicyEvaluator`. A trust policy
   that requires `sts:ExternalId` is matched on its principal alone; the `ExternalId` request
   parameter is ignored. This matches moto/LocalStack.
-- **Only the trust policy is checked.** Cross-account `AssumeRole` in AWS also requires the caller's
-  own identity policy to allow `sts:AssumeRole`; that side is not enforced.
 
 Under CTF hardening (`FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`), `StsQueryHandler` uses
 `AssumeRoleTrustPolicyEvaluator` instead: `sts:ExternalId` conditions are enforced, federated
 WebIdentity/SAML trust is evaluated, and unknown roles (not in IAM storage) stay permissive.
+Same-account `AssumeRole` succeeds on trust policy alone unless the caller has an explicit
+identity Deny on `sts:AssumeRole` for the role ARN. Cross-account calls require both trust
+Allow and caller identity Allow. Regression: `StsAssumeRoleCallerIdentityPolicyIntegrationTest`.
 Strict mode still requires registered access keys; integration tests must use operator root or IAM
 users with `create-access-key`, not fake account-id AKIDs.
+
+**OIDC/federated condition matching (CTF Stage 4):**
+
+- **Multi-value `aud`:** When an OIDC token `aud` claim is a JSON array, the provider-prefixed
+  condition key (e.g. `accounts.google.com:aud`) stores all values comma-joined. Trust policy
+  `StringEquals` / `StringLike` conditions on that key match any individual audience, matching
+  AWS `ForAnyValue` semantics. The bare `aud` key and `:oaud` key retain the first audience value.
+  If `azp` is present it overrides the multi-value list for both keys, as AWS specifies.
+- **`nbf` (not-before) enforcement:** When `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true`, tokens
+  whose `nbf` claim is in the future are rejected.
+- **SAML `SignatureValue` trivial-sig rejection:** When validation is enabled, SAML assertions
+  whose `SignatureValue` element decodes to fewer than 64 bytes are rejected as structurally
+  inadequate.
 
 ## Examples
 
@@ -72,7 +86,7 @@ When IAM enforcement is enabled:
 |---|---|
 | `GetCallerIdentity` | Returns the **calling principal ARN**, not account `:root` for IAM user access keys (`arn:aws:iam::ACCOUNT:user/name`) or temporary assumed-role sessions (`arn:aws:sts::ACCOUNT:assumed-role/role/session`). Operator requests signed with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` still return `arn:aws:iam::ACCOUNT:root`. Policy-exempt like AWS (no Allow required; explicit Deny does not block). Regression: `StsGetCallerIdentityIntegrationTest` |
 | `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy; session policy alone cannot expand permissions. Parent user permission boundaries apply. Regression: `StsGetSessionTokenIntersectionIntegrationTest` |
-| `AssumeRole` / `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` | Role trust policies are evaluated (`Principal`, `:root`, federated conditions); WebIdentity and SAML assertions are parsed for claim-based trust (no external IdP crypto validation). Unresolved caller credentials fall back to account root for trust evaluation, matching `GetCallerIdentity` |
+| `AssumeRole` | Same-account: trust policy Allow is sufficient unless caller identity explicitly Denies `sts:AssumeRole` on the role. Cross-account: caller identity must Allow the role ARN in addition to trust Allow. WebIdentity/SAML trust evaluated; federated token validation optional via `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS`. Regression: `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
 | `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |
 
 STS control-plane calls still require SigV4 from a registered principal or the operator root pair.

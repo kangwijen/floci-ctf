@@ -2378,6 +2378,11 @@ public class S3Controller {
 
         rejectExpiredPresignedPostPolicy(policy);
 
+        if ("AWS4-ECDSA-P256-SHA256".equals(algorithm)) {
+            throw new AwsException("AccessDenied",
+                    "SigV4a (AWS4-ECDSA-P256-SHA256) is not supported.", 403);
+        }
+
         String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
         Optional<String> secret = resolvePresignSecret(accessKeyId);
         if (secret.isEmpty()) {
@@ -2444,7 +2449,7 @@ public class S3Controller {
         } catch (AwsException e) {
             throw e;
         } catch (Exception e) {
-            LOG.debugv("Failed to parse presigned POST policy: {0}", e.getMessage());
+            throw new AwsException("AccessDenied", "Invalid presigned POST policy condition.", 403);
         }
     }
 
@@ -2472,7 +2477,8 @@ public class S3Controller {
     private void validateArrayCondition(JsonNode condition, String bucket,
                                         Map<String, String> fields, int contentLength) {
         if (condition.size() < 3) {
-            return;
+            throw new AwsException("AccessDenied",
+                    "Invalid according to Policy: Policy Condition failed: malformed condition", 403);
         }
         String operator = condition.get(0).asText().toLowerCase(Locale.ROOT);
         if ("content-length-range".equals(operator)) {
@@ -2502,6 +2508,10 @@ public class S3Controller {
                         "Invalid according to Policy: Policy Condition failed: "
                                 + "[\"starts-with\", \"$" + fieldName + "\", \"" + prefix + "\"]", 403);
             }
+        } else {
+            throw new AwsException("AccessDenied",
+                    "Invalid according to Policy: Policy Condition failed: unsupported operator ["
+                            + operator + "]", 403);
         }
     }
 

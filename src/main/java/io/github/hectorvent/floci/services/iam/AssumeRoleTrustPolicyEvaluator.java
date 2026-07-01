@@ -211,21 +211,21 @@ public class AssumeRoleTrustPolicyEvaluator {
     }
 
     private static boolean matchesStringEquals(String ctxValue, String condValue, String condKey) {
-        if (isMultiValuedConditionKey(condKey)) {
+        if (isMultiValuedConditionKey(condKey, ctxValue)) {
             return containsDelimitedValue(ctxValue, condValue, true);
         }
         return ctxValue.equals(condValue);
     }
 
     private static boolean matchesStringEqualsIgnoreCase(String ctxValue, String condValue, String condKey) {
-        if (isMultiValuedConditionKey(condKey)) {
+        if (isMultiValuedConditionKey(condKey, ctxValue)) {
             return containsDelimitedValue(ctxValue, condValue, false);
         }
         return ctxValue.equalsIgnoreCase(condValue);
     }
 
     private static boolean matchesStringLike(String ctxValue, String condValue, String condKey) {
-        if (isMultiValuedConditionKey(condKey)) {
+        if (isMultiValuedConditionKey(condKey, ctxValue)) {
             for (String value : splitDelimitedValues(ctxValue)) {
                 if (IamPolicyEvaluator.globMatches(condValue, value)) {
                     return true;
@@ -236,8 +236,17 @@ public class AssumeRoleTrustPolicyEvaluator {
         return IamPolicyEvaluator.globMatches(condValue, ctxValue);
     }
 
-    private static boolean isMultiValuedConditionKey(String condKey) {
-        return condKey != null && (condKey.endsWith(":amr") || "amr".equals(condKey));
+    private static boolean isMultiValuedConditionKey(String condKey, String ctxValue) {
+        if (condKey == null) {
+            return false;
+        }
+        if (condKey.endsWith(":amr") || "amr".equals(condKey)) {
+            return true;
+        }
+        if ((condKey.endsWith(":aud") || "aud".equals(condKey)) && ctxValue != null && ctxValue.contains(",")) {
+            return true;
+        }
+        return false;
     }
 
     private static boolean containsDelimitedValue(String ctxValue, String condValue, boolean caseSensitive) {
