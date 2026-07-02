@@ -65,12 +65,15 @@ public class ElastiCacheService {
         String image = config.services().elasticache().defaultImage();
         LOG.infov("Creating replication group {0} with authMode={1}", groupId, authMode);
 
-        ElastiCacheContainerHandle handle = containerManager.start(groupId, image);
+        ElastiCacheContainerHandle handle = null;
+        int allocatedPort = -1;
         try {
+            handle = containerManager.start(groupId, image);
             String endpointHost = resolveEndpointHost();
             RuntimeException lastProxyFailure = null;
             for (int attempt = 0; attempt < 25; attempt++) {
                 int proxyPort = allocateProxyPort();
+                allocatedPort = proxyPort;
                 try {
                     Endpoint endpoint = new Endpoint(endpointHost, proxyPort);
                     ReplicationGroup group = new ReplicationGroup(
@@ -81,7 +84,8 @@ public class ElastiCacheService {
                     group.setContainerPort(handle.getPort());
                     group.setAuthToken(authToken);
 
-                    LOG.infov("Starting ElastiCache proxy for group {0} on port {1}", groupId, String.valueOf(proxyPort));
+                    LOG.infov("Starting ElastiCache proxy for group {0} on port {1}",
+                            groupId, String.valueOf(proxyPort));
                     proxyManager.startProxy(groupId, authMode, proxyPort,
                             handle.getHost(), handle.getPort(),
                             (username, password) -> validatePassword(groupId, username, password));
@@ -92,6 +96,7 @@ public class ElastiCacheService {
                     return group;
                 } catch (RuntimeException e) {
                     releaseProxyPort(proxyPort);
+                    allocatedPort = -1;
                     lastProxyFailure = e;
                     LOG.warnv("Failed to start ElastiCache proxy for group {0} on port {1} (attempt {2}): {3}",
                             groupId, String.valueOf(proxyPort), attempt + 1, e.getMessage());
@@ -103,8 +108,30 @@ public class ElastiCacheService {
             throw new AwsException("InsufficientReplicationGroupCapacity",
                     "No available proxy ports for replication group " + groupId, 503);
         } catch (RuntimeException e) {
-            containerManager.stop(handle);
+            LOG.warnv("Replication group {0} provisioning failed, rolling back: {1}", groupId, e.getMessage());
+            rollbackReplicationGroup(groupId, handle, allocatedPort);
             throw e;
+        }
+    }
+
+    private void rollbackReplicationGroup(String groupId, ElastiCacheContainerHandle handle, int proxyPort) {
+        try {
+            if (handle != null) {
+                proxyManager.stopProxy(groupId);
+            }
+        } catch (RuntimeException e) {
+            LOG.warnv("Error stopping proxy for replication group {0}: {1}", groupId, e.getMessage());
+        }
+        try {
+            if (handle != null) {
+                containerManager.stop(handle);
+            }
+        } catch (RuntimeException e) {
+            LOG.warnv("Error stopping container for replication group {0}: {1}", groupId, e.getMessage());
+        } finally {
+            if (proxyPort >= 0) {
+                releaseProxyPort(proxyPort);
+            }
         }
     }
 

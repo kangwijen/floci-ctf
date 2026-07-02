@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.ec2;
 
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.IamRole;
@@ -236,7 +237,7 @@ public class Ec2MetadataServer {
             ctx.response().setStatusCode(404).end();
             return;
         }
-        String roleName = extractRoleName(profileArn);
+        String roleName = resolveRoleName(profileArn);
         ctx.response().setStatusCode(200)
                 .putHeader("content-type", "text/plain")
                 .end(roleName);
@@ -385,7 +386,23 @@ public class Ec2MetadataServer {
 
     // ── Utilities ─────────────────────────────────────────────────────────────
 
-    private static String extractRoleName(String profileArn) {
+    String resolveRoleName(String profileArn) {
+        if (iamService != null) {
+            String profileName = extractProfileName(profileArn);
+            try {
+                var profile = iamService.getInstanceProfile(profileName);
+                if (profile.getRoleNames() != null && !profile.getRoleNames().isEmpty()) {
+                    return profile.getRoleNames().getFirst();
+                }
+            } catch (AwsException e) {
+                LOG.debugf(e, "IMDS: instance profile %s unavailable; falling back to profile name", profileName);
+                // Fall back to the profile name when only the EC2 profile ARN was modeled.
+            }
+        }
+        return extractProfileName(profileArn);
+    }
+
+    private static String extractProfileName(String profileArn) {
         // arn:aws:iam::000000000000:instance-profile/my-role
         int lastSlash = profileArn.lastIndexOf('/');
         if (lastSlash >= 0 && lastSlash < profileArn.length() - 1) {

@@ -278,7 +278,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Kinesis | In-process | Streams, shards, enhanced fan-out, split and merge |
 | Secrets Manager | In-process | Versioning, resource policies, tagging, automatic rotation lifecycle via Lambda |
 | Step Functions | In-process | ASL execution, task tokens, execution history |
-| CloudFormation | In-process | Stacks, change sets, resource provisioning, SAM Globals merge, implicit API from Api events |
+| CloudFormation | In-process | Stacks, change sets, resource provisioning, StackSets (cross-account instances), SAM Globals merge, implicit API from Api events |
 | EventBridge | In-process | Custom buses, rules, SQS, SNS and Lambda targets |
 | EventBridge Pipes | In-process | Poller-based integration connecting SQS, Kinesis, DynamoDB Streams, and MSK/Kafka (`smk://`) sources to targets with optional filtering |
 | EventBridge Scheduler | In-process | Schedule groups, schedules, flexible time windows, retry policies, DLQs |

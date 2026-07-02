@@ -112,6 +112,7 @@ public class CloudTrailJsonHandler {
         return Response.ok(mapper.createObjectNode()).build();
     }
 
+
     private Response getEventSelectors(JsonNode request, String region) {
         CloudTrailService.GetEventSelectorsResult result = service.getEventSelectors(
                 region, request.path("TrailName").asText(null));
