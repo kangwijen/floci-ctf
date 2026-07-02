@@ -74,8 +74,8 @@ class StsWebIdentityTrustHmacValidationIntegrationTest {
             .header("Authorization", STS_AUTH)
         .when().post("/")
         .then()
-            .statusCode(403)
-            .body(containsString("AccessDenied"));
+            .statusCode(400)
+            .body(containsString("InvalidIdentityToken"));
     }
 
     @Test

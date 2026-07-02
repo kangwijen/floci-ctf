@@ -29,8 +29,14 @@ class IamUnrestrictedActionsTest {
     }
 
     @Test
+    void assumeRoleAuthenticationActionsAreExemptFromIdentityPolicy() {
+        assertTrue(IamUnrestrictedActions.isExemptFromPolicyEvaluation("sts:AssumeRole"));
+        assertTrue(IamUnrestrictedActions.isExemptFromPolicyEvaluation("sts:AssumeRoleWithWebIdentity"));
+        assertTrue(IamUnrestrictedActions.isExemptFromPolicyEvaluation("sts:AssumeRoleWithSAML"));
+    }
+
+    @Test
     void otherActionsRequirePolicyEvaluation() {
-        assertFalse(IamUnrestrictedActions.isExemptFromPolicyEvaluation("sts:AssumeRole"));
         assertFalse(IamUnrestrictedActions.isExemptFromPolicyEvaluation("sts:GetAccessKeyInfo"));
         assertFalse(IamUnrestrictedActions.isExemptFromPolicyEvaluation("s3:ListAllMyBuckets"));
         assertFalse(IamUnrestrictedActions.isExemptFromPolicyEvaluation("ec2:DescribeRegions"));

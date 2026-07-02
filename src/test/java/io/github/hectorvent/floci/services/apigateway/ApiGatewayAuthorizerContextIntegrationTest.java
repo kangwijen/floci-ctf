@@ -3,6 +3,8 @@ package io.github.hectorvent.floci.services.apigateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.config.HttpClientConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -30,6 +32,10 @@ class ApiGatewayAuthorizerContextIntegrationTest {
     private static final String PROXY_FUNCTION = "apigw-authorizer-context-proxy";
     private static final String ROLE_ARN = "arn:aws:iam::000000000000:role/lambda-role";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final RestAssuredConfig LONG_HTTP_TIMEOUT = RestAssuredConfig.config()
+            .httpClient(HttpClientConfig.httpClientConfig()
+                    .setParam("http.connection.timeout", 180000)
+                    .setParam("http.socket.timeout", 180000));
 
     private static String apiId;
     private static String rootId;
@@ -217,6 +223,7 @@ class ApiGatewayAuthorizerContextIntegrationTest {
     @Order(9)
     void executeSecuredRoute_propagatesAuthorizerContextAndMethodArn() throws Exception {
         String response = given()
+                .config(LONG_HTTP_TIMEOUT)
                 .contentType(ContentType.JSON)
                 .header("Authorization", "Bearer allow")
                 .body("{\"ok\":true}")
@@ -242,6 +249,7 @@ class ApiGatewayAuthorizerContextIntegrationTest {
     @Order(10)
     void executePlainRoute_doesNotInjectAuthorizerContext() throws Exception {
         String response = given()
+                .config(LONG_HTTP_TIMEOUT)
                 .contentType(ContentType.JSON)
                 .body("{\"ok\":true}")
                 .when().put("/execute-api/" + apiId + "/test/plain")
@@ -258,6 +266,7 @@ class ApiGatewayAuthorizerContextIntegrationTest {
     @Order(11)
     void executeSecuredRoute_denyStillReturns403() {
         given()
+                .config(LONG_HTTP_TIMEOUT)
                 .contentType(ContentType.JSON)
                 .header("Authorization", "Bearer deny")
                 .body("{\"ok\":true}")

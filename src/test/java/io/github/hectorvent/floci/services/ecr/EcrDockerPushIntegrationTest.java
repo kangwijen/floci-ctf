@@ -3,6 +3,8 @@ package io.github.hectorvent.floci.services.ecr;
 import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.github.hectorvent.floci.testing.RestAssuredJsonUtils;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
+import io.quarkus.test.junit.QuarkusTestProfile;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.empty;
@@ -26,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * and {@code BatchGetImage}.
  */
 @QuarkusTest
+@TestProfile(EcrDockerPushIntegrationTest.PathStyleRegistryProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EcrDockerPushIntegrationTest {
@@ -134,5 +138,20 @@ class EcrDockerPushIntegrationTest {
                 "docker command timed out: " + String.join(" ", command));
         assertEquals(0, process.exitValue(),
                 "docker " + String.join(" ", args) + " failed: " + output);
+    }
+
+    /**
+     * Path-style URIs ({@code localhost:5100/account/region/repo}) avoid
+     * {@code *.localhost} hostname resolution gaps on some Docker Desktop hosts.
+     */
+    public static final class PathStyleRegistryProfile implements QuarkusTestProfile {
+
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of(
+                    "floci.services.ecr.uri-style", "path",
+                    "floci.services.ecr.registry-base-port", "5100",
+                    "floci.services.ecr.registry-max-port", "5100");
+        }
     }
 }
