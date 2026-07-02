@@ -150,6 +150,71 @@ class LambdaContainerCredentialsIamIntegrationTest {
                 .then().statusCode(403);
     }
 
+    @Test
+    void containerCredentialsAllowScopedIotShadowUpdate() throws Exception {
+        String iotRoleName = "LambdaContainerCredIotRole";
+        String iotRoleArn = "arn:aws:iam::" + ACCOUNT + ":role/" + iotRoleName;
+        String thingName = "lambda-cred-shadow-thing";
+
+        signedIamFormPost("Action=CreateRole"
+                + "&RoleName=" + iotRoleName
+                + "&AssumeRolePolicyDocument="
+                + urlEncode("""
+                    {"Version":"2012-10-17","Statement":[
+                      {"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},
+                       "Action":"sts:AssumeRole"}
+                    ]}"""));
+
+        String iotPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iot:UpdateThingShadow",
+               "Resource":"arn:aws:iot:%s:%s:thing/%s"}
+            ]}""".formatted(REGION, ACCOUNT, thingName);
+        signedIamFormPost("Action=PutRolePolicy"
+                + "&RoleName=" + iotRoleName
+                + "&PolicyName=ScopedIotShadow"
+                + "&PolicyDocument=" + urlEncode(iotPolicy));
+
+        String iotCredentialToken = credentialsServer.registerFunction("cred-iot-fn", iotRoleArn, REGION);
+        HttpResponse<String> credsResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + credsPort + "/v2/credentials/" + iotCredentialToken))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, credsResponse.statusCode());
+
+        JsonNode creds = objectMapper.readTree(credsResponse.body());
+        String accessKeyId = creds.get("AccessKeyId").asText();
+        String secretKey = creds.get("SecretAccessKey").asText();
+        String sessionToken = creds.get("Token").asText();
+
+        byte[] shadowBody = "{\"state\":{\"reported\":{\"load_kw\":9999,\"probe\":true}}}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        SigV4HttpTestSupport.SignedRestHeaders signed = SigV4HttpTestSupport.signRestPost(
+                endpoint.getHost(),
+                endpoint.getPort(),
+                "/things/" + thingName + "/shadow",
+                shadowBody,
+                accessKeyId,
+                secretKey,
+                sessionToken,
+                REGION,
+                "iotdata",
+                Instant.now());
+
+        given()
+                .header("Host", endpoint.getHost() + ":" + endpoint.getPort())
+                .header("Authorization", signed.authorization())
+                .header("x-amz-date", signed.amzDate())
+                .header("x-amz-content-sha256", signed.contentSha256())
+                .header("x-amz-security-token", signed.securityToken())
+                .contentType("application/json; charset=UTF-8")
+                .body(new String(shadowBody, java.nio.charset.StandardCharsets.UTF_8))
+                .when().post("/things/" + thingName + "/shadow")
+                .then().statusCode(200);
+    }
+
     private void signedIamFormPost(String formBody) throws Exception {
         SigV4HttpTestSupport.SignedHeaders signed = SigV4HttpTestSupport.signFormPost(
                 endpoint.getHost(),

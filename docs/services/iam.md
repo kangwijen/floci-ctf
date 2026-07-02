@@ -265,6 +265,7 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 | `bcm-data-exports` | `ExportArn`, `Export.Name` (JSON) |
 | `appconfig` | REST paths under `/applications/` (application, environment, configuration profile, deployment) |
 | `appconfigdata` | `ApplicationIdentifier`, `EnvironmentIdentifier`, `ConfigurationProfileIdentifier` (JSON) |
+| `iot` / `iotdata` | Thing name from REST path `/things/{name}` or `/things/{name}/shadow`; topic from `/topics/{topic}`; policy/cert/rule names from control-plane paths. SigV4 scope `iotdata` maps to IAM actions with `iot:` prefix (for example `iot:UpdateThingShadow`). |
 | `textract` | `JobId` on async job APIs (JSON) |
 | `tagging` | `ResourceARNList[]` (multi-ARN evaluation for Tag/Untag/GetResources; `GetTagKeys`/`GetTagValues` stay `*`) |
 
@@ -292,11 +293,11 @@ When authoring policies or lab verifiers against `floci:local` with IAM enforcem
 | Single secret: `secret:name-*` or `secret:name-??????` | Matches AWS six-character ARN suffix |
 | `GetSecretValue` + CMK: pass raw bytes to `SecretBinary`; one base64 layer on wire | See [secrets-manager.md](./secrets-manager.md#kms-wrapped-secretbinary) |
 | Secret rotation with CMK does not re-wrap existing KMS ciphertext | `AWSPENDING` / rotation Lambda path |
-| Scoped IAM on `codebuild`, `backup`, `route53`, `codedeploy`, `acm` | Per-resource ARNs from request body or path |
+| Scoped IAM on `codebuild`, `backup`, `route53`, `codedeploy`, `acm`, `iot` / `iotdata` | Per-resource ARNs from request body or path; Lambda container creds honor execution-role policy on `iotdata` SigV4 scope |
 | ECS task and CodeBuild build env use container credentials URI + task/build role SigV4 | `ContainerEnvHardening` strips participant `AWS_*` |
 | Operator root never given to participants | Compose CTF profile |
 
-Regression: `SigV4ValidationFilterIntegrationTest`, `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`, `StsGetCallerIdentityIntegrationTest`, `SqsReceiveMessageScopedQueueIntegrationTest`, `SqsResourcePolicyOnlyAllowIntegrationTest`, `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `CodeBuildIamScopedIntegrationTest`, `BackupIamScopedIntegrationTest`, `Route53IamScopedIntegrationTest`, `CodeDeployIamScopedIntegrationTest`, `AcmIamScopedIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`, `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerRotationKmsIntegrationTest`.
+Regression: `SigV4ValidationFilterIntegrationTest`, `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`, `StsGetCallerIdentityIntegrationTest`, `StsWebIdentityStrictUnsignedIntegrationTest`, `SqsReceiveMessageScopedQueueIntegrationTest`, `SqsResourcePolicyOnlyAllowIntegrationTest`, `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `CodeBuildIamScopedIntegrationTest`, `BackupIamScopedIntegrationTest`, `Route53IamScopedIntegrationTest`, `IotIamScopedIntegrationTest`, `CodeDeployIamScopedIntegrationTest`, `AcmIamScopedIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest`, `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerRotationKmsIntegrationTest`.
 
 **EMR multi-cluster:** requests with more than one `JobFlowIds[]` entry (for example `TerminateJobFlows`) call `ResourceArnBuilder.buildAllEmrClusterResources`; `IamEnforcementFilter` runs policy evaluation against each cluster ARN and denies the request if any cluster hits an explicit Deny.
 
@@ -372,6 +373,7 @@ Under strict enforcement:
 | `aws:sourceip` from `X-Forwarded-For` | Ignored unless `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` (default `false`) |
 | Temporary credentials (`ASIA*`) with SigV4 on | `x-amz-security-token` must match the token issued with the session (HTTP headers and S3 presigned query URLs via `X-Amz-Security-Token`) |
 | No `Authorization` header on any other path | Denied (HTTP 403) |
+| `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` with token in form body (no SigV4) | Allowed through IAM filter; trust evaluated in `StsQueryHandler` (`SecurityBypassPaths.isFederatedStsAssumeRequest`) |
 | Unresolvable IAM action for the request | Denied (HTTP 403) |
 
 **Anonymous-access exceptions (`AnonymousAccessGate`):** {#anonymous-access-exceptions} Under strict enforcement, unsigned requests are still allowed only on AWS-intentional public invoke paths. Each surface has an explicit gate: resource policy evaluation for S3 and Lambda function URLs, and method `authorizationType` for API Gateway. Methods with `authorizationType=AWS_IAM` (or any non-`NONE` value) do not qualify; unsigned invoke is denied like any other unsigned path.

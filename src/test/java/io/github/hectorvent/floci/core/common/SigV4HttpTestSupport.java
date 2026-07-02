@@ -97,6 +97,21 @@ public final class SigV4HttpTestSupport {
             String service,
             Instant timestamp
     ) throws Exception {
+        return signRestPost(host, port, path, body, accessKeyId, secretKey, null, region, service, timestamp);
+    }
+
+    public static SignedRestHeaders signRestPost(
+            String host,
+            int port,
+            String path,
+            byte[] body,
+            String accessKeyId,
+            String secretKey,
+            String sessionToken,
+            String region,
+            String service,
+            Instant timestamp
+    ) throws Exception {
         String payloadHash = sha256Hex(body);
         String amzDate = DATETIME_FMT.format(timestamp);
         String date = amzDate.substring(0, 8);
@@ -110,6 +125,9 @@ public final class SigV4HttpTestSupport {
         headerValues.put("host", hostHeader);
         headerValues.put("x-amz-content-sha256", payloadHash);
         headerValues.put("x-amz-date", amzDate);
+        if (sessionToken != null && !sessionToken.isBlank()) {
+            headerValues.put("x-amz-security-token", sessionToken);
+        }
 
         String signedHeaders = String.join(";",
                 headerValues.keySet().stream().sorted().toList());
@@ -136,7 +154,7 @@ public final class SigV4HttpTestSupport {
         String authorization = "AWS4-HMAC-SHA256 Credential=" + credential
                 + ", SignedHeaders=" + signedHeaders
                 + ", Signature=" + signature;
-        return new SignedRestHeaders(authorization, amzDate, payloadHash, null);
+        return new SignedRestHeaders(authorization, amzDate, payloadHash, sessionToken);
     }
 
     public static SignedRestHeaders signRestGet(

@@ -276,7 +276,36 @@ public class IamActionRegistry {
 
         // ── Route 53 (REST XML) ───────────────────────────────────────────────
         rule("route53", "GET",    ".*/hostedzone/[^/]+/?$",    "route53:GetHostedZone"),
-        rule("route53", "POST",   ".*/hostedzone/?$",          "route53:CreateHostedZone")
+        rule("route53", "POST",   ".*/hostedzone/?$",          "route53:CreateHostedZone"),
+
+        // ── IoT Data (REST JSON; SigV4 scope iotdata; IAM actions use iot: prefix) ─
+        rule("iotdata", "GET",    "^/things/[^/]+/shadow/?$", "iot:GetThingShadow"),
+        rule("iotdata", "POST",   "^/things/[^/]+/shadow/?$", "iot:UpdateThingShadow"),
+        rule("iotdata", "DELETE", "^/things/[^/]+/shadow/?$", "iot:DeleteThingShadow"),
+        rule("iotdata", "GET",    "^/api/things/shadow/ListNamedShadowsForThing/[^/]+/?$",
+                "iot:ListNamedShadowsForThing"),
+        rule("iotdata", "POST",   "^/topics/.+",               "iot:Publish"),
+        rule("iotdata", "GET",    "^/retainedMessage/.+",      "iot:GetRetainedMessage"),
+        rule("iotdata", "GET",    "^/retainedMessage/?$",      "iot:ListRetainedMessages"),
+
+        // ── IoT control plane (REST JSON) ─────────────────────────────────────
+        rule("iot", "GET",    "^/endpoint/?$",              "iot:DescribeEndpoint"),
+        rule("iot", "POST",   "^/things/[^/]+/?$",          "iot:CreateThing"),
+        rule("iot", "GET",    "^/things/[^/]+/?$",          "iot:DescribeThing"),
+        rule("iot", "DELETE", "^/things/[^/]+/?$",          "iot:DeleteThing"),
+        rule("iot", "PATCH",  "^/things/[^/]+/?$",          "iot:UpdateThing"),
+        rule("iot", "PUT",    "^/things/[^/]+/?$",          "iot:UpdateThing"),
+        rule("iot", "GET",    "^/things/?$",                "iot:ListThings"),
+        rule("iot", "POST",   "^/policies/[^/]+/?$",        "iot:CreatePolicy"),
+        rule("iot", "GET",    "^/policies/[^/]+/?$",        "iot:GetPolicy"),
+        rule("iot", "DELETE", "^/policies/[^/]+/?$",        "iot:DeletePolicy"),
+        rule("iot", "GET",    "^/policies/?$",              "iot:ListPolicies"),
+        rule("iot", "POST",   "^/certificates/?$",          "iot:CreateKeysAndCertificate"),
+        rule("iot", "GET",    "^/certificates/[^/]+/?$",    "iot:DescribeCertificate"),
+        rule("iot", "POST",   "^/rules/[^/]+/?$",           "iot:CreateTopicRule"),
+        rule("iot", "GET",    "^/rules/[^/]+/?$",           "iot:GetTopicRule"),
+        rule("iot", "DELETE", "^/rules/[^/]+/?$",           "iot:DeleteTopicRule"),
+        rule("iot", "GET",    "^/rules/?$",                 "iot:ListTopicRules")
     );
 
     private static ActionRule rule(String service, String method, String path, String action) {

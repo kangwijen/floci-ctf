@@ -129,6 +129,11 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        // Federated STS uses WebIdentityToken / SAMLAssertion in the form body, not SigV4.
+        if (SecurityBypassPaths.isFederatedStsAssumeRequest(ctx)) {
+            return;
+        }
+
         String auth = ctx.getHeaderString("Authorization");
         if (auth == null) {
             if (strict && !SecurityBypassPaths.isInternalHealthOrInfoPath(

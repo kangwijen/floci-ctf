@@ -387,6 +387,26 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void resolvesIotDataUpdateThingShadowFromRestPath() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/things/meter-01/shadow",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"state\":{\"reported\":{\"load_kw\":1}}}");
+        assertEquals("iot:UpdateThingShadow", registry.resolve("iotdata", ctx));
+    }
+
+    @Test
+    void resolvesIotCreateThingFromRestPath() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/things/meter-01",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{}");
+        assertEquals("iot:CreateThing", registry.resolve("iot", ctx));
+    }
+
+    @Test
     void resolvesAcmDescribeCertificateFromJson11Target() {
         ContainerRequestContext ctx = json11TargetCtx(
                 "CertificateManager.DescribeCertificate",

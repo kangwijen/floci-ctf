@@ -182,6 +182,46 @@ class SecurityBypassPathsTest {
         assertFalse(SecurityBypassPaths.isPresignedPostRequest(ctx));
     }
 
+    @Test
+    void isFederatedStsAssumeRequestDetectsWebIdentityToken() {
+        ContainerRequestContext ctx = mockFormPost(
+                "Action=AssumeRoleWithWebIdentity&RoleArn=arn:aws:iam::000000000000:role/x"
+                        + "&WebIdentityToken=eyJ.test.token");
+        assertTrue(SecurityBypassPaths.isFederatedStsAssumeRequest(ctx));
+    }
+
+    @Test
+    void isFederatedStsAssumeRequestDetectsSamlAssertion() {
+        ContainerRequestContext ctx = mockFormPost(
+                "Action=AssumeRoleWithSAML&RoleArn=arn:aws:iam::000000000000:role/x&SAMLAssertion=abc123");
+        assertTrue(SecurityBypassPaths.isFederatedStsAssumeRequest(ctx));
+    }
+
+    @Test
+    void isFederatedStsAssumeRequestRejectsPlainAssumeRole() {
+        ContainerRequestContext ctx = mockFormPost(
+                "Action=AssumeRole&RoleArn=arn:aws:iam::000000000000:role/x&RoleSessionName=s");
+        assertFalse(SecurityBypassPaths.isFederatedStsAssumeRequest(ctx));
+    }
+
+    private static ContainerRequestContext mockFormPost(String body) {
+        AtomicReference<InputStream> streamRef = new AtomicReference<>(
+                new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+        ContainerRequestContext ctx = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(uriInfo.getPath()).thenReturn("/");
+        when(ctx.getUriInfo()).thenReturn(uriInfo);
+        when(ctx.getMethod()).thenReturn("POST");
+        when(ctx.getMediaType()).thenReturn(jakarta.ws.rs.core.MediaType.APPLICATION_FORM_URLENCODED_TYPE);
+        when(ctx.getEntityStream()).thenAnswer(inv -> streamRef.get());
+        doAnswer(inv -> {
+            streamRef.set(inv.getArgument(0));
+            return null;
+        }).when(ctx).setEntityStream(any(InputStream.class));
+        return ctx;
+    }
+
     private static ContainerRequestContext mockMultipartPost(String path,
                                                              MultivaluedMap<String, String> queryParams,
                                                              String body) {

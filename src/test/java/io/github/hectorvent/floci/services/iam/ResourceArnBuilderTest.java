@@ -1006,6 +1006,22 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:appconfig:us-east-1:222222222222:application/app12345/environment/env67890/configuration/prof11111", arn);
     }
 
+    // ── IoT ─────────────────────────────────────────────────────────────────────
+
+    @Test
+    void iotDataUpdateThingShadowBuildsThingArn() {
+        ContainerRequestContext ctx = pathCtx("things/railhead-meter-01/shadow", jsonBodyCtx("{}"));
+        String arn = builder.build("iotdata", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:iot:us-east-1:222222222222:thing/railhead-meter-01", arn);
+    }
+
+    @Test
+    void iotCreateThingBuildsThingArn() {
+        ContainerRequestContext ctx = pathCtx("things/railhead-meter-01", jsonBodyCtx("{}"));
+        String arn = builder.build("iot", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:iot:us-east-1:222222222222:thing/railhead-meter-01", arn);
+    }
+
     // ── Textract ────────────────────────────────────────────────────────────────
 
     @Test

@@ -146,6 +146,7 @@ public class ResourceArnBuilder {
             case "transcribe"           -> buildTranscribeArn(ctx, region, accountId);
             case "appconfig"            -> buildAppConfigArn(ctx, path, region, accountId);
             case "appconfigdata"        -> buildAppConfigDataArn(ctx, region, accountId);
+            case "iot", "iotdata"       -> buildIotArn(path, region, accountId);
             case "textract"             -> buildTextractArn(ctx, region, accountId);
             case "tagging"              -> buildTaggingArn(ctx);
             default                    -> "*";
@@ -2220,6 +2221,43 @@ public class ResourceArnBuilder {
         }
 
         return "*";
+    }
+
+    // ── IoT ──────────────────────────────────────────────────────────────────────
+
+    private static final Pattern IOT_THING =
+            Pattern.compile("/things/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IOT_TOPIC =
+            Pattern.compile("/topics/(.+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IOT_POLICY =
+            Pattern.compile("/policies/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IOT_CERTIFICATE =
+            Pattern.compile("/certificates/([^/]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IOT_RULE =
+            Pattern.compile("/rules/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildIotArn(String path, String region, String accountId) {
+        String thingName = extractPathSegment(path, IOT_THING);
+        if (thingName != null && !thingName.isBlank()) {
+            return AwsArnUtils.Arn.of("iot", region, accountId, "thing/" + thingName).toString();
+        }
+        String topic = extractPathSegment(path, IOT_TOPIC);
+        if (topic != null && !topic.isBlank()) {
+            return AwsArnUtils.Arn.of("iot", region, accountId, "topic/" + topic).toString();
+        }
+        String policyName = extractPathSegment(path, IOT_POLICY);
+        if (policyName != null && !policyName.isBlank()) {
+            return AwsArnUtils.Arn.of("iot", region, accountId, "policy/" + policyName).toString();
+        }
+        String certificateId = extractPathSegment(path, IOT_CERTIFICATE);
+        if (certificateId != null && !certificateId.isBlank()) {
+            return AwsArnUtils.Arn.of("iot", region, accountId, "cert/" + certificateId).toString();
+        }
+        String ruleName = extractPathSegment(path, IOT_RULE);
+        if (ruleName != null && !ruleName.isBlank()) {
+            return AwsArnUtils.Arn.of("iot", region, accountId, "rule/" + ruleName).toString();
+        }
+        return AwsArnUtils.Arn.of("iot", region, accountId, "*").toString();
     }
 
     // ── Route 53 ─────────────────────────────────────────────────────────────────

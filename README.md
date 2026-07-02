@@ -470,7 +470,7 @@ Canonical lists: [AGENTS.md CTF regression](./AGENTS.md#ctf-regression-tests).
 **Scoped IAM, resource policies, and container credentials:**
 
 ```bash
-./mvnw test -Dtest=SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,CodeBuildIamScopedIntegrationTest,BackupIamScopedIntegrationTest,Route53IamScopedIntegrationTest,CodeDeployIamScopedIntegrationTest,AcmIamScopedIntegrationTest,EcsContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,SecretsManagerRotationKmsIntegrationTest
+./mvnw test -Dtest=SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,CodeBuildIamScopedIntegrationTest,BackupIamScopedIntegrationTest,Route53IamScopedIntegrationTest,IotIamScopedIntegrationTest,CodeDeployIamScopedIntegrationTest,AcmIamScopedIntegrationTest,EcsContainerCredentialsIamIntegrationTest,LambdaContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,StsWebIdentityStrictUnsignedIntegrationTest,SecretsManagerRotationKmsIntegrationTest
 ```
 
 On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docker_engine` when the default unix socket is configured and `DOCKER_HOST` is unset. Set `$env:DOCKER_HOST = "npipe:////./pipe/docker_engine"` explicitly if auto-detection does not apply.

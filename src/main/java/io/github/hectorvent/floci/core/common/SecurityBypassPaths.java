@@ -1,7 +1,10 @@
 package io.github.hectorvent.floci.core.common;
 
 import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.MediaType;
 
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -134,6 +137,70 @@ public final class SecurityBypassPaths {
 
     public static boolean isCognitoOAuthUserInfoPath(String path) {
         return "/cognito-idp/oauth2/userInfo".equals(normalizeLeadingSlash(path));
+    }
+
+    /**
+     * Federated STS assume-role calls authenticate with a JWT or SAML assertion in the
+     * form body, not SigV4. {@link io.github.hectorvent.floci.services.iam.StsQueryHandler}
+     * validates trust policies for these operations.
+     */
+    public static boolean isFederatedStsAssumeRequest(ContainerRequestContext ctx) {
+        if (!"POST".equalsIgnoreCase(ctx.getMethod())) {
+            return false;
+        }
+        String action = readUrlEncodedFormField(ctx, "Action");
+        if (action == null || action.isBlank()) {
+            return false;
+        }
+        return switch (action) {
+            case "AssumeRoleWithWebIdentity" -> hasUrlEncodedFormField(ctx, "WebIdentityToken");
+            case "AssumeRoleWithSAML" -> hasUrlEncodedFormField(ctx, "SAMLAssertion");
+            default -> false;
+        };
+    }
+
+    private static boolean hasUrlEncodedFormField(ContainerRequestContext ctx, String fieldName) {
+        String value = readUrlEncodedFormField(ctx, fieldName);
+        return value != null && !value.isBlank();
+    }
+
+    private static String readUrlEncodedFormField(ContainerRequestContext ctx, String fieldName) {
+        MediaType mediaType = ctx.getMediaType();
+        if (mediaType == null
+                || !"application".equalsIgnoreCase(mediaType.getType())
+                || !"x-www-form-urlencoded".equalsIgnoreCase(mediaType.getSubtype())) {
+            return null;
+        }
+        byte[] body = RequestBodyBuffer.peek(ctx);
+        if (body == null) {
+            body = RequestBodyBuffer.buffer(ctx);
+        }
+        if (body.length == 0) {
+            return null;
+        }
+        Charset charset = resolveFormCharset(mediaType);
+        String form = new String(body, charset);
+        for (String pair : form.split("&")) {
+            int eq = pair.indexOf('=');
+            String key = eq < 0 ? pair : pair.substring(0, eq);
+            if (!fieldName.equals(URLDecoder.decode(key, charset))) {
+                continue;
+            }
+            return eq < 0 ? "" : URLDecoder.decode(pair.substring(eq + 1), charset);
+        }
+        return null;
+    }
+
+    private static Charset resolveFormCharset(MediaType mediaType) {
+        String name = mediaType.getParameters().get("charset");
+        if (name == null || name.isBlank()) {
+            return StandardCharsets.UTF_8;
+        }
+        try {
+            return Charset.forName(name);
+        } catch (RuntimeException e) {
+            return StandardCharsets.UTF_8;
+        }
     }
 
     private static String normalizeLeadingSlash(String path) {
