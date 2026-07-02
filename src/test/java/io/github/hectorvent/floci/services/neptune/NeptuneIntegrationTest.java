@@ -31,6 +31,7 @@ class NeptuneIntegrationTest {
     static void requireDocker() {
         Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
                 "Docker daemon must be available for Neptune integration tests");
+        DockerTestSupport.configureLongHttpTimeouts();
     }
 
     @Test

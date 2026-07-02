@@ -130,6 +130,7 @@ public class FlowLogService {
         fl.setMaxAggregationInterval(maxAggregationInterval);
         fl.setRegion(region);
         fl.setAccountId(config.defaultAccountId());
+        fl.setCreationTime(Instant.now());
         flowLogs.put(fl.getFlowLogId(), fl);
         LOG.infov("Created flow log {0} for {1} {2} -> {3}",
                 fl.getFlowLogId(), fl.getResourceType(), resourceId, fl.getBucketName());

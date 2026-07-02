@@ -1,8 +1,11 @@
 package io.github.hectorvent.floci.services.neptune;
 
+import io.github.hectorvent.floci.testing.DockerTestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
@@ -38,6 +41,13 @@ class NeptuneOpenCypherIntegrationTest {
             "SignedHeaders=content-type;host, Signature=test";
 
     private static final Pattern PORT = Pattern.compile("<Port>(\\d+)</Port>");
+
+    @BeforeAll
+    static void requireDocker() {
+        Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
+                "Docker daemon must be available for Neptune openCypher integration tests");
+        DockerTestSupport.configureLongHttpTimeouts();
+    }
 
     @Test
     void openCypherQueryWorksOverBolt() {

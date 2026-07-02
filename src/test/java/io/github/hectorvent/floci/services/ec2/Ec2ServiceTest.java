@@ -131,7 +131,7 @@ class Ec2ServiceTest {
         Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
                 mock(Ec2PortForwardManager.class),
                 mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
-                new InMemoryStorageFactory());
+                new InMemoryStorageFactory(), mock(Event.class));
         String subnetId = service.describeSubnets("us-east-1", List.of(),
                 Map.of("vpc-id", List.of("vpc-default"))).getFirst().getSubnetId();
         VpcEndpoint endpoint = service.createVpcEndpoint("us-east-1", "vpc-default",
@@ -163,7 +163,7 @@ class Ec2ServiceTest {
         Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
                 mock(Ec2PortForwardManager.class),
                 mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
-                new InMemoryStorageFactory());
+                new InMemoryStorageFactory(), mock(Event.class));
         SecurityGroup web = service.createSecurityGroup("us-east-1", "web", "web sg", "vpc-default");
         Reservation reservation = service.runInstances("us-east-1", "ami-1234567890abcdef0", "t3.micro",
                 1, 1, null, List.of(), null, null, List.of(), null, null);
@@ -183,7 +183,7 @@ class Ec2ServiceTest {
         Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
                 mock(Ec2PortForwardManager.class),
                 mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
-                new InMemoryStorageFactory());
+                new InMemoryStorageFactory(), mock(Event.class));
         Reservation reservation = service.runInstances("us-east-1", "ami-1234567890abcdef0", "t3.micro",
                 1, 1, null, List.of(), null, null, List.of(), null, null);
         String instanceId = reservation.getInstances().getFirst().getInstanceId();

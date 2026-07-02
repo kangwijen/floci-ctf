@@ -35,6 +35,7 @@ class DocDbIntegrationTest {
     static void requireDocker() {
         Assumptions.assumeTrue(DockerTestSupport.isDockerAvailable(),
                 "Docker daemon must be available for DocumentDB integration tests");
+        DockerTestSupport.configureLongHttpTimeouts();
     }
 
     @Test

@@ -411,10 +411,6 @@ public class Ec2MetadataServer {
         return "instance-role";
     }
 
-    private static String extractProfileName(String profileArn) {
-        return extractRoleName(profileArn);
-    }
-
     private static String randomId(int length) {
         StringBuilder sb = new StringBuilder(length);
         ThreadLocalRandom random = ThreadLocalRandom.current();
