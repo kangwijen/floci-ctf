@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
+import io.github.hectorvent.floci.core.common.docker.ContainerExecResult;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.ContainerReachableEndpoint;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -66,7 +68,7 @@ class ContainerLauncherTest {
     final java.util.List<String> capturedRemotePaths = new java.util.ArrayList<>();
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
         EmulatorConfig.LambdaServiceConfig lambda = mock(EmulatorConfig.LambdaServiceConfig.class);
         EmulatorConfig.DockerConfig docker = mock(EmulatorConfig.DockerConfig.class);
@@ -108,6 +110,8 @@ class ContainerLauncherTest {
         ContainerLifecycleManager.ContainerInfo info =
                 new ContainerLifecycleManager.ContainerInfo("container-123", Map.of());
         when(lifecycleManager.startCreated(eq("container-123"), any())).thenReturn(info);
+        lenient().doReturn(new ContainerExecResult(0, ""))
+                .when(lifecycleManager).execForResult(any(), any(), anyInt());
         when(lifecycleManager.getDockerClient()).thenReturn(dockerClient);
 
         // Stub the Docker copy chain so copyDirToContainer / copyFileToContainer
@@ -477,10 +481,9 @@ class ContainerLauncherTest {
     }
 
     @Test
-    void launchFunction_withExecutionRole_addsLinkLocalExtraHostWhenEnabled() throws Exception {
+    void launchFunction_withExecutionRole_skipsLinkLocalExtraHostWhenFlociInDocker() throws Exception {
         when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(true);
         when(containerDetector.isRunningInContainer()).thenReturn(true);
-        when(currentContainerNetworkResolver.resolveContainerIp()).thenReturn(Optional.of("172.20.0.5"));
 
         Path codePath = Files.createDirectory(tempDir.resolve("link-local-creds"));
 
@@ -493,13 +496,15 @@ class ContainerLauncherTest {
 
         when(credentialsServer.registerFunction(any(), any(), any())).thenReturn("cred-token-link");
         when(credentialsServer.credentialsFullUri("127.0.0.1", "cred-token-link"))
-                .thenReturn("http://169.254.170.2:9171/v2/credentials/cred-token-link");
+                .thenReturn("http://127.0.0.1:9171/v2/credentials/cred-token-link");
 
         launcher.launch(fn);
 
         ArgumentCaptor<ContainerSpec> specCaptor = ArgumentCaptor.forClass(ContainerSpec.class);
         verify(lifecycleManager).create(specCaptor.capture());
-        assertTrue(specCaptor.getValue().extraHosts().contains("169.254.170.2:172.20.0.5"));
+        assertTrue(specCaptor.getValue().extraHosts().stream()
+                        .noneMatch(h -> h.startsWith("169.254.170.2:")),
+                "link-local extra_hosts are not used when Floci runs inside Docker");
         assertTrue(specCaptor.getValue().env().stream()
                         .noneMatch(e -> e.startsWith("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=")),
                 "link-local FULL_URI must be used without RELATIVE_URI on port 9171");

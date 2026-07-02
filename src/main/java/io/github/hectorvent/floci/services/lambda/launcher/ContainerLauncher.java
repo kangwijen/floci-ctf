@@ -4,6 +4,8 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
 import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsLinkLocalProxy;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsLinkLocalProxySetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerReachableEndpoint;
@@ -313,6 +315,12 @@ public class ContainerLauncher {
 
         // Now start the container with code in place
         lifecycleManager.startCreated(containerId, spec);
+
+        if (credentialToken != null) {
+            int credsPort = config.services().lambda().containerCredentialsPort();
+            ContainerCredentialsLinkLocalProxySetup.applyIfRequired(
+                    lifecycleManager, config, containerDetector, containerId, flociHostname, credsPort);
+        }
 
         ContainerHandle handle = new ContainerHandle(containerId, fn.getFunctionName(), runtimeApiServer, ContainerState.WARM, fn.isHotReload());
         handle.setCredentialToken(credentialToken);

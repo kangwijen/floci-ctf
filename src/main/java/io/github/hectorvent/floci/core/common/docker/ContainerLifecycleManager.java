@@ -8,20 +8,28 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Ports;
+import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.async.ResultCallback;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages Docker container lifecycle operations including create, start, stop, and remove.
@@ -124,6 +132,49 @@ public class ContainerLifecycleManager {
 
         Map<Integer, EndpointInfo> endpoints = resolveEndpoints(containerId, spec);
         return new ContainerInfo(containerId, endpoints);
+    }
+
+    /**
+     * Runs a command inside a running container and returns its exit code and combined output.
+     */
+    public ContainerExecResult execForResult(String containerId, String[] cmd, int timeoutSeconds) throws Exception {
+        String execId = dockerClient.execCreateCmd(containerId)
+                .withCmd(cmd)
+                .withAttachStdout(true)
+                .withAttachStderr(true)
+                .exec()
+                .getId();
+
+        CountDownLatch latch = new CountDownLatch(1);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        dockerClient.execStartCmd(execId).exec(new ResultCallback.Adapter<Frame>() {
+            @Override
+            public void onNext(Frame frame) {
+                if (frame.getPayload() != null) {
+                    try {
+                        output.write(frame.getPayload());
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
+
+            @Override
+            public void onComplete() {
+                latch.countDown();
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                latch.countDown();
+            }
+        });
+        boolean completed = latch.await(timeoutSeconds, TimeUnit.SECONDS);
+        if (!completed) {
+            return new ContainerExecResult(-1, "Timed out after " + timeoutSeconds + "s");
+        }
+        Long exitCode = dockerClient.inspectExecCmd(execId).exec().getExitCodeLong();
+        String text = output.toString(StandardCharsets.UTF_8).stripTrailing();
+        return new ContainerExecResult(exitCode != null ? exitCode.intValue() : -1, text);
     }
 
     /**
@@ -480,6 +531,12 @@ public class ContainerLifecycleManager {
         // can resolve *.localhost.floci.io to Floci's Docker network IP.
         if (spec.dnsServers() != null && !spec.dnsServers().isEmpty()) {
             hostConfig.withDns(spec.dnsServers().toArray(new String[0]));
+        }
+
+        if (spec.capAdd() != null && !spec.capAdd().isEmpty()) {
+            hostConfig.withCapAdd(spec.capAdd().stream()
+                    .map(Capability::valueOf)
+                    .toArray(Capability[]::new));
         }
 
         return hostConfig;

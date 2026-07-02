@@ -91,6 +91,7 @@ public class ContainerBuilder {
         private boolean privileged;
         private String cgroupnsMode;
         private final List<String> dnsServers = new ArrayList<>();
+        private final List<String> capAdd = new ArrayList<>();
 
         Builder(String image, EmulatorConfig config, DockerHostResolver dockerHostResolver,
                 EmbeddedDnsServer embeddedDnsServer,
@@ -324,6 +325,13 @@ public class ContainerBuilder {
             return this;
         }
 
+        public Builder withCapAdd(String capability) {
+            if (capability != null && !capability.isBlank()) {
+                this.capAdd.add(capability);
+            }
+            return this;
+        }
+
         public Builder withCgroupnsMode(String cgroupnsMode) {
             this.cgroupnsMode = cgroupnsMode;
             return this;
@@ -373,7 +381,8 @@ public class ContainerBuilder {
                     privileged,
                     cgroupnsMode,
                     List.copyOf(dnsServers),
-                    workingDir
+                    workingDir,
+                    List.copyOf(capAdd)
             );
         }
     }

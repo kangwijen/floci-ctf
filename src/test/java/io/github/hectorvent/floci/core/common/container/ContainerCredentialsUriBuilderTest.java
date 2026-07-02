@@ -27,10 +27,17 @@ class ContainerCredentialsUriBuilderTest {
     }
 
     @Test
-    void credentialsFullUri_usesLinkLocalHostWithExplicitPortWhenEnabled() {
-        ContainerCredentialsUriBuilder builder = builder(9171, true, true);
+    void credentialsFullUri_usesLinkLocalHostOnNativeDockerHost() {
+        ContainerCredentialsUriBuilder builder = builder(9171, true, false);
         assertEquals("http://169.254.170.2:9171/v2/credentials/token-1",
                 builder.credentialsFullUri("127.0.0.1", "token-1"));
+    }
+
+    @Test
+    void credentialsFullUri_usesLocalhostWhenFlociRunsInsideDocker() {
+        ContainerCredentialsUriBuilder builder = builder(9171, true, true);
+        assertEquals("http://127.0.0.1:9171/v2/credentials/token-1",
+                builder.credentialsFullUri("172.18.0.2", "token-1"));
     }
 
     @Test

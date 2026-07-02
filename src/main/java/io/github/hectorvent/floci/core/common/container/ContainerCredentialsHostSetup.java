@@ -10,13 +10,10 @@ import java.util.Optional;
 /**
  * Wires AWS-shaped link-local container credential URIs into Docker workload containers.
  *
- * <p>When link-local mode is on, {@code AWS_CONTAINER_CREDENTIALS_FULL_URI} uses
- * {@code http://169.254.170.2:PORT/v2/credentials/{token}}. Workloads must map that
- * address to a reachable Floci host:
- * <ul>
- *   <li>Floci on the Docker host: {@code extra_hosts: 169.254.170.2:host-gateway}</li>
- *   <li>Floci in Compose: {@code extra_hosts: 169.254.170.2:<floci-container-ip>}</li>
- * </ul>
+ * <p>When link-local mode is on and Floci runs on the Docker host, {@code extra_hosts}
+ * maps {@code 169.254.170.2} to {@code host-gateway}. When Floci runs inside Docker,
+ * {@link ContainerCredentialsLinkLocalProxy} runs a localhost TCP proxy in each workload
+ * container and {@code FULL_URI} uses {@code 127.0.0.1} (a boto3-allowed metadata host).
  */
 public final class ContainerCredentialsHostSetup {
 
@@ -42,13 +39,8 @@ public final class ContainerCredentialsHostSetup {
         }
         String hostname = config.ctf().containerCredentialsLinkLocalHost();
         if (containerDetector.isRunningInContainer()) {
-            String flociIp = networkResolver != null
-                    ? networkResolver.resolveContainerIp().filter(ip -> !ip.isBlank()).orElse(null)
-                    : null;
-            if (flociIp == null || flociIp.isBlank()) {
-                flociIp = fallbackFlociAddress;
-            }
-            return Optional.of(new LinkLocalExtraHost(hostname, flociIp));
+            // FULL_URI uses FLOCI_HOSTNAME or container IP; extra_hosts cannot remap link-local.
+            return Optional.empty();
         }
         return Optional.of(new LinkLocalExtraHost(hostname, "host-gateway"));
     }

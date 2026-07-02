@@ -42,11 +42,23 @@ public final class ContainerCredentialsUriBuilder {
     public String credentialsFullUri(String hostAddress, String credentialToken) {
         if (config.ctf().containerCredentialsUseLinkLocalUri()) {
             int port = portSupplier.getAsInt();
-            return "http://" + config.ctf().containerCredentialsLinkLocalHost()
-                    + ":" + port + credentialsRelativeUri(credentialToken);
+            String host = resolveCredentialUriHost();
+            return "http://" + host + ":" + port + credentialsRelativeUri(credentialToken);
         }
         int port = portSupplier.getAsInt();
         return "http://" + hostAddress + ":" + port + credentialsRelativeUri(credentialToken);
+    }
+
+    /**
+     * Host in {@code AWS_CONTAINER_CREDENTIALS_FULL_URI}. Botocore only accepts loopback and
+     * AWS link-local metadata hosts. When Floci runs inside Docker, a localhost proxy inside
+     * each workload container forwards to Floci on the Compose network.
+     */
+    private String resolveCredentialUriHost() {
+        if (containerDetector != null && containerDetector.isRunningInContainer()) {
+            return "127.0.0.1";
+        }
+        return config.ctf().containerCredentialsLinkLocalHost();
     }
 
     public String resolveBindHost() {

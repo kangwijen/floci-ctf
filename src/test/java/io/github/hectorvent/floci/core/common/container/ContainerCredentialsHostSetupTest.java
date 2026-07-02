@@ -32,7 +32,7 @@ class ContainerCredentialsHostSetupTest {
     }
 
     @Test
-    void linkLocalExtraHostUsesFlociContainerIpWhenFlociInDocker() {
+    void linkLocalExtraHostAbsentWhenFlociRunsInsideDocker() {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
         ContainerDetector detector = mock(ContainerDetector.class);
@@ -43,12 +43,8 @@ class ContainerCredentialsHostSetupTest {
         when(detector.isRunningInContainer()).thenReturn(true);
         when(networkResolver.resolveContainerIp()).thenReturn(Optional.of("172.20.0.5"));
 
-        Optional<ContainerCredentialsHostSetup.LinkLocalExtraHost> entry =
-                ContainerCredentialsHostSetup.linkLocalExtraHost(
-                        config, detector, networkResolver, "172.18.0.2");
-
-        assertTrue(entry.isPresent());
-        assertEquals("169.254.170.2:172.20.0.5", entry.get().dockerExtraHostEntry());
+        assertTrue(ContainerCredentialsHostSetup.linkLocalExtraHost(
+                config, detector, networkResolver, "172.18.0.2").isEmpty());
     }
 
     @Test
