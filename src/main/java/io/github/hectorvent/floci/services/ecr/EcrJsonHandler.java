@@ -52,6 +52,7 @@ public class EcrJsonHandler {
             case "ListImages" -> handleListImages(request, region);
             case "DescribeImages" -> handleDescribeImages(request, region);
             case "BatchGetImage" -> handleBatchGetImage(request, region);
+            case "GetDownloadUrlForLayer" -> handleGetDownloadUrlForLayer(request, region);
             case "BatchDeleteImage" -> handleBatchDeleteImage(request, region);
             case "PutImageTagMutability" -> handlePutImageTagMutability(request, region);
             case "TagResource" -> handleTagResource(request, region);
@@ -226,6 +227,20 @@ public class EcrJsonHandler {
             failures.add(buildImageFailure(f));
         }
         response.set("failures", failures);
+        return Response.ok(response).build();
+    }
+
+    private Response handleGetDownloadUrlForLayer(JsonNode request, String region) {
+        String repo = request.path("repositoryName").asText(null);
+        String registryId = request.path("registryId").asText(null);
+        String layerDigest = request.path("layerDigest").asText(null);
+
+        EcrService.GetDownloadUrlForLayerResult result =
+                service.getDownloadUrlForLayer(repo, layerDigest, registryId, region);
+
+        ObjectNode response = objectMapper.createObjectNode();
+        response.put("downloadUrl", result.downloadUrl());
+        response.put("layerDigest", result.layerDigest());
         return Response.ok(response).build();
     }
 

@@ -8,7 +8,6 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
-import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.ExposedPort;
@@ -531,12 +530,6 @@ public class ContainerLifecycleManager {
         // can resolve *.localhost.floci.io to Floci's Docker network IP.
         if (spec.dnsServers() != null && !spec.dnsServers().isEmpty()) {
             hostConfig.withDns(spec.dnsServers().toArray(new String[0]));
-        }
-
-        if (spec.capAdd() != null && !spec.capAdd().isEmpty()) {
-            hostConfig.withCapAdd(spec.capAdd().stream()
-                    .map(Capability::valueOf)
-                    .toArray(Capability[]::new));
         }
 
         return hostConfig;

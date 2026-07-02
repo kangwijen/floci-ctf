@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsLinkLocalProxySetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
@@ -213,6 +214,14 @@ public class EcsContainerManager {
             // Create and start container
             ContainerInfo info = lifecycleManager.createAndStart(spec);
             String dockerId = info.containerId();
+
+            if (credentialToken != null) {
+                String upstreamHost = ContainerCredentialsLinkLocalProxySetup.resolveUpstreamHost(
+                        config, flociHost);
+                ContainerCredentialsLinkLocalProxySetup.applyIfRequired(
+                        lifecycleManager, config, containerDetector, dockerId,
+                        upstreamHost, config.services().ecs().containerCredentialsPort());
+            }
 
             LOG.infov("Created ECS container {0} for task {1} container {2}", dockerId, taskId, def.getName());
 

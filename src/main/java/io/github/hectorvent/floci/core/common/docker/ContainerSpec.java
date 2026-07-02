@@ -28,7 +28,6 @@ import java.util.Map;
  * @param cgroupnsMode Docker cgroup namespace mode (for example, "host")
  * @param dnsServers DNS server IPs to inject into the container (e.g. Floci's embedded DNS)
  * @param workingDir Working directory inside the container (overrides image WORKDIR)
- * @param capAdd Linux capabilities to add (e.g. {@code NET_ADMIN} for link-local credential proxy)
  */
 public record ContainerSpec(
         String image,
@@ -47,15 +46,14 @@ public record ContainerSpec(
         boolean privileged,
         String cgroupnsMode,
         List<String> dnsServers,
-        String workingDir,
-        List<String> capAdd
+        String workingDir
 ) {
     /**
      * Creates a minimal spec with just the image name.
      * All other fields will be null or empty lists.
      */
     public ContainerSpec(String image) {
-        this(image, null, List.of(), null, null, null, Map.of(), List.of(), null, List.of(), List.of(), List.of(), null, false, null, List.of(), null, List.of());
+        this(image, null, List.of(), null, null, null, Map.of(), List.of(), null, List.of(), List.of(), List.of(), null, false, null, List.of(), null);
     }
 
     /**

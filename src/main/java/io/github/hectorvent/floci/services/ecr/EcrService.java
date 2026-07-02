@@ -427,6 +427,39 @@ public class EcrService {
         return new BatchGetImageResult(images, failures);
     }
 
+    public record GetDownloadUrlForLayerResult(String downloadUrl, String layerDigest) {}
+
+    public GetDownloadUrlForLayerResult getDownloadUrlForLayer(String repositoryName,
+                                                                String layerDigest,
+                                                                String registryId,
+                                                                String region) {
+        if (layerDigest == null || layerDigest.isBlank()) {
+            throw new AwsException("InvalidParameterException", "layerDigest is required", 400);
+        }
+        String digest = layerDigest.startsWith("sha256:") ? layerDigest : "sha256:" + layerDigest;
+        Repository repo = requireRepo(repositoryName, registryId, region);
+        registryManager.ensureStarted();
+        String internal = registryManager.internalRepoName(repo.getRegistryId(), region, repositoryName);
+        RegistryHttpClient http = registryManager.httpClient();
+        try {
+            if (!http.blobExists(internal, digest)) {
+                throw new AwsException("LayerNotFoundException",
+                        "The layer with digest '" + digest + "' does not exist within the repository with name '"
+                                + repositoryName + "' in the registry with id '" + repo.getRegistryId() + "'", 400);
+            }
+        } catch (AwsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AwsException("LayerNotFoundException", e.getMessage(), 400);
+        }
+        String proxy = registryManager.getProxyEndpoint();
+        if (proxy.endsWith("/")) {
+            proxy = proxy.substring(0, proxy.length() - 1);
+        }
+        String downloadUrl = proxy + "/v2/" + internal + "/blobs/" + digest;
+        return new GetDownloadUrlForLayerResult(downloadUrl, digest);
+    }
+
     public BatchDeleteImageResult batchDeleteImage(String repositoryName,
                                                     List<ImageIdentifier> imageIds,
                                                     String registryId,

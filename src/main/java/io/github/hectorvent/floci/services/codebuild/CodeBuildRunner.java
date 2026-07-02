@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.common.container.ContainerCredentialsHostSetup;
+import io.github.hectorvent.floci.core.common.container.ContainerCredentialsLinkLocalProxySetup;
 import io.github.hectorvent.floci.core.common.docker.ContainerBuilder;
 import io.github.hectorvent.floci.core.common.docker.ContainerDetector;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
@@ -229,6 +230,14 @@ public class CodeBuildRunner {
             ContainerLifecycleManager.ContainerInfo info = lifecycleManager.createAndStart(spec);
             containerId = info.containerId();
             runningContainers.put(buildId, containerId);
+
+            if (credentialToken != null) {
+                String upstreamHost = ContainerCredentialsLinkLocalProxySetup.resolveUpstreamHost(
+                        config, flociHost);
+                ContainerCredentialsLinkLocalProxySetup.applyIfRequired(
+                        lifecycleManager, config, containerDetector, containerId,
+                        upstreamHost, config.services().codebuild().containerCredentialsPort());
+            }
 
             logHandle = logStreamer.attach(containerId, logGroup, logStream, region, "codebuild:" + buildId);
 

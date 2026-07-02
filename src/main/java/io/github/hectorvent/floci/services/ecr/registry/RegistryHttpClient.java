@@ -158,6 +158,17 @@ public class RegistryHttpClient {
         return true;
     }
 
+    /** Returns true when the blob exists in the backing registry. */
+    public boolean blobExists(String name, String digest) throws IOException, InterruptedException {
+        HttpResponse<Void> resp = http.send(
+                HttpRequest.newBuilder(URI.create(baseUrl + "/v2/" + name + "/blobs/" + digest))
+                        .timeout(Duration.ofSeconds(10))
+                        .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        return resp.statusCode() == 200;
+    }
+
     /**
      * Sums {@code config.size} + each {@code layers[].size} from a manifest body.
      * Returns 0 if the body is not a recognised image manifest.

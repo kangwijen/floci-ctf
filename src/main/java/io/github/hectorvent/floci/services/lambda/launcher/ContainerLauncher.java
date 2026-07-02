@@ -318,8 +318,10 @@ public class ContainerLauncher {
 
         if (credentialToken != null) {
             int credsPort = config.services().lambda().containerCredentialsPort();
+            String upstreamHost = ContainerCredentialsLinkLocalProxySetup.resolveUpstreamHost(
+                    config, flociHostname);
             ContainerCredentialsLinkLocalProxySetup.applyIfRequired(
-                    lifecycleManager, config, containerDetector, containerId, flociHostname, credsPort);
+                    lifecycleManager, config, containerDetector, containerId, upstreamHost, credsPort);
         }
 
         ContainerHandle handle = new ContainerHandle(containerId, fn.getFunctionName(), runtimeApiServer, ContainerState.WARM, fn.isHotReload());

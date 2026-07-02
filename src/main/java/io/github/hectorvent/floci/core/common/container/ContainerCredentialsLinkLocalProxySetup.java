@@ -16,6 +16,13 @@ public final class ContainerCredentialsLinkLocalProxySetup {
     private ContainerCredentialsLinkLocalProxySetup() {
     }
 
+    /** Prefer {@code FLOCI_HOSTNAME} so workload containers reach Floci by Compose DNS. */
+    public static String resolveUpstreamHost(EmulatorConfig config, String fallbackHost) {
+        return config.hostname()
+                .filter(host -> !host.isBlank())
+                .orElse(fallbackHost);
+    }
+
     public static void applyIfRequired(ContainerLifecycleManager lifecycleManager,
                                        EmulatorConfig config,
                                        ContainerDetector containerDetector,

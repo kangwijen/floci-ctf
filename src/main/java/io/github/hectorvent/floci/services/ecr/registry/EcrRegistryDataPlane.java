@@ -16,6 +16,7 @@ import org.jboss.logging.Logger;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -207,10 +208,17 @@ public class EcrRegistryDataPlane {
 
     private void pipeResponse(HttpServerRequest req, io.vertx.core.http.HttpClientResponse resp) {
         req.response().setStatusCode(resp.statusCode());
+        String clientAuthority = clientAuthority(req);
         resp.headers().forEach(entry -> {
-            if (!HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase())) {
-                req.response().putHeader(entry.getKey(), entry.getValue());
+            String key = entry.getKey();
+            if (HOP_BY_HOP_HEADERS.contains(key.toLowerCase(Locale.ROOT))) {
+                return;
             }
+            String value = entry.getValue();
+            if ("location".equalsIgnoreCase(key)) {
+                value = rewriteRegistryLocation(value, clientAuthority);
+            }
+            req.response().putHeader(key, value);
         });
         resp.pipeTo(req.response())
                 .onFailure(err -> {
@@ -218,5 +226,58 @@ public class EcrRegistryDataPlane {
                         req.response().setStatusCode(502).end("Bad gateway");
                     }
                 });
+    }
+
+    private String clientAuthority(HttpServerRequest req) {
+        String host = req.host();
+        if (host != null && !host.isBlank()) {
+            return host;
+        }
+        return "localhost:" + listenPort;
+    }
+
+    /**
+     * Rewrites {@code Location} headers from the internal registry container so host-side
+     * {@code docker push} continues against the published auth-proxy port.
+     */
+    static String rewriteRegistryLocation(String location, String clientAuthority, String backendBaseUrl,
+                                          boolean tlsEnabled) {
+        if (location == null || location.isBlank()) {
+            return location;
+        }
+        String scheme = tlsEnabled ? "https" : "http";
+        try {
+            URI backend = URI.create(backendBaseUrl);
+            URI loc = location.startsWith("/")
+                    ? URI.create(scheme + "://" + clientAuthority + location)
+                    : URI.create(location);
+            if (loc.getHost() != null && backend.getHost() != null
+                    && loc.getHost().equalsIgnoreCase(backend.getHost())
+                    && samePort(loc, backend)) {
+                String path = loc.getRawPath() != null ? loc.getRawPath() : "/";
+                String query = loc.getRawQuery();
+                String rebuilt = scheme + "://" + clientAuthority + path;
+                if (query != null && !query.isBlank()) {
+                    rebuilt += "?" + query;
+                }
+                return rebuilt;
+            }
+            if (location.startsWith("/")) {
+                return scheme + "://" + clientAuthority + location;
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+        return location;
+    }
+
+    private String rewriteRegistryLocation(String location, String clientAuthority) {
+        return rewriteRegistryLocation(location, clientAuthority, backendBaseUrl,
+                config.services().ecr().tlsEnabled());
+    }
+
+    private static boolean samePort(URI location, URI backend) {
+        int backendPort = backend.getPort() > 0 ? backend.getPort() : ("https".equalsIgnoreCase(backend.getScheme()) ? 443 : 80);
+        int locationPort = location.getPort() > 0 ? location.getPort() : backendPort;
+        return locationPort == backendPort;
     }
 }
