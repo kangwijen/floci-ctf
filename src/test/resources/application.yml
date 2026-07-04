@@ -62,6 +62,8 @@ floci:
         flush-interval-ms: 60000
       codedeploy:
         flush-interval-ms: 60000
+      tagging:
+        flush-interval-ms: 60000
       cloudfront:
 
   auth:
@@ -80,6 +82,9 @@ floci:
   tls:
     enabled: false
     self-signed: true
+
+  protocols:
+    strict-claiming: false
 
   docker:
     log-max-size: "10m"
@@ -120,6 +125,9 @@ floci:
       enabled: true
       mock: true
       default-image: "redpandadata/redpanda:latest"
+    amazonmq:
+      enabled: true
+      mock: true
     elasticache:
       enabled: true
       proxy-base-port: 16379

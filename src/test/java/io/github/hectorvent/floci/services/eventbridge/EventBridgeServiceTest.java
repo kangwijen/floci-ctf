@@ -46,7 +46,7 @@ class EventBridgeServiceTest {
                 invokerMock,
                 null,
                 mock(InProcessTargetAuthorizer.class),
-                new ResourceGroupsTaggingService()
+                new ResourceGroupsTaggingService(null)
         );
     }
 

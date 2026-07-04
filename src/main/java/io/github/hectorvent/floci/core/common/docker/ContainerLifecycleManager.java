@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -295,11 +296,36 @@ public class ContainerLifecycleManager {
         }
 
         Map<Integer, EndpointInfo> endpoints = new HashMap<>();
+        Map<Integer, Integer> publishedHostPorts = new HashMap<>();
         for (int port : ports) {
             endpoints.put(port, resolveEndpoint(inspect, port));
+            OptionalInt published = readPublishedHostPort(inspect, port);
+            if (published.isPresent()) {
+                publishedHostPorts.put(port, published.getAsInt());
+            }
         }
 
-        return new ContainerInfo(containerId, endpoints);
+        return new ContainerInfo(containerId, endpoints, publishedHostPorts);
+    }
+
+    /**
+     * Reads the host port a container's internal port is published on, independent of
+     * whether Floci itself runs inside a container. Unlike {@link #resolveEndpoint} —
+     * which switches to container-IP + internal port in container mode — this always
+     * reads the port binding, for URIs consumed by the host-side Docker daemon.
+     */
+    private static OptionalInt readPublishedHostPort(InspectContainerResponse inspect, int containerPort) {
+        Ports ports = inspect.getNetworkSettings().getPorts();
+        if (ports != null) {
+            Ports.Binding[] binding = ports.getBindings().get(ExposedPort.tcp(containerPort));
+            if (binding != null && binding.length > 0) {
+                try {
+                    return OptionalInt.of(Integer.parseInt(binding[0].getHostPortSpec()));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return OptionalInt.empty();
     }
 
     /**
@@ -604,16 +630,32 @@ public class ContainerLifecycleManager {
      *
      * @param containerId the Docker container ID
      * @param endpoints map of container port to resolved endpoint (host:port for connection)
+     * @param publishedHostPorts map of container port to the host port it is published on;
+     *                           a port without a binding is absent
      */
     public record ContainerInfo(
             String containerId,
-            Map<Integer, EndpointInfo> endpoints
+            Map<Integer, EndpointInfo> endpoints,
+            Map<Integer, Integer> publishedHostPorts
     ) {
+        public ContainerInfo(String containerId, Map<Integer, EndpointInfo> endpoints) {
+            this(containerId, endpoints, Map.of());
+        }
+
         /**
          * Gets the endpoint for a specific container port.
          */
         public EndpointInfo getEndpoint(int containerPort) {
             return endpoints.get(containerPort);
+        }
+
+        /**
+         * Gets the host port a container port is published on, regardless of whether
+         * Floci itself runs inside a container. Empty when the port has no binding.
+         */
+        public OptionalInt publishedHostPort(int containerPort) {
+            Integer published = publishedHostPorts.get(containerPort);
+            return published != null ? OptionalInt.of(published) : OptionalInt.empty();
         }
     }
 

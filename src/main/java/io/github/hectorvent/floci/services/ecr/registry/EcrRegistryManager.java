@@ -418,9 +418,24 @@ public class EcrRegistryManager {
                 }
                 dataPlane.start(chosenPort, resolveRegistryBaseUrl());
             } else {
-                lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
-                lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
-                        .ifPresent(port -> this.hostPort = port);
+                // getRepositoryUri/getProxyEndpoint are consumed by the host-side docker
+                // daemon, so hostPort must be the published binding — adopt's endpoint
+                // resolves to the container-internal port when Floci runs inside Docker.
+                ContainerLifecycleManager.ContainerInfo info =
+                        lifecycleManager.adopt(containerId, List.of(CONTAINER_INTERNAL_PORT));
+                var published = info.publishedHostPort(CONTAINER_INTERNAL_PORT);
+                if (published.isPresent()) {
+                    this.hostPort = published.getAsInt();
+                } else {
+                    lifecycleManager.resolveHostPublishedPort(containerId, CONTAINER_INTERNAL_PORT)
+                            .ifPresentOrElse(
+                                    port -> this.hostPort = port,
+                                    () -> LOG.warnv(
+                                            "Adopted ECR registry container {0} has no published binding for port {1}; keeping configured port {2}",
+                                            containerId,
+                                            String.valueOf(CONTAINER_INTERNAL_PORT),
+                                            String.valueOf(hostPort)));
+                }
             }
             this.started = true;
             LOG.infov("Adopted existing ECR registry container {0} on host port {1}",

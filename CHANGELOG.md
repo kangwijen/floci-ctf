@@ -7,30 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (CTF fork)
+
+- **iam:** IoT / `iotdata` REST action mapping and thing ARN scoping (`IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`)
+- **sts:** unsigned `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` under strict IAM (`StsWebIdentityStrictUnsignedIntegrationTest`)
+
+## [1.5.30] - 2026-07-03
+
 ### Added
 
-- **iam:** JSON 1.1 credential-scope enforcement uses the `X-Amz-Target` service for IAM action resolution and SigV4 scope-mismatch checks (`IamJson11CredentialScopeSplitIntegrationTest`, `IamKinesisCatchAllRouteScopeIntegrationTest`)
-- **apigateway:** in-process IAM on path-style SQS query integrations and Lambda path integrations (`ApiGatewaySqsQueryIamBypassIntegrationTest`); `AwsServiceRouter.invokeQuery` records CloudTrail audit when audit is enabled
-- **stepfunctions:** in-process IAM on CloudFormation, EC2 `DescribeRegions`, and optimized S3 `PutObject` service integrations (CTF hardening on upstream 1.5.29 SFN tasks)
-
-### Fixed
-
-- **iam:** removed the Kinesis `POST .*` catch-all route rule that mis-scoped IAM for unrelated REST paths (for example `POST /v2/apis`); added explicit `apigatewayv2` and narrowed Lambda path rules
-- **ec2:** wired Network ACL Query API actions in `Ec2QueryHandler` (`CreateNetworkAcl`, `DescribeNetworkAcls`, entry CRUD, `ReplaceNetworkAclAssociation`)
-- **s3:** presigned URL and presigned POST signature validation prefers the configured operator root secret when `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, even if the same access key id exists in IAM state
-- **sts:** `AssumeRole` caller resolution falls back to account root for unresolved credentials, matching `GetCallerIdentity`
-- **cloudformation:** normalize auto-generated and explicit `AWS::ECR::Repository` names to lowercase before `CreateRepository`
-- **lambda:** Runtime API port allocation probes host availability, retries on bind failure, and falls back to ephemeral ports when `9200-9299` is busy; factory stops orphaned servers on shutdown
-- **elasticache / memorydb / rds / neptune:** proxy port allocation skips host-bound ports and can fall back to ephemeral ports
-- **docker:** on Windows, auto-fallback from `unix:///var/run/docker.sock` to `npipe:////./pipe/docker_engine` when `DOCKER_HOST` is unset
-- **lambda:** `ZipExtractor` treats backslash ZIP entry names as literal filenames on Windows (AWS Lambda parity)
-- **tls:** Windows-safe certificate path handling in tests; skip dual-protocol TLS proxy startup in Quarkus test mode
-- **core:** `TlsProxyServer` and container credential HTTP servers use `SO_REUSEADDR` for faster port reuse in test suites
-- **cloudtrail:** cursor-based `LookupEvents` pagination prevents duplicate `EventId` entries across pages
+- **stepfunctions:** add the `ecs:runTask` service integration ([#1564](https://github.com/floci-io/floci/pull/1564)); add the state machine version APIs `PublishStateMachineVersion`, `ListStateMachineVersions`, and `DeleteStateMachineVersion` ([#1562](https://github.com/floci-io/floci/pull/1562)); add `ResultSelector`, Pass-state `Parameters`, `ArrayContains`, and wildcard projection, and fix `IsPresent` for absent paths ([#1558](https://github.com/floci-io/floci/pull/1558)); run executions under the execution's account ([#1566](https://github.com/floci-io/floci/pull/1566))
+- **amazonmq:** add the Amazon MQ broker control plane backed by RabbitMQ ([#1642](https://github.com/floci-io/floci/pull/1642))
+- **cloudformation:** add StackSets with account-aware provisioning ([#1551](https://github.com/floci-io/floci/pull/1551))
+- **ec2:** add VPC Flow Logs ([#1611](https://github.com/floci-io/floci/pull/1611)); publish security-group TCP ingress ports on the host ([#1680](https://github.com/floci-io/floci/pull/1680))
+- **firehose:** return `ExtendedS3DestinationDescription` and support `UpdateDestination` ([#1710](https://github.com/floci-io/floci/pull/1710))
+- **ses:** implement ContactList CRUD for SES v2 ([#1638](https://github.com/floci-io/floci/pull/1638))
+- **iam:** enforce AssumeRole trust policies when enforcement is enabled ([#1552](https://github.com/floci-io/floci/pull/1552))
+- **cloudtrail:** support empty lookup events ([#1603](https://github.com/floci-io/floci/pull/1603))
+- **tls:** serve HTTPS on 443 and trust Floci's certificate in Lambda containers ([#1595](https://github.com/floci-io/floci/pull/1595))
 
 ### Changed
 
-- **tests:** WebSocket integration tests provision APIs via `@BeforeEach` so filtered single-method runs work; test `application.yml` uses dedicated Lambda runtime API (`29200-29299`) and credential ports (`29171`/`29172`); ElastiCache test proxy range moved to `16379-16399` to avoid local Redis on `6379`
+- **lambda:** drop the base64 encode/decode round-trip on the S3 code path ([#1666](https://github.com/floci-io/floci/pull/1666))
+
+### Fixed
+
+- **iam:** resolve attached AWS-managed policies from any account ([#1663](https://github.com/floci-io/floci/pull/1663)); enforce STS session policies ([#1636](https://github.com/floci-io/floci/pull/1636)); session lookup uses origin-account routing for temporary credentials
+- **cloudformation:** register the `!Cidr` and `!GetAZs` shorthand YAML tags ([#1635](https://github.com/floci-io/floci/pull/1635)); treat a missing Secrets Manager secret as already-deleted on stack delete ([#1672](https://github.com/floci-io/floci/pull/1672))
+- **ec2:** return `groupSet` from `DescribeInstanceAttribute` ([#1709](https://github.com/floci-io/floci/pull/1709)); align AMI guest and launch template parity ([#1597](https://github.com/floci-io/floci/pull/1597))
+- **ses:** align `CreateEmailIdentity` DKIM behavior with AWS ([#1620](https://github.com/floci-io/floci/pull/1620)); treat missing `SendingEnabled` as false in v2 `PutConfigurationSetSendingOptions` ([#1594](https://github.com/floci-io/floci/pull/1594))
+- **cognito:** register `VerificationCode` for reflection so hybrid storage can persist state ([#1646](https://github.com/floci-io/floci/pull/1646)); omit unset optional blocks from `CreateUserPoolClient` responses ([#1615](https://github.com/floci-io/floci/pull/1615))
+- **ecr:** advertise the published host port when adopting the registry container ([#1715](https://github.com/floci-io/floci/pull/1715)); CTF registry auth proxy adopt path preserved
+- **kms:** normalize alias `targetKeyId` to the plain key ID on `CreateAlias` ([#1648](https://github.com/floci-io/floci/pull/1648))
+- **s3/sns:** preserve root service-host routing ([#1625](https://github.com/floci-io/floci/pull/1625))
+- **tagging:** persist resource tag mappings across restart ([#1711](https://github.com/floci-io/floci/pull/1711))
+- **dynamodb:** return a null `Message` for non-failed item cancellation reasons ([#1623](https://github.com/floci-io/floci/pull/1623))
+- **elasticache:** roll back the proxy port and container on failed provisioning ([#1618](https://github.com/floci-io/floci/pull/1618))
+- **autoscaling:** fail SSM commands for stale ASG instances ([#1600](https://github.com/floci-io/floci/pull/1600))
+- **cloudwatch-logs:** preserve ingestion order for same-timestamp events ([#1592](https://github.com/floci-io/floci/pull/1592))
+- **elbv2:** wrap void Query responses in their `Result` envelope ([#1189](https://github.com/floci-io/floci/pull/1189))
+- **core:** register persisted enums for native-image reflection ([#1695](https://github.com/floci-io/floci/pull/1695))
+- **docker:** enable TLS and sync the Docker test runner with the compatibility workflow ([#1714](https://github.com/floci-io/floci/pull/1714))
+
 
 ## [1.5.29] - 2026-06-30
 
@@ -1127,7 +1145,8 @@ Initial public release of Floci — a fast, free, open-source local AWS emulator
 
 ---
 
-[Unreleased]: https://github.com/floci-io/floci/compare/1.5.29...HEAD
+[Unreleased]: https://github.com/floci-io/floci/compare/1.5.30...HEAD
+[1.5.30]: https://github.com/floci-io/floci/compare/1.5.29...1.5.30
 [1.5.29]: https://github.com/floci-io/floci/compare/1.5.28...1.5.29
 [1.5.28]: https://github.com/floci-io/floci/compare/1.5.27...1.5.28
 [1.5.27]: https://github.com/floci-io/floci/compare/1.5.26...1.5.27

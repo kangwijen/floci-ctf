@@ -116,7 +116,6 @@ just test-compat
 | [`sdk-test-java`](sdk-test-java/) | Java 17 / JUnit 5 | `just test-java` | permissive default | `just test-forensic-java` |
 | [`sdk-test-java`](sdk-test-java/) | Java 17 / JUnit 5 | `just test-ctf-java` | **required** | optional in `test-ctf-forensic-java` |
 | [`sdk-test-go`](sdk-test-go/) | Go 1.24 / go test | `just test-go` | permissive | `rds-data` group (RDS Data API) |
-| [`sdk-test-rust`](sdk-test-rust/) | Rust / cargo-nextest | `just test-rust` | permissive | — |
 | [`compat-cdk`](compat-cdk/) | AWS CDK v2 | `just test-cdk` | registered keys | deploy stacks with trail/S3 buckets |
 | [`compat-terraform`](compat-terraform/) | Terraform | `just test-terraform` | registered keys | same |
 | [`compat-opentofu`](compat-opentofu/) | OpenTofu | `just test-opentofu` | registered keys | same |

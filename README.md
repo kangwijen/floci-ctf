@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.28**, +52 commits since 1.5.26 baseline; latest merge `aeb11d77`, 2026-06-28) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.30**, latest merge `38bf55d3`, 2026-07-04) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -291,6 +291,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Neptune | Real Docker | Graph DB via TinkerPop Gremlin Server (default) or Neo4j for openCypher/Bolt (`NEPTUNE_DB_TYPE`); RDS-shaped control plane; SigV4 proxy on port 8182 |
 | DocumentDB | Real Docker, mock mode available | MongoDB-compatible cluster via real MongoDB containers; RDS-shaped control plane; MongoDB wire protocol on port 27017 |
 | MSK | Real Docker | Kafka-compatible broker via Redpanda |
+| Amazon MQ | Real Docker | RabbitMQ broker via rabbitmq:3-management; AMQP + management console |
 | Athena | In-process with DuckDB sidecar | Real SQL execution over S3 and Glue-backed views; partition keys in table metadata |
 | Glue | In-process | Data Catalog, Schema Registry, tables consumed by Athena |
 | EMR | In-process | Cluster (job flow) lifecycle, instance groups and fleets, steps, security configurations, tagging |
@@ -639,7 +640,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.28 (+52 commits since 1.5.26 baseline)** (latest `aeb11d77`, merged 2026-06-28). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.30** (latest `38bf55d3`, merged 2026-07-04). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, or the SNS default-topic-policy gate when IAM enforcement is on.
 
 **High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 

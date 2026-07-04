@@ -4,6 +4,7 @@ import static io.github.hectorvent.floci.services.s3.S3RequestParser.hasQueryPar
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AccountResolver;
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
@@ -12,6 +13,7 @@ import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
+import io.github.hectorvent.floci.services.sns.SnsQueryHandler;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesParts;
 import io.github.hectorvent.floci.services.s3.model.GetObjectAttributesResult;
@@ -34,6 +36,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.ws.rs.core.UriInfo;
@@ -93,6 +96,7 @@ public class S3Controller {
     private final S3SelectService s3SelectService;
     private final S3AccessLogService accessLogService;
     private final RegionResolver regionResolver;
+    private final SnsQueryHandler snsQueryHandler;
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
     private final IamService iamService;
     private final EmulatorConfig emulatorConfig;
@@ -104,6 +108,7 @@ public class S3Controller {
     public S3Controller(S3Service s3Service, S3SelectService s3SelectService,
                         S3AccessLogService accessLogService,
                         RegionResolver regionResolver,
+                        SnsQueryHandler snsQueryHandler,
                         io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
                         IamService iamService,
                         EmulatorConfig emulatorConfig,
@@ -114,6 +119,7 @@ public class S3Controller {
         this.s3SelectService = s3SelectService;
         this.accessLogService = accessLogService;
         this.regionResolver = regionResolver;
+        this.snsQueryHandler = snsQueryHandler;
         this.currentVertxRequest = currentVertxRequest;
         this.iamService = iamService;
         this.emulatorConfig = emulatorConfig;
@@ -127,9 +133,25 @@ public class S3Controller {
     @GET
     @Produces({MediaType.APPLICATION_XML, MediaType.TEXT_HTML})
     public Response listBuckets(@HeaderParam("X-Amz-Target") String target,
-                                @HeaderParam("Accept") String accept) {
+                                @HeaderParam("Accept") String accept,
+                                @Context HttpHeaders httpHeaders,
+                                @Context UriInfo uriInfo) {
         if (target != null) {
             return null;
+        }
+        MultivaluedMap<String, String> queryParams = uriInfo.getQueryParameters();
+        String action = queryParams.getFirst("Action");
+        // SNS emits SubscribeURL/UnsubscribeURL as plain GET links against the
+        // service root, which collides with the S3 ListBuckets endpoint. Delegate
+        // those confirmation/unsubscribe GETs to SNS before falling through to S3.
+        // The links are unsigned (no Authorization header), so the region must come
+        // from the region-bearing ARN they carry, not the request headers.
+        if ("ConfirmSubscription".equals(action) || "Unsubscribe".equals(action)) {
+            String snsArn = "Unsubscribe".equals(action)
+                    ? queryParams.getFirst("SubscriptionArn")
+                    : queryParams.getFirst("TopicArn");
+            String region = AwsArnUtils.regionOrDefault(snsArn, regionResolver.resolveRegion(httpHeaders));
+            return snsQueryHandler.handle(action, queryParams, region);
         }
         // A browser hitting the root endpoint (Accept: text/html) gets the Floci
         // landing page; SDK/CLI callers (no Accept, */*, or an XML/JSON Accept) fall

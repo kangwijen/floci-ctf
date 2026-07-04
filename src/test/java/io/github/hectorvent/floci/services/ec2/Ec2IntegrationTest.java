@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.ec2;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThan;
@@ -1331,6 +1332,23 @@ class Ec2IntegrationTest {
     }
 
     @Test
+    @Order(87)
+    void describeInstanceAttributeGroupSet() {
+        given()
+            .formParam("Action", "DescribeInstanceAttribute")
+            .formParam("InstanceId", instanceId)
+            .formParam("Attribute", "groupSet")
+            .header("Authorization", AUTH_HEADER)
+        .when()
+            .post("/")
+        .then()
+            .statusCode(200)
+            .body("DescribeInstanceAttributeResponse.instanceId", equalTo(instanceId))
+            .body("DescribeInstanceAttributeResponse.groupSet.item.groupId", equalTo(securityGroupId))
+            .body("DescribeInstanceAttributeResponse.groupSet.item.groupName", not(emptyOrNullString()));
+    }
+
+    @Test
     @Order(82)
     void describeInstancesHasNetworkInterfaceAttachTime() {
         given()
@@ -1435,7 +1453,7 @@ class Ec2IntegrationTest {
     }
 
     @Test
-    @Order(87)
+    @Order(88)
     void describeInstancesByFilter() {
         given()
             .formParam("Action", "DescribeInstances")

@@ -43,6 +43,8 @@ services:
       # Audit profile: persist service state across restarts; emit management API audit records.
       FLOCI_STORAGE_MODE: hybrid
       FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED: "true"
+      # TLS proxy serves HTTP and HTTPS on the same port 4566 (first-byte sniffing).
+      FLOCI_TLS_ENABLED: "true"
     networks:
       floci_default:
         aliases:
