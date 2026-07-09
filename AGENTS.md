@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Latest upstream merge | 1.5.31 (2026-07-07) |
+| Latest upstream merge | 1.5.31 (2026-07-10) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -188,7 +188,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Cognito OAuth gate | `SecurityBypassPaths`, `IamEnforcementFilter` (OAuth paths exempt SigV4; Bearer cannot bypass data plane) |
 | Federated STS gate | `SecurityBypassPaths.isFederatedStsAssumeRequest`, `IamEnforcementFilter` (unsigned WebIdentity/SAML form posts skip strict missing-auth; trust in `StsQueryHandler`) |
 | EKS token webhook | `EksTokenValidator`, `EksTokenWebhookController` |
-| Containers | `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner`; regressions `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest` |
+| Containers | `LaunchedContainerAwsEnv`, `OperatorCredentialEnv`, `ContainerEnvHardening`, `ContainerCredentialsHttpServer`, `ContainerLauncher`, `LambdaContainerCredentialsServer`, `EcsContainerManager`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `CodeBuildRunner`; regressions `LaunchedContainerAwsEnvTest`, `ContainerLauncherTest`, `EcsContainerManagerAwsBaselineTest`, `LambdaContainerCredentialsIamIntegrationTest`, `EcsContainerCredentialsIamIntegrationTest`, `CodeBuildContainerCredentialsServerTest` |
 | Internal routes | `CtfInternalEndpointFilter`, `CtfHideInternalEndpointsMode` |
 | Compose / image | `docker-compose.yml`, `docker/Dockerfile` (no `test`/`test`) |
 | RDS Data API | `RdsDataController`, `RdsDataService`, `RdsDataConnectionFactory`, `RdsDataResourceResolver`, `RdsDataFieldMapper` |

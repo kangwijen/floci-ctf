@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import com.github.dockerjava.api.model.Bind;
 import io.github.hectorvent.floci.services.rds.model.DatabaseEngine;
@@ -72,9 +73,9 @@ class RdsContainerManagerTest {
 
     @Test
     void containerizedHostPathModeDoesNotCreateHostDataDirectory() {
-        Path hostRoot = tempDir.resolve("host-root");
-        Path dbPath = hostRoot.resolve("rds").resolve("db1");
-        EmulatorConfig config = config(hostRoot);
+        String hostRoot = "/tmp/floci-rds-containerized-" + UUID.randomUUID();
+        Path expectedHostDataPath = Path.of(hostRoot, "rds", "db1");
+        EmulatorConfig config = configWithHostPersistentPath(hostRoot);
         ContainerDetector containerDetector = mock(ContainerDetector.class);
         when(containerDetector.isRunningInContainer()).thenReturn(true);
         ContainerLifecycleManager lifecycleManager = mock(ContainerLifecycleManager.class);
@@ -94,11 +95,11 @@ class RdsContainerManagerTest {
 
         manager.start("db1", "vol1", DatabaseEngine.MYSQL, "mysql:8.0", "root", "password", "db");
 
-        assertFalse(Files.exists(dbPath));
+        assertFalse(Files.exists(expectedHostDataPath));
         var spec = org.mockito.ArgumentCaptor.forClass(ContainerSpec.class);
         verify(lifecycleManager).createAndStart(spec.capture());
         Bind bind = spec.getValue().binds().getFirst();
-        assertEquals(dbPath.toString(), bind.getPath());
+        assertEquals(expectedHostDataPath.toString(), bind.getPath());
         assertEquals("/var/lib/mysql", bind.getVolume().getPath());
     }
 
@@ -106,6 +107,7 @@ class RdsContainerManagerTest {
     void childContainerNameUsesVolumeIdWhenAvailable() {
         EmulatorConfig config = config(tempDir.resolve("host-root"));
         ContainerDetector containerDetector = mock(ContainerDetector.class);
+        when(containerDetector.isRunningInContainer()).thenReturn(true);
         ContainerLifecycleManager lifecycleManager = mock(ContainerLifecycleManager.class);
         when(lifecycleManager.createAndStart(any())).thenReturn(new ContainerLifecycleManager.ContainerInfo(
                 "container-id", Map.of(3306, new ContainerLifecycleManager.EndpointInfo("db1", 3306))));
@@ -133,6 +135,7 @@ class RdsContainerManagerTest {
     void childContainerNameFallsBackToInstanceIdWithoutVolumeId() {
         EmulatorConfig config = config(tempDir.resolve("host-root"));
         ContainerDetector containerDetector = mock(ContainerDetector.class);
+        when(containerDetector.isRunningInContainer()).thenReturn(true);
         ContainerLifecycleManager lifecycleManager = mock(ContainerLifecycleManager.class);
         when(lifecycleManager.createAndStart(any())).thenReturn(new ContainerLifecycleManager.ContainerInfo(
                 "container-id", Map.of(3306, new ContainerLifecycleManager.EndpointInfo("db1", 3306))));
@@ -157,6 +160,10 @@ class RdsContainerManagerTest {
     }
 
     private static EmulatorConfig config(Path hostRoot) {
+        return configWithHostPersistentPath(hostPathFor(hostRoot));
+    }
+
+    private static EmulatorConfig configWithHostPersistentPath(String hostPersistentPath) {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
         EmulatorConfig.RdsServiceConfig rds = mock(EmulatorConfig.RdsServiceConfig.class);
@@ -171,7 +178,16 @@ class RdsContainerManagerTest {
         when(docker.logMaxSize()).thenReturn("10m");
         when(docker.logMaxFile()).thenReturn("3");
         when(config.storage()).thenReturn(storage);
-        when(storage.hostPersistentPath()).thenReturn(hostRoot.toString());
+        when(storage.hostPersistentPath()).thenReturn(hostPersistentPath);
         return config;
+    }
+
+    /** Host-path mode requires a path starting with {@code /} (see {@code ContainerStorageHelper#isNamedVolumeMode}). */
+    private static String hostPathFor(Path hostRoot) {
+        String normalized = hostRoot.toAbsolutePath().normalize().toString().replace('\\', '/');
+        if (normalized.startsWith("/")) {
+            return normalized;
+        }
+        return "/tmp/floci-rds-unit/" + Math.abs(normalized.hashCode());
     }
 }

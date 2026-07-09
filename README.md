@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.30**, latest merge `38bf55d3`, 2026-07-04) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.31**, latest merge `ebf5a2e8`, 2026-07-10) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -43,14 +43,14 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | Internal introspection routes | `/_floci/*`, `/_localstack/*`, `/health` open | Default `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` hides `/_floci/*`, `/_localstack/*`, and `/_aws/*`; `all` also hides `/health` |
 | Temporary creds (`ASIA*`) | Secret key alone | `x-amz-security-token` required and validated when SigV4 is on |
 | Docker `HEALTHCHECK` | `/_floci/health` | `GET /health` (works when internal routes are hidden) |
-| Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*` | `ContainerEnvHardening` blocks credential keys and bypass URIs; execution/service/task roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170); operator env only when no role |
+| Container env (Lambda, ECS, CodeBuild) | Function/task/build env can set `AWS_*`; upstream may forward host `AWS_*` | `LaunchedContainerAwsEnv` never injects `test`/`test`; `OperatorCredentialEnv` adds operator keys only when no execution/task/build role; `ContainerEnvHardening` strips participant `AWS_*`; roles get `AWS_CONTAINER_CREDENTIALS_FULL_URI` (ports 9171/9172/9170) |
 | EKS kubectl token webhook | Any `k8s-aws-v1.*` accepted as cluster-admin | Hidden under `/_floci/*` by default; with IAM enforcement on, requires SigV4-valid presigned STS `GetCallerIdentity` URL (`EksTokenValidator`) |
 | Secrets Manager + KMS | Returns nested/double-wrapped `SecretBinary`; hierarchical `path-*` IAM wildcards | Single-layer `SecretBinary`; stored secret ARN with six-char suffix for IAM; path prefixes use `secret:path/*` per [AWS IAM examples](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_examples.html); pass raw bytes to SDK `SecretBinary` |
 | SQS scoped `ReceiveMessage` | JSON 1.0 `QueueUrl` ignored for IAM (scoped policies fail) | Queue ARN from Query form **and** JSON 1.0 body `QueueUrl`; account from URL path |
 | CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` and `messageBody` on Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
 | SQS `ListQueues` IAM deny | May surface as `ServiceNotAvailableException` | HTTP 403 `AccessDenied` (Query XML or JSON `AccessDeniedException`) when identity policy denies `sqs:ListQueues` |
 
-**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenValidator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
+**Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `LaunchedContainerAwsEnv`, `OperatorCredentialEnv`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenValidator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 
 After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENTS.md](./AGENTS.md#upstream-sync).
 
@@ -494,6 +494,21 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (40 commits through **`ebf5a2e8`**, release **1.5.31**, merged 2026-07-10):
+
+| Area | Change |
+|---|---|
+| Lambda | Read-only code volumes instead of per-cold-start copy; version counters and event-invoke configs persist across restart |
+| ECS / containers | `LaunchedContainerAwsEnv` baseline for endpoint/region (CTF fork: no `test`/`test`; operator creds via `OperatorCredentialEnv` only when no role) |
+| CloudWatch Logs | Logs Insights query support |
+| EventBridge | Firehose delivery stream targets |
+| Scheduler | ECS `RunTask` target dispatch |
+| RDS Data API | PostgreSQL Data API |
+| EC2 | Registered images and snapshots; instance metadata catalog |
+| Cloud Control | List resources from local services |
+| SQS | Query-protocol errors as XML (not JSON leak) |
+| Core | Smithy protocol claiming per selection guide |
+
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (3 commits through **`f52b9209`**, merged 2026-06-28):
 
 | Area | Change |
@@ -640,14 +655,14 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.30** (latest `38bf55d3`, merged 2026-07-04). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.31** (latest `ebf5a2e8`, merged 2026-07-10). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `LaunchedContainerAwsEnv` / `OperatorCredentialEnv` (no `test`/`test`), `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, `InProcessTargetAuthorizer` on delivery paths, or the SNS default-topic-policy gate when IAM enforcement is on.
 
-**High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `EcsContainerManager.java` (must keep `ContainerEnvHardening` on env), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
+**High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `LaunchedContainerAwsEnv.java`, `ContainerLauncher.java`, `EcsContainerManager.java` (must keep `ContainerEnvHardening` and container credential servers), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `EventBridgeInvoker.java`, `PipesPoller.java`, `EcrRegistryManager.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 
 **Post-merge regression:**
 
 ```bash
-./mvnw test -Dtest=SigV4RequestValidatorTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,IamEnforcementIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsAssumeRoleTrustIntegrationTest,StsGetCallerIdentityIntegrationTest,SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,ContainerEnvHardeningTest,EcsContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,ApiGatewaySqsIntegrationTest
+./mvnw test -Dtest=SigV4RequestValidatorTest,SigV4ValidationFilterIntegrationTest,PreSignedUrlFilterIntegrationTest,IamEnforcementIntegrationTest,IamJson11CredentialScopeSplitIntegrationTest,IamKinesisCatchAllRouteScopeIntegrationTest,ApiGatewaySqsQueryIamBypassIntegrationTest,PreSignedUrlIntegrationTest,PreSignedUrlAccountResolutionIntegrationTest,PreSignedUrlRootSecretPrecedenceIntegrationTest,StsAssumeRoleTrustIntegrationTest,StsGetCallerIdentityIntegrationTest,SnsTopicNoDefaultPolicyIntegrationTest,SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest,SqsResourcePolicyOnlyAllowIntegrationTest,ContainerEnvHardeningTest,LaunchedContainerAwsEnvTest,ContainerLauncherTest,EcsContainerManagerAwsBaselineTest,EcsContainerCredentialsIamIntegrationTest,LambdaContainerCredentialsIamIntegrationTest,CodeBuildContainerCredentialsServerTest,ApiGatewaySqsIntegrationTest
 ```
 
 ## Upstream

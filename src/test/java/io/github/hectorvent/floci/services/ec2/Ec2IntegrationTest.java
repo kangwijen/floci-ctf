@@ -2147,13 +2147,10 @@ class Ec2IntegrationTest {
     @Test
     @Order(92)
     void describeNetworkInterfacesWithMaxResultsNoNextToken() {
-        // When MaxResults exceeds the number of available ENIs,
-        // all results are returned and nextToken is omitted.
-        // This test works regardless of how many instances exist
-        // (including zero, e.g. when run in isolation).
+        // MaxResults at the AWS upper bound returns every ENI in one page when count <= 1000.
         String body = given()
             .formParam("Action", "DescribeNetworkInterfaces")
-            .formParam("MaxResults", "5")
+            .formParam("MaxResults", "1000")
             .header("Authorization", AUTH_HEADER)
         .when()
             .post("/")
@@ -2241,21 +2238,31 @@ class Ec2IntegrationTest {
 
         assert nextToken != null && !nextToken.isEmpty() : "Expected non-empty nextToken on truncated page";
 
-        // ── Page 2: use NextToken, expect remaining ENIs, no nextToken ──
-        String body = given()
-            .formParam("Action", "DescribeNetworkInterfaces")
-            .formParam("MaxResults", "5")
-            .formParam("NextToken", nextToken)
-            .header("Authorization", AUTH_HEADER)
-        .when()
-            .post("/")
-        .then()
-            .statusCode(200)
-            .body("DescribeNetworkInterfacesResponse.networkInterfaceSet.item.size()",
-                    org.hamcrest.Matchers.greaterThanOrEqualTo(1))
-        .extract().body().asString();
+        // ── Page 2+: follow nextToken until the final page (suite may leave many ENIs) ──
+        String body = null;
+        String pageToken = nextToken;
+        int page = 2;
+        while (pageToken != null && !pageToken.isEmpty()) {
+            var response = given()
+                .formParam("Action", "DescribeNetworkInterfaces")
+                .formParam("MaxResults", "5")
+                .formParam("NextToken", pageToken)
+                .header("Authorization", AUTH_HEADER)
+            .when()
+                .post("/")
+            .then()
+                .statusCode(200)
+                .body("DescribeNetworkInterfacesResponse.networkInterfaceSet.item.size()",
+                        org.hamcrest.Matchers.greaterThanOrEqualTo(1))
+            .extract();
 
-        // Final page must NOT contain a nextToken element
+            body = response.body().asString();
+            pageToken = response.xmlPath().getString("DescribeNetworkInterfacesResponse.nextToken");
+            page++;
+            assert page <= 50 : "Pagination did not terminate within 50 pages";
+        }
+
+        assert body != null : "Expected at least one continuation page";
         org.hamcrest.MatcherAssert.assertThat(body,
                 not(containsString("<nextToken>")));
 

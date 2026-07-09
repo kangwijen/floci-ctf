@@ -1,7 +1,10 @@
 package io.github.hectorvent.floci.services.securityhub.model;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
+
 import java.time.Instant;
 
+@RegisterForReflection
 public class SecurityHubAccount {
 
     private String hubArn;

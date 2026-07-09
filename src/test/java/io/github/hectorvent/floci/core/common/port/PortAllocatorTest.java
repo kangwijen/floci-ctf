@@ -21,9 +21,29 @@ class PortAllocatorTest {
     }
   }
 
+  /** Finds {@code count} consecutive host-free ports; retries when the suite leaves listeners behind. */
+  private static int contiguousFreeRange(int count) throws IOException {
+    for (int attempt = 0; attempt < 200; attempt++) {
+      int base = freeBasePort();
+      if (rangeIsHostFree(base, base + count - 1)) {
+        return base;
+      }
+    }
+    throw new IOException("Could not find " + count + " contiguous free ports after 200 attempts");
+  }
+
+  private static boolean rangeIsHostFree(int from, int to) {
+    for (int port = from; port <= to; port++) {
+      if (!PortAllocator.isPortFree(port)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
     @Test
     void allocatesSequentiallyFromBase() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(3);
         PortAllocator allocator = new PortAllocator(base, base + 99);
         assertEquals(base, allocator.allocate());
         assertEquals(base + 1, allocator.allocate());
@@ -32,7 +52,7 @@ class PortAllocatorTest {
 
     @Test
     void concurrentAllocationsAreUnique() throws IOException, InterruptedException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(50);
         PortAllocator allocator = new PortAllocator(base, base + 99);
         int threads = 50;
         Set<Integer> ports = ConcurrentHashMap.newKeySet();
@@ -53,7 +73,7 @@ class PortAllocatorTest {
 
     @Test
     void allocateNeverReturnsPortAlreadyHandedOut() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(10);
         PortAllocator allocator = new PortAllocator(base, base + 9, false);
         Set<Integer> handed = new HashSet<>();
         for (int i = 0; i < 10; i++) {
@@ -64,7 +84,7 @@ class PortAllocatorTest {
 
     @Test
     void releasedPortBecomesAvailableAgain() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(2);
         PortAllocator allocator = new PortAllocator(base, base + 1, false);
         int first = allocator.allocate();
         allocator.allocate();
@@ -76,7 +96,7 @@ class PortAllocatorTest {
 
     @Test
     void allocateFromRangeSkipsHostBoundPorts() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(3);
         try (ServerSocket blocker = new ServerSocket(base)) {
             blocker.setReuseAddress(true);
             Set<Integer> inUse = ConcurrentHashMap.newKeySet();
@@ -86,7 +106,7 @@ class PortAllocatorTest {
 
     @Test
     void allocateFromRangeFallsBackToEphemeralWhenRangeBusy() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(1);
         try (ServerSocket blocker = new ServerSocket(base)) {
             blocker.setReuseAddress(true);
             Set<Integer> inUse = ConcurrentHashMap.newKeySet();
@@ -98,7 +118,7 @@ class PortAllocatorTest {
 
     @Test
     void skipsPortsAlreadyBoundOnHost() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(3);
         try (ServerSocket blocker = new ServerSocket(base)) {
             blocker.setReuseAddress(true);
             PortAllocator allocator = new PortAllocator(base, base + 2, false);
@@ -110,7 +130,7 @@ class PortAllocatorTest {
 
     @Test
     void fallsBackToEphemeralWhenConfiguredRangeIsBusy() throws IOException {
-        int base = freeBasePort();
+        int base = contiguousFreeRange(1);
         try (ServerSocket blocker = new ServerSocket(base)) {
             blocker.setReuseAddress(true);
             PortAllocator allocator = new PortAllocator(base, base);

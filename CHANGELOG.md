@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **iam:** IoT / `iotdata` REST action mapping and thing ARN scoping (`IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`)
 - **sts:** unsigned `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` under strict IAM (`StsWebIdentityStrictUnsignedIntegrationTest`)
 
+### Changed (CTF fork, upstream 1.5.31 merge)
+
+- **containers:** preserve `LaunchedContainerAwsEnv` hardening (`OperatorCredentialEnv`, no `test`/`test`) over upstream host `AWS_*` passthrough; Lambda code volumes + CTF container credential servers (`ContainerLauncher`, `EcsContainerManager`)
+- **in-process:** keep `InProcessTargetAuthorizer` on EventBridge Firehose targets, Pipes, Scheduler ECS `RunTask`, and ELB delivery paths
+
 ## [1.5.31] - 2026-07-07
 
 ### Added

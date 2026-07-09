@@ -2,8 +2,14 @@ package io.github.hectorvent.floci.services.securityhub.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@RegisterForReflection(targets = {
+        AwsSecurityFindingFormat.Severity.class,
+        AwsSecurityFindingFormat.Compliance.class,
+        AwsSecurityFindingFormat.Workflow.class
+})
 public class AwsSecurityFindingFormat {
 
     @JsonProperty("SchemaVersion")

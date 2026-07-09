@@ -308,6 +308,9 @@ FLOCI_DNS_EXTRA_SUFFIXES=localhost.localstack.cloud,localhost.example.internal
 
 ### Real AWS Credentials
 
+!!! warning "CTF fork (`floci-ctf`)"
+    When IAM enforcement is enabled, Lambda containers do **not** receive host `AWS_*` passthrough or `test`/`test` placeholders. `LaunchedContainerAwsEnv` sets endpoint/region baseline only; `OperatorCredentialEnv` adds operator root keys only when the function has no execution role; otherwise the Lambda container credentials server on port **9171** supplies temporary role credentials. `ContainerEnvHardening` strips static keys from the runtime env. See [CTF fork](#ctf-fork).
+
 By default, Floci injects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` from its own environment into Lambda containers when those variables are set. When they are unset, no credentials are injected.
 
 For hybrid local/cloud testing — where some services are emulated and others hit real AWS — you can mount your host `~/.aws` directory into Lambda containers:
@@ -460,7 +463,10 @@ Any runtime that has an official AWS Lambda container image works with Floci (e.
 
 When IAM enforcement is enabled:
 
+- Function code is mounted from a read-only Docker volume (upstream 1.5.31); cold starts no longer copy the deployment package into each container.
+- `LaunchedContainerAwsEnv` sets `AWS_ENDPOINT_URL` / region baseline without injecting `test`/`test` or forwarding participant `AWS_*` from the function env.
 - Function execution roles receive credentials from the Lambda container credentials server on host port **9171** (`floci.services.lambda.container-credentials-port`).
+- When no execution role is configured, `OperatorCredentialEnv` may inject operator root keys from `FLOCI_AUTH_ROOT_*` only (never baked-in defaults).
 - `ContainerEnvHardening` removes static AWS keys and operator bypass variables from the runtime environment.
 - Function resource policies feed `IamAuthorizationService` for `lambda:InvokeFunction` and related actions.
 - Control-plane Lambda API calls require SigV4 from registered IAM principals.
