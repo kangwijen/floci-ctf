@@ -16,6 +16,7 @@ import io.github.hectorvent.floci.services.resourcegroupstagging.ResourceGroupsT
 import io.github.hectorvent.floci.services.bcmdataexports.BcmDataExportsJsonHandler;
 import io.github.hectorvent.floci.services.ce.CostExplorerJsonHandler;
 import io.github.hectorvent.floci.services.cloudtrail.CloudTrailJsonHandler;
+import io.github.hectorvent.floci.services.cloudcontrol.CloudControlJsonHandler;
 import io.github.hectorvent.floci.services.guardduty.GuardDutyJsonHandler;
 import io.github.hectorvent.floci.services.securityhub.SecurityHubJsonHandler;
 import io.github.hectorvent.floci.services.configservice.ConfigServiceJsonHandler;
@@ -93,6 +94,7 @@ public class AwsJson11Controller {
     private final BcmDataExportsJsonHandler bcmDataExportsJsonHandler;
     private final ConfigServiceJsonHandler configServiceJsonHandler;
     private final CloudTrailJsonHandler cloudTrailJsonHandler;
+    private final CloudControlJsonHandler cloudControlJsonHandler;
     private final GuardDutyJsonHandler guardDutyJsonHandler;
     private final SecurityHubJsonHandler securityHubJsonHandler;
 
@@ -127,6 +129,7 @@ public class AwsJson11Controller {
                                BcmDataExportsJsonHandler bcmDataExportsJsonHandler,
                                ConfigServiceJsonHandler configServiceJsonHandler,
                                CloudTrailJsonHandler cloudTrailJsonHandler,
+                               CloudControlJsonHandler cloudControlJsonHandler,
                                GuardDutyJsonHandler guardDutyJsonHandler,
                                SecurityHubJsonHandler securityHubJsonHandler) {
         this.objectMapper = objectMapper;
@@ -164,6 +167,7 @@ public class AwsJson11Controller {
         this.bcmDataExportsJsonHandler = bcmDataExportsJsonHandler;
         this.configServiceJsonHandler = configServiceJsonHandler;
         this.cloudTrailJsonHandler = cloudTrailJsonHandler;
+        this.cloudControlJsonHandler = cloudControlJsonHandler;
         this.guardDutyJsonHandler = guardDutyJsonHandler;
         this.securityHubJsonHandler = securityHubJsonHandler;
     }
@@ -227,6 +231,7 @@ public class AwsJson11Controller {
                 case "bcm-data-exports" -> bcmDataExportsJsonHandler.handle(action, request, region);
                 case "config" -> configServiceJsonHandler.handle(action, request, region);
                 case "cloudtrail" -> cloudTrailJsonHandler.handle(action, request, region);
+                case "cloudcontrol" -> cloudControlJsonHandler.handle(action, request, region);
                 case "guardduty" -> guardDutyJsonHandler.handle(action, request, region);
                 case "securityhub" -> securityHubJsonHandler.handle(action, request, region);
                 default -> null;

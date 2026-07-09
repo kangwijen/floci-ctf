@@ -64,6 +64,8 @@ floci:
         flush-interval-ms: 60000
       tagging:
         flush-interval-ms: 60000
+      elasticbeanstalk:
+        flush-interval-ms: 60000
       cloudfront:
 
   auth:
@@ -89,6 +91,7 @@ floci:
   docker:
     log-max-size: "10m"
     log-max-file: "3"
+    resource-namespace: ""
 
   services:
     ssm:
@@ -142,6 +145,7 @@ floci:
       default-image: "valkey/valkey:8"
     rds:
       enabled: true
+      mock: false
       proxy-base-port: 7001
       proxy-max-port: 7099
       default-postgres-image: "postgres:16-alpine"
@@ -227,6 +231,7 @@ floci:
     eks:
       enabled: true
       mock: true
+      ecr-registry-mirror: true
     pipes:
       enabled: true
     elbv2:
@@ -268,11 +273,12 @@ floci:
       emit-mode: off
     cloudtrail:
       enabled: true
+    cloudcontrol:
+      enabled: true
     guardduty:
       enabled: true
       audit-enabled: false
     securityhub:
-      enabled: true
     cloudfront:
       enabled: true
     appsync:

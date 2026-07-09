@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.services.cloudformation;
 
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.core.common.AwsNamespaces;
+import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.services.batch.BatchService;
 import io.github.hectorvent.floci.services.cloudformation.model.StackResource;
 import io.github.hectorvent.floci.services.dynamodb.DynamoDbService;
@@ -461,6 +463,7 @@ public class CloudFormationResourceProvisioner {
             bucketName = generatePhysicalName(stackName, r.getLogicalId(), 63, true);
         }
         s3Service.createBucket(bucketName, region);
+        applyBucketCorsConfiguration(bucketName, props, engine);
         r.setPhysicalId(bucketName);
         r.getAttributes().put("Arn", AwsArnUtils.Arn.of("s3", "", "", bucketName).toString());
         r.getAttributes().put("DomainName", bucketName + ".s3.amazonaws.com");
@@ -469,7 +472,57 @@ public class CloudFormationResourceProvisioner {
         r.getAttributes().put("BucketName", bucketName);
     }
 
-    // ── SQS ───────────────────────────────────────────────────────────────────
+    /**
+     * Applies the optional {@code CorsConfiguration} property of {@code AWS::S3::Bucket} by translating
+     * the CloudFormation {@code CorsRules} list into the S3 CORS XML document the bucket stores and
+     * serves from its {@code ?cors} subresource.
+     *
+     * <p>This reconciles to the template on every provision (create and update): when the property is
+     * absent or has no rules, any existing CORS configuration is cleared so the bucket matches the
+     * template. Clearing is a harmless no-op on create since a freshly created bucket has none.
+     */
+    private void applyBucketCorsConfiguration(String bucketName, JsonNode props,
+                                              CloudFormationTemplateEngine engine) {
+        JsonNode corsRules = null;
+        if (props != null && props.has("CorsConfiguration") && !props.get("CorsConfiguration").isNull()) {
+            corsRules = props.get("CorsConfiguration").get("CorsRules");
+        }
+        if (corsRules == null || !corsRules.isArray() || corsRules.isEmpty()) {
+            s3Service.deleteBucketCors(bucketName);
+            return;
+        }
+        XmlBuilder xml = new XmlBuilder().start("CORSConfiguration", AwsNamespaces.S3);
+        for (JsonNode rule : corsRules) {
+            xml.start("CORSRule");
+            xml.elem("ID", resolveOptional(rule, "Id", engine));
+            appendCorsRuleElements(xml, rule.get("AllowedHeaders"), "AllowedHeader", engine);
+            appendCorsRuleElements(xml, rule.get("AllowedMethods"), "AllowedMethod", engine);
+            appendCorsRuleElements(xml, rule.get("AllowedOrigins"), "AllowedOrigin", engine);
+            appendCorsRuleElements(xml, rule.get("ExposedHeaders"), "ExposeHeader", engine);
+            String maxAge = resolveOptional(rule, "MaxAge", engine);
+            if (maxAge != null && !maxAge.isBlank()) {
+                xml.elem("MaxAgeSeconds", maxAge);
+            }
+            xml.end("CORSRule");
+        }
+        xml.end("CORSConfiguration");
+        s3Service.putBucketCors(bucketName, xml.build());
+    }
+
+    private void appendCorsRuleElements(XmlBuilder xml, JsonNode values, String elementName,
+                                        CloudFormationTemplateEngine engine) {
+        if (values == null || !values.isArray()) {
+            return;
+        }
+        for (JsonNode value : values) {
+            if (value != null && !value.isNull()) {
+                String resolved = engine.resolve(value);
+                if (resolved != null && !resolved.isBlank()) {
+                    xml.elem(elementName, resolved);
+                }
+            }
+        }
+    }
 
     private void provisionSqsQueue(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
                                    String region, String accountId, String stackName) {
@@ -794,7 +847,8 @@ public class CloudFormationResourceProvisioner {
                 resolveOptional(props, "HealthCheckType", engine),
                 parseIntProp(props, "HealthCheckGracePeriod", engine, 0),
                 resolveStringList(props, "TerminationPolicies", engine),
-                resolveAsgTags(props, engine));
+                resolveAsgTags(props, engine),
+                resolveAsgTagPropagation(props, engine));
         // Ref returns the Auto Scaling group name; Fn::GetAtt Arn returns the ASG ARN.
         r.setPhysicalId(name);
         r.getAttributes().put("Arn", asg.getAutoScalingGroupArn());
@@ -811,6 +865,19 @@ public class CloudFormationResourceProvisioner {
             }
         }
         return tags;
+    }
+
+    private Map<String, Boolean> resolveAsgTagPropagation(JsonNode props, CloudFormationTemplateEngine engine) {
+        Map<String, Boolean> propagation = new LinkedHashMap<>();
+        if (props != null && props.has("Tags") && props.get("Tags").isArray()) {
+            for (JsonNode tag : props.get("Tags")) {
+                String key = engine.resolve(tag.path("Key"));
+                if (!key.isEmpty()) {
+                    propagation.put(key, Boolean.parseBoolean(engine.resolve(tag.path("PropagateAtLaunch"))));
+                }
+            }
+        }
+        return propagation;
     }
 
     private List<String> resolveStringList(JsonNode props, String field, CloudFormationTemplateEngine engine) {
@@ -3071,8 +3138,8 @@ public class CloudFormationResourceProvisioner {
             ObjectNode event = objectMapper.createObjectNode();
             event.put("RequestType", requestType);
             event.put("ResponseURL", reachableEndpoint.baseUrl() + "/cfn-response/" + token);
-            event.put("StackId", "arn:aws:cloudformation:" + region + ":" + accountId + ":stack/"
-                    + (stackName == null ? "" : stackName) + "/" + UUID.randomUUID());
+            event.put("StackId", AwsArnUtils.Arn.of("cloudformation", region, accountId, "stack/"
+                    + (stackName == null ? "" : stackName) + "/" + UUID.randomUUID()).toString());
             event.put("RequestId", UUID.randomUUID().toString());
             event.put("ResourceType", resourceType);
             event.put("LogicalResourceId", logicalId);
@@ -3138,11 +3205,8 @@ public class CloudFormationResourceProvisioner {
     }
 
     private static String accountFromArn(String arn) {
-        if (arn == null) {
-            return "000000000000";
-        }
-        String[] parts = arn.split(":");
-        return parts.length >= 5 && parts[4].matches("\\d{12}") ? parts[4] : "000000000000";
+        String account = AwsArnUtils.accountOrDefault(arn, "000000000000");
+        return account.matches("\\d{12}") ? account : "000000000000";
     }
 
     // ── ECS ──────────────────────────────────────────────────────────────────

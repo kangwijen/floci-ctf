@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.ContainerInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.EndpointInfo;
 import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
+import io.github.hectorvent.floci.core.common.docker.ContainerStorageHelper;
 import io.quarkus.runtime.ShutdownEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -112,12 +113,13 @@ public class FlociDuckManager {
         String image = config.services().duck().defaultImage();
         LOG.infov("Starting floci-duck container using image {0}", image);
 
-        lifecycleManager.removeIfExists(CONTAINER_NAME);
+        String containerName = ContainerStorageHelper.dockerName(config, CONTAINER_NAME);
+        lifecycleManager.removeIfExists(containerName);
 
         ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(image)
-                .withName(CONTAINER_NAME)
+                .withName(containerName)
                 .withEnv("FLOCI_DUCK_S3_REGION", config.defaultRegion())
-                .withPortBinding(DUCK_PORT, DUCK_PORT)
+                .withDynamicPort(DUCK_PORT)
                 .withDockerNetwork(config.services().dockerNetwork())
                 .withEmbeddedDns()
                 .withLogRotation();

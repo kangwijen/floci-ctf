@@ -2,8 +2,14 @@ package io.github.hectorvent.floci.services.scheduler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.services.ecs.EcsService;
+import io.github.hectorvent.floci.services.ecs.model.ContainerOverride;
+import io.github.hectorvent.floci.services.ecs.model.LaunchType;
 import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
+import io.github.hectorvent.floci.services.scheduler.model.AwsVpcConfiguration;
+import io.github.hectorvent.floci.services.scheduler.model.EcsParameters;
+import io.github.hectorvent.floci.services.scheduler.model.NetworkConfiguration;
 import io.github.hectorvent.floci.services.scheduler.model.SqsParameters;
 import io.github.hectorvent.floci.services.scheduler.model.Target;
 import io.github.hectorvent.floci.services.sns.SnsService;
@@ -11,6 +17,9 @@ import io.github.hectorvent.floci.services.sqs.SqsService;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -30,6 +39,7 @@ class ScheduleInvokerTest {
     private LambdaService lambdaService;
     private SnsService snsService;
     private EventBridgeService eventBridgeService;
+    private EcsService ecsService;
     private ScheduleInvoker invoker;
 
     @BeforeEach
@@ -38,10 +48,12 @@ class ScheduleInvokerTest {
         lambdaService = mock(LambdaService.class);
         snsService = mock(SnsService.class);
         eventBridgeService = mock(EventBridgeService.class);
+        ecsService = mock(EcsService.class);
         EmulatorConfig config = mock(EmulatorConfig.class);
         when(config.baseUrl()).thenReturn("http://localhost:4566");
         invoker = new ScheduleInvoker(sqsService, lambdaService, snsService,
-                eventBridgeService, new ObjectMapper(), config, mock(InProcessTargetAuthorizer.class));
+                eventBridgeService, ecsService, new ObjectMapper(), config,
+                mock(InProcessTargetAuthorizer.class));
     }
 
     @Test
@@ -98,6 +110,68 @@ class ScheduleInvokerTest {
 
         verify(snsService).publish(eq(TOPIC_ARN), isNull(), eq("{\"hello\":\"world\"}"),
                 eq("Scheduler"), eq("us-east-1"));
+    }
+
+    @Test
+    void ecsSchedulerTargetRunsTaskWithNetworkConfiguration() {
+        Target target = new Target();
+        target.setArn("arn:aws:ecs:us-east-1:000000000000:cluster/proof");
+        EcsParameters ecsParameters = new EcsParameters();
+        ecsParameters.setTaskDefinitionArn("arn:aws:ecs:us-east-1:000000000000:task-definition/proof:1");
+        ecsParameters.setLaunchType("FARGATE");
+        ecsParameters.setGroup("batch-group");
+        ecsParameters.setTaskCount(2);
+        AwsVpcConfiguration vpc = new AwsVpcConfiguration();
+        vpc.setSubnets(List.of("subnet-a", "subnet-b"));
+        vpc.setSecurityGroups(List.of("sg-a"));
+        vpc.setAssignPublicIp("DISABLED");
+        NetworkConfiguration network = new NetworkConfiguration();
+        network.setAwsvpcConfiguration(vpc);
+        ecsParameters.setNetworkConfiguration(network);
+        target.setEcsParameters(ecsParameters);
+
+        invoker.invoke(target, "us-west-2");
+
+        ArgumentCaptor<io.github.hectorvent.floci.services.ecs.model.NetworkConfiguration> networkCaptor =
+                ArgumentCaptor.forClass(io.github.hectorvent.floci.services.ecs.model.NetworkConfiguration.class);
+        verify(ecsService).runTask(
+                eq("arn:aws:ecs:us-east-1:000000000000:cluster/proof"),
+                eq("arn:aws:ecs:us-east-1:000000000000:task-definition/proof:1"),
+                eq(2),
+                eq(LaunchType.FARGATE),
+                isNull(),
+                eq("batch-group"),
+                eq(List.<ContainerOverride>of()),
+                networkCaptor.capture(),
+                eq("us-east-1"));
+        io.github.hectorvent.floci.services.ecs.model.AwsVpcConfiguration awsvpc =
+                networkCaptor.getValue().getAwsvpcConfiguration();
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("subnet-a", "subnet-b"), awsvpc.getSubnets());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("sg-a"), awsvpc.getSecurityGroups());
+        org.junit.jupiter.api.Assertions.assertEquals("DISABLED", awsvpc.getAssignPublicIp());
+    }
+
+    @Test
+    void ecsSchedulerTargetIgnoresUnsupportedLaunchType() {
+        Target target = new Target();
+        target.setArn("arn:aws:ecs:us-east-1:000000000000:cluster/proof");
+        EcsParameters ecsParameters = new EcsParameters();
+        ecsParameters.setTaskDefinitionArn("arn:aws:ecs:us-east-1:000000000000:task-definition/proof:1");
+        ecsParameters.setLaunchType("UNKNOWN");
+        target.setEcsParameters(ecsParameters);
+
+        invoker.invoke(target, "us-east-1");
+
+        verify(ecsService).runTask(
+                eq("arn:aws:ecs:us-east-1:000000000000:cluster/proof"),
+                eq("arn:aws:ecs:us-east-1:000000000000:task-definition/proof:1"),
+                eq(1),
+                isNull(),
+                isNull(),
+                eq("scheduler"),
+                eq(List.<ContainerOverride>of()),
+                isNull(),
+                eq("us-east-1"));
     }
 
     @Test

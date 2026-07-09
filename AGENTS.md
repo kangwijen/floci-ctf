@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Latest upstream merge | 1.5.30 (2026-07-03) |
+| Latest upstream merge | 1.5.31 (2026-07-07) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -374,7 +374,9 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **main** (23 commits through **`38bf55d3`**, release **1.5.30**, merged 2026-07-04): Amazon MQ (RabbitMQ), Firehose `ExtendedS3DestinationDescription` / `UpdateDestination`, SES v2 ContactList CRUD, IAM AWS-managed policy resolution across accounts, STS session-policy enforcement and origin-account session lookup, ECR published host port on adopt, tagging persistence, S3/SNS root service-host routing, reactive wire-protocol claiming, remove Rust SDK compat suite. **CTF preserved:** full `IamEnforcementFilter` (resource policies, anonymous gate, presigned, federated STS unsigned path, IoT/`iotdata` scoping); Firehose `RoleARN` for in-process S3 delivery IAM; ECR registry auth proxy adopt path; Compose audit profile (`hybrid` storage + CloudTrail audit) plus upstream TLS enablement; `ServiceEnabledFilter` IAM-before-disabled ordering.
+**Latest merge:** upstream **main** (40 commits through **`ebf5a2e8`**, release **1.5.31**, merged 2026-07-10): Lambda read-only code volumes, ECS env baseline via `LaunchedContainerAwsEnv`, CloudWatch Logs Insights, EventBridge Firehose targets, Scheduler ECS `RunTask`, RDS Data API, EC2 images/snapshots, Cloud Control API, SQS XML errors, Smithy protocol claiming. **CTF preserved:** full `IamEnforcementFilter`; `LaunchedContainerAwsEnv` uses `OperatorCredentialEnv` (no `test`/`test`); Lambda/ECS container credential servers + `ContainerEnvHardening`; `InProcessTargetAuthorizer` on Pipes/EventBridge/Scheduler/ELB; ECR auth-proxy `resolveRegistryBaseUrl`; Floci Duck operator creds only; GuardDuty/SecurityHub alongside upstream Cloud Control.
+
+**Previous merge:** upstream **main** (23 commits through **`38bf55d3`**, release **1.5.30**, merged 2026-07-04): Amazon MQ (RabbitMQ), Firehose `ExtendedS3DestinationDescription` / `UpdateDestination`, SES v2 ContactList CRUD, IAM AWS-managed policy resolution across accounts, STS session-policy enforcement and origin-account session lookup, ECR published host port on adopt, tagging persistence, S3/SNS root service-host routing, reactive wire-protocol claiming, remove Rust SDK compat suite. **CTF preserved:** full `IamEnforcementFilter` (resource policies, anonymous gate, presigned, federated STS unsigned path, IoT/`iotdata` scoping); Firehose `RoleARN` for in-process S3 delivery IAM; ECR registry auth proxy adopt path; Compose audit profile (`hybrid` storage + CloudTrail audit) plus upstream TLS enablement; `ServiceEnabledFilter` IAM-before-disabled ordering.
 
 **Previous merge:** upstream **main** (4 commits through **`7f76009c`**, merged 2026-07-01; still **1.5.29**): CloudWatch Logs monotonic ingestion sequence for same-timestamp events, ELBv2 void query `Result` envelope, Step Functions execution account routing (`AslExecutor`), IAM `AssumeRole` trust policy enforcement when enforcement enabled (`AssumeRolePolicyEvaluator`, `IamService.findRole`). **CTF preserved:** `StsQueryHandler` keeps `AssumeRoleTrustPolicyEvaluator` path (externalId + federated trust); unknown roles stay permissive via `findRole` skip; CloudWatch `subscriptionDispatcher` retained alongside upstream `ingestionSequence`; `AssumeRoleTrustPolicyIntegrationTest` uses registered IAM users (strict mode rejects unregistered AKIDs).
 

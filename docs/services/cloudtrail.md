@@ -7,8 +7,10 @@ Floci implements CloudTrail trail lifecycle, `LookupEvents`, and optional HTTP a
 
 ## Supported Actions
 
+<!-- floci:actions:start -->
 | Action | Description |
-|---|---|
+| Action | Description |
+| --- | --- |
 | `CreateTrail` | Create a trail with an S3 bucket name and optional tags |
 | `UpdateTrail` | Update bucket name and global/multi-region flags |
 | `DescribeTrails` | List trails, optionally filtered by name |
@@ -19,6 +21,7 @@ Floci implements CloudTrail trail lifecycle, `LookupEvents`, and optional HTTP a
 | `PutEventSelectors` | Accept event selector configuration |
 | `GetEventSelectors` | Return event selectors; sensible defaults when none were configured |
 | `LookupEvents` | Query indexed management events (time range, attributes, pagination) |
+<!-- floci:actions:end -->
 
 ## Trail lifecycle
 

@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerLifecycleManager.C
 import io.github.hectorvent.floci.core.common.docker.ContainerLogStreamer;
 import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver;
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
+import io.github.hectorvent.floci.core.common.docker.LaunchedContainerAwsEnv;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
 import io.github.hectorvent.floci.services.ecs.model.ContainerOverride;
 import io.github.hectorvent.floci.services.ecs.model.EcsTask;
@@ -69,11 +70,13 @@ class EcsContainerManagerOverridesTest {
         RegionResolver regionResolver = mock(RegionResolver.class);
         DockerHostResolver dockerHostResolver = mock(DockerHostResolver.class);
         credentialsServer = mock(EcsContainerCredentialsServer.class);
+        LaunchedContainerAwsEnv awsEnv = mock(LaunchedContainerAwsEnv.class);
+        when(awsEnv.sdkBaselineEnv(any(), any())).thenReturn(List.of());
         when(dockerHostResolver.resolve()).thenReturn("127.0.0.1");
 
         manager = new EcsContainerManager(containerBuilder, lifecycleManager, logStreamer,
                 containerDetector, config, regionResolver, dockerHostResolver, credentialsServer,
-                mock(CurrentContainerNetworkResolver.class));
+                mock(CurrentContainerNetworkResolver.class), awsEnv);
     }
 
     @Test

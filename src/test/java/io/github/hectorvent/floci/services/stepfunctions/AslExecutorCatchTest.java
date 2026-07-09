@@ -12,6 +12,7 @@ import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.s3.S3JsonHandler;
+import io.github.hectorvent.floci.services.s3.S3Service;
 import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerJsonHandler;
 import io.github.hectorvent.floci.services.sqs.SqsJsonHandler;
 import io.github.hectorvent.floci.services.stepfunctions.model.Execution;
@@ -83,7 +84,7 @@ class AslExecutorCatchTest {
                 mock(S3JsonHandler.class),
                 mock(io.github.hectorvent.floci.services.cloudformation.CloudFormationQueryHandler.class),
                 mock(io.github.hectorvent.floci.services.ec2.Ec2Service.class),
-                mock(io.github.hectorvent.floci.services.s3.S3Service.class),
+                mock(S3Service.class),
                 mock(io.github.hectorvent.floci.services.ecs.EcsService.class),
                 mock(io.github.hectorvent.floci.services.ecs.EcsJsonHandler.class),
                 objectMapper,

@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -295,7 +296,8 @@ public class WebSocketProxyEventBuilder {
     }
 
     private String buildMethodArn(String region, String apiId, String stageName) {
-        return buildRouteArn(region, apiId, stageName, "$connect");
+        return AwsArnUtils.Arn.of("execute-api", region, regionResolver.getAccountId(),
+                apiId + "/" + stageName + "/$connect").toString();
     }
 
     private String formatRequestTime(long epochMillis) {

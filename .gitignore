@@ -35,3 +35,7 @@ test-results
 FLOCI.md
 scripts/node_modules/
 .local/
+
+# Python tooling caches
+__pycache__/
+*.pyc
