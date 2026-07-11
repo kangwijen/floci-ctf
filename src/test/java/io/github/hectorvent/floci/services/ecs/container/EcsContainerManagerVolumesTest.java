@@ -16,6 +16,8 @@ import io.github.hectorvent.floci.services.ecs.model.EfsVolumeConfiguration;
 import io.github.hectorvent.floci.services.ecs.model.MountPoint;
 import io.github.hectorvent.floci.services.ecs.model.TaskDefinition;
 import io.github.hectorvent.floci.services.ecs.model.Volume;
+import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
+import io.github.hectorvent.floci.services.ssm.SsmService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -74,10 +76,12 @@ class EcsContainerManagerVolumesTest {
         awsEnv = mock(LaunchedContainerAwsEnv.class);
         when(awsEnv.sdkBaselineEnv(any(), any())).thenReturn(List.of());
         when(dockerHostResolver.resolve()).thenReturn("127.0.0.1");
+        SsmService ssmService = mock(SsmService.class);
+        SecretsManagerService secretsManagerService = mock(SecretsManagerService.class);
 
         manager = new EcsContainerManager(containerBuilder, lifecycleManager, logStreamer,
                 containerDetector, config, regionResolver, dockerHostResolver, credentialsServer,
-                mock(CurrentContainerNetworkResolver.class), awsEnv);
+                mock(CurrentContainerNetworkResolver.class), awsEnv, ssmService, secretsManagerService);
     }
 
     @Test
@@ -168,7 +172,7 @@ class EcsContainerManagerVolumesTest {
                 mock(ContainerLogStreamer.class), mock(ContainerDetector.class), cfg,
                 mock(RegionResolver.class), mock(DockerHostResolver.class),
                 mock(EcsContainerCredentialsServer.class), mock(CurrentContainerNetworkResolver.class),
-                awsEnv);
+                awsEnv, mock(SsmService.class), mock(SecretsManagerService.class));
 
         ContainerDefinition app = new ContainerDefinition();
         app.setName("app");
@@ -203,7 +207,7 @@ class EcsContainerManagerVolumesTest {
                 mock(ContainerLogStreamer.class), mock(ContainerDetector.class), cfg,
                 mock(RegionResolver.class), mock(DockerHostResolver.class),
                 mock(EcsContainerCredentialsServer.class), mock(CurrentContainerNetworkResolver.class),
-                awsEnv);
+                awsEnv, mock(SsmService.class), mock(SecretsManagerService.class));
 
         ContainerDefinition app = new ContainerDefinition();
         app.setName("app");

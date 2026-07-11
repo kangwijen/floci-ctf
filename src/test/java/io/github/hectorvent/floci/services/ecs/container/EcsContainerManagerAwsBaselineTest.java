@@ -15,6 +15,8 @@ import io.github.hectorvent.floci.services.ecs.model.ContainerOverride;
 import io.github.hectorvent.floci.services.ecs.model.EcsTask;
 import io.github.hectorvent.floci.services.ecs.model.KeyValuePair;
 import io.github.hectorvent.floci.services.ecs.model.TaskDefinition;
+import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
+import io.github.hectorvent.floci.services.ssm.SsmService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -78,7 +80,7 @@ class EcsContainerManagerAwsBaselineTest {
         manager = new EcsContainerManager(containerBuilder, lifecycleManager, logStreamer,
                 containerDetector, config, regionResolver, dockerHostResolver,
                 mock(EcsContainerCredentialsServer.class), mock(CurrentContainerNetworkResolver.class),
-                awsEnv);
+                awsEnv, mock(SsmService.class), mock(SecretsManagerService.class));
     }
 
     @Test

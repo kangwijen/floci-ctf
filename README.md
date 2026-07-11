@@ -200,7 +200,7 @@ LocalStack's community edition [sunset in March 2026](https://blog.localstack.cl
 | CodeBuild | Real Docker execution | No |
 | Native binary | ~40 MB | No |
 
-**65 AWS services. Broad coverage. Free forever.**
+**69 AWS services. Broad coverage. Free forever.**
 
 ## Architecture Overview
 
@@ -243,14 +243,14 @@ Floci supports local emulation for application services, data services, eventing
 |---|---|
 | Core app services | S3, S3 Vectors, SQS, SNS, DynamoDB, Lambda, IAM, STS, KMS, Secrets Manager, SSM |
 | Events and workflows | EventBridge, EventBridge Pipes, EventBridge Scheduler, Step Functions, CloudWatch Logs, CloudWatch Metrics |
-| API and identity | API Gateway REST, API Gateway v2, AppSync, AWS IoT Core, Cognito, ACM, Route53, Cloud Map |
-| Containers and compute | ECS, EC2, EKS, ECR, CodeBuild, CodeDeploy, CodePipeline, AWS Batch, Auto Scaling, Elastic Beanstalk, ELB v2 |
+| API and identity | API Gateway REST, API Gateway v2, AppSync, Cognito, ACM, Route53, Cloud Map |
+| Containers and compute | ECS, EC2, Lightsail, EKS, ECR, CodeBuild, CodeDeploy, CodePipeline, AWS Batch, Auto Scaling, Elastic Beanstalk, ELB v2 |
 | Data, analytics, and AI | Athena, Glue, EMR, Firehose, OpenSearch, S3 Vectors, Textract, Transcribe, Bedrock Runtime |
 | Databases and caching | RDS, RDS Data API, Neptune, DocumentDB, MemoryDB, ElastiCache |
-| Messaging and transfer | SES, Kinesis, MSK, Transfer Family |
+| Messaging and transfer | SES, Kinesis, MSK, Amazon MQ, Transfer Family, IoT Core |
 | Security and governance | WAF v2, CloudTrail, CloudFront, Resource Groups Tagging API |
 | Cost and billing | Pricing, Cost Explorer, Cost and Usage Reports, BCM Data Exports |
-| Backup and config | AWS Backup, AWS Config, AppConfig, AppConfigData, CloudFormation |
+| Backup and config | AWS Backup, AWS Config, AppConfig, AppConfigData, CloudFormation, Cloud Control API |
 
 For operation-level compatibility, see the [Services Overview](https://floci.io/floci/services/).
 
@@ -298,6 +298,7 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | Data Firehose | In-process | Streaming delivery, NDJSON flush to S3 |
 | ECS | Real Docker | Clusters, task definitions, tasks, services, capacity providers, task sets; durable control-plane state persisted via `StorageBackedMap` |
 | EC2 | Real Docker | RunInstances launches containers, SSH key injection, UserData, IMDS, VPC resources, Network ACLs; empty `stateReason` omitted in DescribeInstances |
+| Lightsail | In-process | Instances, disks, static IPs, key pairs, ports, tags, regions, blueprints, bundles, operations |
 | ACM | In-process | Certificate issuance and validation lifecycle; persisted across restart |
 | ECR | In-process with real registry | Repositories, docker push / pull, image-backed Lambda functions |
 | Resource Groups Tagging API | In-process | GetResources, tag and untag resources, tag key and value discovery across services |
