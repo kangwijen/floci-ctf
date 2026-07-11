@@ -292,5 +292,6 @@ When IAM enforcement is enabled:
 - `LaunchedContainerAwsEnv` sets endpoint/region baseline for task containers without `test`/`test` placeholders or host `AWS_*` passthrough.
 - Task roles receive temporary credentials via the ECS container credentials endpoint on host port **9170** (`floci.services.ecs.container-credentials-port`). Floci injects `AWS_CONTAINER_CREDENTIALS_FULL_URI` (and `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` only when the credential port is 80).
 - Task-definition `AWS_REGION` overrides are preserved (`putIfAbsent` in `EcsContainerManager.buildEnvVars`).
+- `containerDefinitions[].secrets` resolved from Secrets Manager or SSM at launch still pass through the hardened env path (`ContainerEnvHardening` strips blocked credential keys before the container starts).
 - `ContainerEnvHardening` strips operator root keys and other bypass env vars from task containers.
 - Control-plane ECS API calls require SigV4 from a principal with `ecs:*` (or scoped actions) on the cluster/task ARNs.

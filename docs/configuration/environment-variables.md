@@ -209,6 +209,7 @@ See [Initialization Hooks](./initialization-hooks.md) for lifecycle phases and s
 | Variable | Default | Description |
 |---|---|---|
 | `FLOCI_SERVICES_S3_ENABLED` | `true` | Enable the S3 service |
+| `FLOCI_SERVICES_S3_ENFORCE_AUTH` | `false` | When `true`, unsigned S3 reads require a public ACL or allowing bucket policy (upstream public-access path). Separate from Compose CTF IAM/SigV4 enforcement, which remains the primary gate when IAM is on |
 | `FLOCI_SERVICES_S3_DEFAULT_PRESIGN_EXPIRY_SECONDS` | `3600` | Default pre-signed URL expiry when none is specified |
 | `FLOCI_SERVICES_S3_ACCESS_LOG_DELIVERY_MODE` | `instant` | S3 server access log delivery: `instant` (per-request) or `scheduled` / `aws` / `normal` (batched flush) |
 | `FLOCI_SERVICES_S3_ACCESS_LOG_DELIVERY_INTERVAL_SECONDS` | `3600` | Flush interval for scheduled access log delivery (one hour default; AWS delivers on a best-effort basis, often within a few hours) |

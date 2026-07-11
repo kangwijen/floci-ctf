@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **iam:** IoT / `iotdata` REST action mapping and thing ARN scoping (`IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`)
 - **sts:** unsigned `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` under strict IAM (`StsWebIdentityStrictUnsignedIntegrationTest`)
 
-### Changed (CTF fork, upstream 1.5.31 merge)
+### Changed (CTF fork, upstream 1.5.32 merge)
 
-- **containers:** preserve `LaunchedContainerAwsEnv` hardening (`OperatorCredentialEnv`, no `test`/`test`) over upstream host `AWS_*` passthrough; Lambda code volumes + CTF container credential servers (`ContainerLauncher`, `EcsContainerManager`)
-- **in-process:** keep `InProcessTargetAuthorizer` on EventBridge Firehose targets, Pipes, Scheduler ECS `RunTask`, and ELB delivery paths
+- **s3:** preserve CTF IAM/SigV4 hardening over upstream S3 `enforce-auth` merge (Compose still uses `IamEnforcementFilter` + SigV4; `FLOCI_SERVICES_S3_ENFORCE_AUTH` stays default `false`)
+- **ecs:** keep `ContainerEnvHardening`, container credentials server, and `LaunchedContainerAwsEnv` across ECS secrets resolution and awsvpc dynamic host ports
+- **in-process:** keep `ScheduleInvoker` `InProcessTargetAuthorizer` on Scheduler delivery paths
 
 ## [1.5.32] - 2026-07-11
 
@@ -1213,7 +1214,7 @@ Initial public release of Floci — a fast, free, open-source local AWS emulator
 ---
 
 [Unreleased]: https://github.com/floci-io/floci/compare/1.5.32...HEAD
-[1.5.31]: https://github.com/floci-io/floci/compare/1.5.31...1.5.32
+[1.5.32]: https://github.com/floci-io/floci/compare/1.5.31...1.5.32
 [1.5.31]: https://github.com/floci-io/floci/compare/1.5.30...1.5.31
 [1.5.30]: https://github.com/floci-io/floci/compare/1.5.29...1.5.30
 [1.5.29]: https://github.com/floci-io/floci/compare/1.5.28...1.5.29
