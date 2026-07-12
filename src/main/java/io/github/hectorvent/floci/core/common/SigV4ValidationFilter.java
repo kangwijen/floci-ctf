@@ -60,8 +60,14 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
         }
 
         String path = ctx.getUriInfo().getPath();
+        String auth = ctx.getHeaderString("Authorization");
+
+        // Unsigned internal health/info routes stay open. When Authorization is present
+        // (operator root on /_floci/*), still verify so IamEnforcementFilter can trust
+        // SIGV4_VERIFIED for the operator bypass.
         if (SecurityBypassPaths.isInternalHealthOrInfoPath(
-                path, config.ctf().hideInternalEndpointsMode())) {
+                path, config.ctf().hideInternalEndpointsMode())
+                && (auth == null || auth.isBlank())) {
             return;
         }
 
@@ -77,7 +83,6 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
-        String auth = ctx.getHeaderString("Authorization");
         if (auth == null || auth.isBlank()) {
             return;
         }

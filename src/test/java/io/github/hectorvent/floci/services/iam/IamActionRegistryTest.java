@@ -473,6 +473,13 @@ class IamActionRegistryTest {
         assertEquals(false, IamActionRegistry.isS3BucketStylePath("/health"));
         assertEquals(true, IamActionRegistry.isS3BucketStylePath("/v20180820/tags/arn"));
         assertEquals(true, IamActionRegistry.isS3BucketStylePath("/my-bucket/key"));
+        assertEquals(true, IamActionRegistry.isS3BucketStylePath("/lambda-cred-allowed/object.txt"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/lambda-url/fn-id/"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/lambda-url/fn-id/hello"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/CreateVectorBucket"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/QueryVectors"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/v1/brokers"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/v1/submitjob"));
     }
 
     @Test

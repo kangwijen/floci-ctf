@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import io.github.hectorvent.floci.core.common.IamUnrestrictedActions;
@@ -51,6 +52,22 @@ public class IamActionRegistry {
 
     /** API Gateway control-plane paths under {@code /restapis/...}, excluding data-plane {@code _user_request_}. */
     private static final String APIGW_CONTROL_REST_PATH = ".*/restapis/(?!.*/_user_request_/).+";
+
+    /** S3 Vectors REST action paths (single-segment; must not match generic S3 bucket rules). */
+    private static final Set<String> S3_VECTORS_REST_PATHS = Set.of(
+            "/CreateVectorBucket",
+            "/GetVectorBucket",
+            "/ListVectorBuckets",
+            "/DeleteVectorBucket",
+            "/CreateIndex",
+            "/GetIndex",
+            "/ListIndexes",
+            "/DeleteIndex",
+            "/PutVectors",
+            "/GetVectors",
+            "/DeleteVectors",
+            "/QueryVectors"
+    );
 
     private static final List<ActionRule> RULES = List.of(
         // ── API Gateway execute-api (data plane; must precede generic /{bucket}/key S3 rules) ──
@@ -516,7 +533,9 @@ public class IamActionRegistry {
                 && !normalized.startsWith("/v1/")
                 && !normalized.startsWith("/v2/")
                 && !normalized.startsWith("/api/")
-                && !normalized.startsWith("/lambda")
+                // Function URLs only. Do not use "/lambda" — that excludes S3 buckets whose
+                // names start with "lambda" (e.g. lambda-cred-allowed/object.txt).
+                && !normalized.startsWith("/lambda-url")
                 && !normalized.startsWith("/2015-03-31/")
                 && !normalized.startsWith("/2013-04-01/")
                 && !normalized.startsWith("/2017-10-31/")
@@ -547,7 +566,8 @@ public class IamActionRegistry {
                 && !normalized.startsWith("/retainedMessage")
                 && !normalized.startsWith("/hostedzone")
                 && !normalized.startsWith("/distribution")
-                && !normalized.startsWith("/rules");
+                && !normalized.startsWith("/rules")
+                && !S3_VECTORS_REST_PATHS.contains(normalized);
     }
 
     /**
