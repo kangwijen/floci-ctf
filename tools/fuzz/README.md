@@ -120,10 +120,10 @@ Five stages group work by surface. Counts are service rows in `coverage.yaml` (7
 
 | Stage | Unit / operator classes | Primary surfaces |
 |-------|-------------------------|------------------|
-| `unit-parsers` | 22 unit classes | ResourceArnBuilder, intentional `*` scopes, thin REST, policy/SigV4/SigV4a, ECR auth, TCP tokens, ZIP/VTL |
+| `unit-parsers` | 31 unit classes (+ 4 Jazzer) | ResourceArnBuilder, intentional `*` scopes, thin REST, policy/SigV4/SigV4a, ECR auth, TCP tokens, open data-plane, MQTT CONNECT, extreme-value crash, ZIP/VTL |
 | `unit-bypass` | 6 unit classes | Bypass paths, blank-role env, in-process IAM/SFN/delivery |
 | `operator-http` | HttpDifferential, ServiceProtocol, PresignAndAnonymous, SignedDifferential, InternalEndpoint | Unsigned deny, participant SigV4 differential, internal hide |
-| `operator-nonhttp` | NonHttp, ContainerCredentials | Cred ports, TCP proxies, MQTT CONNECT hang-safe, ECR `/v2` |
+| `operator-nonhttp` | NonHttp, ContainerCredentials | Cred ports, TCP proxies, MQTT CONNECT deny, Neptune upgrade probes, ECR `/v2` |
 | `operator-delivery` | Delivery, DeliveryProvisionSmoke | EventBridge, Pipes, SNS, Lambda ESM, Scheduler, Logs, CloudTrail, Config, Firehose |
 
 ### By protocol family (summary, not per-service)
@@ -133,36 +133,43 @@ Five stages group work by surface. Counts are service rows in `coverage.yaml` (7
 | Query | 14 | arn-matrix + IamActionRegistry on most | HttpDifferential + ServiceProtocol + SignedDifferential | IAM/STS/SQS/SNS/EC2/RDS share query corpora |
 | JSON 1.1 | 40+ | arn-matrix on scoped services + Json11Split + intentional `*` | ServiceProtocol targets from `json11/targets.txt` | `ce` / `pricing` locked to `*` |
 | REST | 25+ | RestRules + ThinRest + ECR auth | ServiceProtocol + PresignAndAnonymous + InternalEndpoint | batch/mq/s3vectors must not map as `s3` |
-| TCP | 5 | TcpAuthTokenFuzzTest (ElastiCache/RDS SigV4 tokens) | NonHttp port + Redis AUTH soft probes | Neptune/DocDB wire auth still thin |
-| MQTT | 1 (IoT) | RestRules + arn-matrix | NonHttp CONNECT hang-safe | Broker accepts CONNECT without IAM today |
+| TCP | 5 | TcpAuthTokenFuzzTest + OpenDataPlaneSurfaceFuzzTest | NonHttp port + Redis AUTH + Neptune soft probes | DocDB uses dynamic Docker ports |
+| MQTT | 1 (IoT) | MqttConnectAuthFuzzTest + arn-matrix | NonHttp CONNECT deny + hang-safe | Password/SigV4 not validated on CONNECT yet |
 | In-process | 15+ delivery + SFN | InProcessAuthorizer + DeliveryMatrix + SfnSdkMatrix | Delivery + DeliveryProvisionSmoke | Blank role denies under enforcement |
 
 **Full service matrix:** [coverage.yaml](./coverage.yaml) lists every package with `protocol`,
 `unit`, `operator`, `corpora`, and `gaps`.
 
-### Verified unit tests (28)
+### Verified unit tests (31)
 
 | Class | Stage |
 |-------|-------|
 | ResourceArnBuilderFuzzTest | unit-parsers |
 | ResourceArnBuilderScopedFuzzTest | unit-parsers |
 | ResourceArnBuilderPartiqlFuzzTest | unit-parsers |
-| ResourceArnBuilderJazzerTest | unit-parsers |
+| ResourceArnBuilderJazzerTest | unit-parsers (Jazzer) |
 | IntentionalWildcardScopeFuzzTest | unit-parsers |
 | CatalogOnlyScopeFuzzTest | unit-parsers |
 | ThinRestServicePathFuzzTest | unit-parsers |
 | IamActionRegistryFuzzTest | unit-parsers |
+| IamActionRegistryJazzerTest | unit-parsers (Jazzer) |
 | IamActionRegistryJson11SplitFuzzTest | unit-parsers |
 | IamActionRegistryRestRulesFuzzTest | unit-parsers |
 | IamPolicyAndPrincipalFuzzTest | unit-parsers |
+| IamPolicyEvaluatorJazzerTest | unit-parsers (Jazzer) |
 | IamSessionAndResourcePolicyFuzzTest | unit-parsers |
 | SigV4RequestValidatorFuzzTest | unit-parsers |
+| SigV4RequestValidatorJazzerTest | unit-parsers (Jazzer) |
 | SigV4CredentialSmugglingFuzzTest | unit-parsers |
 | SigV4aAndPresignPathFuzzTest | unit-parsers |
 | PresignedPostConditionFuzzTest | unit-parsers |
 | EcrRegistryPathFuzzTest | unit-parsers |
 | EcrRegistryAuthFuzzTest | unit-parsers |
+| EcrRegistrySignedDifferentialFuzzTest | unit-parsers |
 | TcpAuthTokenFuzzTest | unit-parsers |
+| OpenDataPlaneSurfaceFuzzTest | unit-parsers |
+| MqttConnectAuthFuzzTest | unit-parsers |
+| ExtremeValueCrashFuzzTest | unit-parsers |
 | FederatedTokenParserFuzzTest | unit-parsers |
 | ZipAndVtlFuzzTest | unit-parsers |
 | AccountAndIpFuzzTest | unit-parsers |
@@ -211,32 +218,33 @@ Override output dir with `-Dfuzz.findings.dir=`.
 
 ## Closed gaps (this campaign)
 
-Former README gap table items are covered as follows:
-
 | Gap area | Closure |
 |----------|---------|
-| No arn-matrix / intentional `*` | `IntentionalWildcardScopeFuzzTest` locks `ce`/`pricing`/`api.pricing`/`ec2messages` to `*`. `CatalogOnlyScopeFuzzTest` locks remaining catalog-only scopes. |
-| Thin REST corpus | Expanded `corpora/rest/paths.txt` + `ThinRestServicePathFuzzTest` + ServiceProtocol probes. Production fix: S3 Vectors paths no longer mis-map as S3. |
+| No arn-matrix / intentional `*` | `IntentionalWildcardScopeFuzzTest` locks `ce`/`pricing`/`api.pricing`/`ec2messages`/`cloudcontrolapi` to `*`. `CatalogOnlyScopeFuzzTest` asserts zero remaining catalog-only gaps. |
+| Former catalog-only ARN arms | Production `ResourceArnBuilder` arms for `mq`, `batch`, `lightsail`, `memorydb`, `codepipeline`, `elasticbeanstalk`, `s3vectors`, `docdb` (RDS alias). REST rules for batch/mq/s3vectors. |
+| Thin REST corpus | Expanded `corpora/rest/paths.txt` + `ThinRestServicePathFuzzTest` + ServiceProtocol probes. S3 Vectors paths no longer mis-map as S3. |
 | TCP wire auth | `TcpAuthTokenFuzzTest` + NonHttp Redis AUTH / port soft probes |
-| MQTT CONNECT | NonHttp MQTT CONNECT hang-safe (broker still accepts without IAM) |
+| MQTT CONNECT | IAM enforcement on rejects blank username (`IotMqttBrokerService.allowMqttConnect`). `MqttConnectAuthFuzzTest` + NonHttp deny oracle. |
+| Neptune / DocDB open TCP | Intentional transparent relays (no wire SigV4). Locked by `OpenDataPlaneSurfaceFuzzTest` + NonHttp probes. |
 | Presigned POST conditions | `PresignedPostConditionFuzzTest` + PresignAndAnonymous fake-policy deny |
-| Signed differential HTTP | `SignedDifferentialCampaignTest` + `FUZZ_PARTICIPANT_*` hooks in HttpDifferential/ServiceProtocol |
+| Signed differential HTTP | `SignedDifferentialCampaignTest` + `FUZZ_PARTICIPANT_*` hooks |
 | SFN aws-sdk task matrix | `InProcessSfnSdkMatrixFuzzTest` |
-| ECR data-plane auth | `EcrRegistryAuthFuzzTest` + unsigned `/v2` operator probes |
-| Blank execution role | `BlankRoleOperatorEnvFuzzTest` |
+| ECR data-plane auth | `EcrRegistryAuthFuzzTest`, `EcrRegistrySignedDifferentialFuzzTest`, invalid Basic operator probe |
+| Blank execution role | `BlankRoleOperatorEnvFuzzTest` mirrors launcher merge under enforcement |
 | Internal operator APIs | `InternalEndpointCampaignTest` + `corpora/paths/internal-mutating.txt` |
+| Extreme-value crash fuzz | `ExtremeValueGenerators` + `ExtremeValueCrashFuzzTest` + Jazzer entries for ARN/policy/SigV4/action registry |
 
-## Remaining product / depth gaps
+## Open fuzz gaps
 
-These are beyond harness coverage or need product changes:
+**None.** `CatalogOnlyScopeFuzzTest` fails the build if a new catalog service lands without either a `ResourceArnBuilder` arm or an intentional-wildcard listing.
 
-| Gap area | Notes |
-|----------|-------|
-| Catalog-only `ResourceArnBuilder` arms | mq, batch, lightsail, memorydb, codepipeline, cloudcontrolapi, elasticbeanstalk, s3vectors still default to `*` (no production ARN arms yet) |
-| MQTT broker IAM | `IotMqttBrokerService` accepts CONNECT without auth. Deny oracle would be wrong until product enforces |
-| Neptune / DocDB TCP token fuzz | Soft port probes only (no dedicated validator class like RDS/ElastiCache) |
-| Live ECR signed `/v2` push/pull | Needs issued registry token + participant IAM on a running data-plane |
-| Live blank-role container launch | Covered in `src/test` (`LambdaBlankRole*`). Fuzz covers hardening helpers only |
+Intentional non-scoped surfaces (not gaps):
+
+| Surface | Lock |
+|---------|------|
+| `ce`, `pricing`, `api.pricing`, `ec2messages`, `cloudcontrolapi` | AWS-intentional `*` (AGENTS.md) |
+| Neptune / DocDB TCP | Transparent relay by design |
+| MQTT password / IoT policy language | Username required under IAM enforcement. Full custom authorizer not modeled |
 
 Operator signed differential env:
 
@@ -258,6 +266,6 @@ export FUZZ_PARTICIPANT_SECRET_ACCESS_KEY=...
 | 4 | Non-HTTP / creds / Athena / MQTT | `NonHttpCampaignTest`, `ContainerCredentialsCampaignTest` |
 | 5 | Delivery control-plane + provision smoke | `DeliveryCampaignTest`, `DeliveryProvisionSmokeCampaignTest`, in-process unit |
 | 6 | Presign / anonymous S3 and Lambda URL | `PresignAndAnonymousCampaignTest` |
-| 7 | Gap closure (wildcard scopes, TCP, POST, signed diff, SFN, internal) | see Closed gaps above |
+| 7 | Gap closure + extreme values + ARN arms + MQTT gate | see Closed gaps above |
 
 Phase status and per-service detail live in [coverage.yaml](./coverage.yaml).

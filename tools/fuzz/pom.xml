@@ -54,7 +54,6 @@
             <groupId>net.jqwik</groupId>
             <artifactId>jqwik</artifactId>
             <version>${jqwik.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.code-intelligence</groupId>

@@ -26,7 +26,8 @@ import java.util.Map;
  *
  * <p>Expanded credential-port coverage (IMDS-style paths) lives in
  * {@link ContainerCredentialsCampaignTest}. TCP proxy port probes (ElastiCache 6379-6399,
- * MemoryDB 6400-6419, RDS 7001-7099) and MQTT CONNECT smoke stay here.
+ * MemoryDB 6400-6419, RDS 7001-7099, Neptune 8182-8282) and MQTT CONNECT probes stay here.
+ * DocumentDB Mongo uses dynamic Docker host ports when clusters run (no fixed proxy range).
  */
 class NonHttpCampaignTest {
 
@@ -37,6 +38,8 @@ class NonHttpCampaignTest {
     private static final int MEMORYDB_PORT_MAX = 6419;
     private static final int RDS_PORT_MIN = 7001;
     private static final int RDS_PORT_MAX = 7099;
+    private static final int NEPTUNE_PORT_MIN = 8182;
+    private static final int NEPTUNE_PORT_MAX = 8282;
     private static final int MQTT_PORT = 1883;
 
     private String endpoint;
@@ -99,6 +102,11 @@ class NonHttpCampaignTest {
                 open.add("rds:" + port);
             }
         }
+        for (int port : samplePorts(NEPTUNE_PORT_MIN, NEPTUNE_PORT_MAX, 4)) {
+            if (portOpen(TCP_HOST, port)) {
+                open.add("neptune:" + port);
+            }
+        }
         Assumptions.assumeTrue(true, "tcp open ports=" + open);
     }
 
@@ -127,13 +135,31 @@ class NonHttpCampaignTest {
     }
 
     @Test
+    void neptuneGremlinProxyGarbageUpgradeDoesNotHangWhenOpen() throws Exception {
+        List<byte[]> samples = List.of(
+                "GET /gremlin HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n\r\n"
+                        .getBytes(StandardCharsets.UTF_8),
+                ("GET / HTTP/1.1" + "\r\n" + "Upgrade: websocket" + "\r\n"
+                        + "Connection: Upgrade" + "\r\n\r\n").getBytes(StandardCharsets.UTF_8),
+                new byte[] {0x00, (byte) 0xff, (byte) 0xfe, (byte) 0xfd, 'g', 'a', 'r', 'b', 'a', 'g', 'e'});
+        for (int port : samplePorts(NEPTUNE_PORT_MIN, NEPTUNE_PORT_MAX, 3)) {
+            if (!portOpen(TCP_HOST, port)) {
+                continue;
+            }
+            for (byte[] payload : samples) {
+                CrashWatchdog.run("NonHttp.neptune.upgrade", "port=" + port, 3000, () -> {
+                    softTcpProbe(port, payload);
+                    return null;
+                });
+            }
+        }
+    }
+
+    @Test
     void mqttConnectDoesNotHangWhenBrokerOpen() throws Exception {
         if (!portOpen(TCP_HOST, MQTT_PORT)) {
             return;
         }
-        // Product reality (IotMqttBrokerService#handleEndpoint): CONNECT is accepted without IAM;
-        // endpoint.accept() runs before any auth gate. This campaign is crash/hang-safe only, not
-        // an anonymous-publish deny oracle until the broker enforces SigV4/IAM on CONNECT.
         byte[] connectFrame = minimalMqttConnectFrame("fuzz-mqtt-client");
         CrashWatchdog.run("NonHttp.mqtt.connect", "port=" + MQTT_PORT, 3000, () -> {
             try (Socket socket = new Socket()) {
@@ -148,6 +174,36 @@ class NonHttpCampaignTest {
             }
             return null;
         });
+    }
+
+    @Test
+    void mqttAnonymousConnectRejectedWhenEnforcementOn() throws Exception {
+        if (!portOpen(TCP_HOST, MQTT_PORT)) {
+            return;
+        }
+        boolean enforcementOn = Boolean.parseBoolean(firstNonBlank(
+                System.getenv("FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED"),
+                System.getProperty("fuzz.iam.enforcement"),
+                "true"));
+        if (!enforcementOn) {
+            return;
+        }
+        byte[] connectFrame = minimalMqttConnectFrame("fuzz-anon-client");
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(TCP_HOST, MQTT_PORT), 2000);
+            socket.setSoTimeout(2000);
+            socket.getOutputStream().write(connectFrame);
+            socket.getOutputStream().flush();
+            byte[] buf = new byte[8];
+            int read = socket.getInputStream().read(buf);
+            if (read >= 4 && (buf[0] & 0xF0) == 0x20 && buf[3] == 0x00) {
+                SecurityOracle.failSecurity(
+                        "NonHttp.mqtt.anonymous",
+                        "port=" + MQTT_PORT,
+                        "anonymous MQTT CONNECT accepted under IAM enforcement",
+                        Map.of("connack", bytesToHex(buf, read)));
+            }
+        }
     }
 
     @Test
@@ -220,6 +276,17 @@ class NonHttpCampaignTest {
         return ports;
     }
 
+    private static void softTcpProbe(int port, byte[] payload) throws Exception {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(TCP_HOST, port), 2000);
+            socket.setSoTimeout(2000);
+            socket.getOutputStream().write(payload);
+            socket.getOutputStream().flush();
+            byte[] buf = new byte[256];
+            socket.getInputStream().read(buf);
+        }
+    }
+
     private static void softRedisAuthProbe(int port, byte[] authCommand) throws Exception {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(TCP_HOST, port), 2000);
@@ -272,5 +339,13 @@ class NonHttpCampaignTest {
             }
         }
         return null;
+    }
+
+    private static String bytesToHex(byte[] buf, int length) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < length; i++) {
+            sb.append(String.format("%02x", buf[i]));
+        }
+        return sb.toString();
     }
 }

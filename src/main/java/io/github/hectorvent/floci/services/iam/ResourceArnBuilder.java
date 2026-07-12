@@ -102,7 +102,7 @@ public class ResourceArnBuilder {
             case "ec2"                  -> buildEc2Arn(ctx, region, accountId);
             case "cloudformation"       -> buildCloudFormationArn(ctx, region, accountId);
             case "elasticache"          -> buildElastiCacheArn(ctx, region, accountId);
-            case "rds", "neptune"       -> buildRdsArn(ctx, region, accountId);
+            case "rds", "neptune", "docdb" -> buildRdsArn(ctx, region, accountId);
             case "email", "ses", "sesv2" -> buildSesArn(ctx, region, accountId);
             case "monitoring"           -> buildCloudWatchArn(ctx, region, accountId);
             case "elasticloadbalancing" -> buildElbArn(ctx, region, accountId);
@@ -149,6 +149,13 @@ public class ResourceArnBuilder {
             case "iot", "iotdata"       -> buildIotArn(path, region, accountId);
             case "textract"             -> buildTextractArn(ctx, region, accountId);
             case "tagging"              -> buildTaggingArn(ctx);
+            case "mq"                   -> buildMqArn(ctx, path, region, accountId);
+            case "batch"                -> buildBatchArn(ctx, region, accountId);
+            case "lightsail"            -> buildLightsailArn(ctx, region, accountId);
+            case "memorydb"             -> buildMemoryDbArn(ctx, region, accountId);
+            case "codepipeline"         -> buildCodePipelineArn(ctx, region, accountId);
+            case "elasticbeanstalk"     -> buildElasticBeanstalkArn(ctx, region, accountId);
+            case "s3vectors"            -> buildS3VectorsArn(ctx, region, accountId);
             default                    -> "*";
         };
     }
@@ -216,6 +223,11 @@ public class ResourceArnBuilder {
             case "cognito-idp" -> buildCognitoArnFromJson(node, region, accountId);
             case "s3" -> buildS3ArnFromJson(node);
             case "acm" -> buildAcmArnFromJson(node, region, accountId);
+            case "batch" -> buildBatchArnFromJson(node, region, accountId);
+            case "memorydb" -> buildMemoryDbArnFromJson(node, region, accountId);
+            case "codepipeline" -> buildCodePipelineArnFromJson(node, region, accountId);
+            case "s3vectors" -> buildS3VectorsArnFromJson(node, region, accountId);
+            case "lightsail" -> buildLightsailArnFromJson(node, region, accountId);
             default -> "*";
         };
     }
@@ -2258,6 +2270,224 @@ public class ResourceArnBuilder {
             return AwsArnUtils.Arn.of("iot", region, accountId, "rule/" + ruleName).toString();
         }
         return AwsArnUtils.Arn.of("iot", region, accountId, "*").toString();
+    }
+
+    // ── Amazon MQ ────────────────────────────────────────────────────────────────
+
+    private static final Pattern MQ_BROKER_ID =
+            Pattern.compile("/v1/brokers/([^/]+)", Pattern.CASE_INSENSITIVE);
+
+    private String buildMqArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        String brokerArn = firstArn(
+                jsonTextFromNode(node, "brokerArn"),
+                jsonTextFromNode(node, "BrokerArn"));
+        if (brokerArn != null) {
+            return brokerArn;
+        }
+        String brokerName = jsonTextFromNode(node, "brokerName");
+        String brokerId = firstNonBlank(
+                jsonTextFromNode(node, "brokerId"),
+                extractPathSegment(path, MQ_BROKER_ID));
+        if (brokerName != null && !brokerName.isBlank() && brokerId != null && !brokerId.isBlank()) {
+            return AwsArnUtils.Arn.of("mq", region, accountId,
+                    "broker:" + brokerName + ":" + brokerId).toString();
+        }
+        if (brokerId != null && !brokerId.isBlank()) {
+            return AwsArnUtils.Arn.of("mq", region, accountId, "broker/*:" + brokerId).toString();
+        }
+        return AwsArnUtils.Arn.of("mq", region, accountId, "broker/*").toString();
+    }
+
+    // ── AWS Batch ────────────────────────────────────────────────────────────────
+
+    private String buildBatchArn(ContainerRequestContext ctx, String region, String accountId) {
+        return buildBatchArnFromJson(readJsonBodyNode(ctx), region, accountId);
+    }
+
+    private String buildBatchArnFromJson(JsonNode node, String region, String accountId) {
+        String jobArn = firstArn(
+                jsonTextFromNode(node, "jobArn"),
+                jsonTextFromNode(node, "JobArn"));
+        if (jobArn != null) {
+            return jobArn;
+        }
+        String jobId = firstNonBlank(
+                jsonTextFromNode(node, "jobId"),
+                firstJsonArrayText(node, "jobs"));
+        if (jobId != null && !jobId.isBlank()) {
+            return AwsArnUtils.Arn.of("batch", region, accountId, "job/" + jobId).toString();
+        }
+
+        String jobDefArn = firstArn(
+                jsonTextFromNode(node, "jobDefinitionArn"),
+                jsonTextFromNode(node, "jobDefinition"));
+        if (jobDefArn != null) {
+            return jobDefArn;
+        }
+        String jobDefName = jsonTextFromNode(node, "jobDefinitionName");
+        if (jobDefName != null && !jobDefName.isBlank()) {
+            return AwsArnUtils.Arn.of("batch", region, accountId,
+                    "job-definition/" + jobDefName + ":*").toString();
+        }
+
+        String queueArn = firstArn(
+                jsonTextFromNode(node, "jobQueueArn"),
+                jsonTextFromNode(node, "jobQueue"));
+        if (queueArn != null) {
+            return queueArn;
+        }
+        String queueName = jsonTextFromNode(node, "jobQueueName");
+        if (queueName != null && !queueName.isBlank()) {
+            return AwsArnUtils.Arn.of("batch", region, accountId, "job-queue/" + queueName).toString();
+        }
+
+        String envArn = firstArn(jsonTextFromNode(node, "computeEnvironmentArn"));
+        if (envArn != null) {
+            return envArn;
+        }
+        String envName = firstNonBlank(
+                jsonTextFromNode(node, "computeEnvironmentName"),
+                firstJsonArrayText(node, "computeEnvironments"));
+        if (envName != null && !envName.isBlank()) {
+            return AwsArnUtils.Arn.of("batch", region, accountId,
+                    "compute-environment/" + envName).toString();
+        }
+
+        return AwsArnUtils.Arn.of("batch", region, accountId, "job-queue/*").toString();
+    }
+
+    // ── Lightsail ────────────────────────────────────────────────────────────────
+
+    private String buildLightsailArn(ContainerRequestContext ctx, String region, String accountId) {
+        return buildLightsailArnFromJson(readJsonBodyNode(ctx), region, accountId);
+    }
+
+    private String buildLightsailArnFromJson(JsonNode node, String region, String accountId) {
+        String resourceArn = firstArn(
+                jsonTextFromNode(node, "resourceArn"),
+                jsonTextFromNode(node, "ResourceArn"));
+        if (resourceArn != null) {
+            return resourceArn;
+        }
+        String instanceName = jsonTextFromNode(node, "instanceName");
+        if (instanceName != null && !instanceName.isBlank()) {
+            return AwsArnUtils.Arn.of("lightsail", region, accountId, "Instance/" + instanceName).toString();
+        }
+        String resourceName = jsonTextFromNode(node, "resourceName");
+        if (resourceName != null && !resourceName.isBlank()) {
+            return AwsArnUtils.Arn.of("lightsail", region, accountId, "Instance/" + resourceName).toString();
+        }
+        return AwsArnUtils.Arn.of("lightsail", region, accountId, "Instance/*").toString();
+    }
+
+    // ── MemoryDB ───────────────────────────────────────────────────────────────────
+
+    private String buildMemoryDbArn(ContainerRequestContext ctx, String region, String accountId) {
+        return buildMemoryDbArnFromJson(readJsonBodyNode(ctx), region, accountId);
+    }
+
+    private String buildMemoryDbArnFromJson(JsonNode node, String region, String accountId) {
+        String resourceArn = firstArn(jsonTextFromNode(node, "ResourceArn"));
+        if (resourceArn != null) {
+            return resourceArn;
+        }
+        String clusterName = jsonTextFromNode(node, "ClusterName");
+        if (clusterName != null && !clusterName.isBlank()) {
+            return AwsArnUtils.Arn.of("memorydb", region, accountId, "cluster/" + clusterName).toString();
+        }
+        String userName = jsonTextFromNode(node, "UserName");
+        if (userName != null && !userName.isBlank()) {
+            return AwsArnUtils.Arn.of("memorydb", region, accountId, "user/" + userName).toString();
+        }
+        String aclName = jsonTextFromNode(node, "ACLName");
+        if (aclName != null && !aclName.isBlank()) {
+            return AwsArnUtils.Arn.of("memorydb", region, accountId, "acl/" + aclName).toString();
+        }
+        return AwsArnUtils.Arn.of("memorydb", region, accountId, "cluster/*").toString();
+    }
+
+    // ── CodePipeline ─────────────────────────────────────────────────────────────
+
+    private String buildCodePipelineArn(ContainerRequestContext ctx, String region, String accountId) {
+        return buildCodePipelineArnFromJson(readJsonBodyNode(ctx), region, accountId);
+    }
+
+    private String buildCodePipelineArnFromJson(JsonNode node, String region, String accountId) {
+        JsonNode webhook = node.get("webhook");
+        String webhookName = webhook != null && !webhook.isNull()
+                ? jsonTextFromNode(webhook, "name")
+                : null;
+        if (webhookName == null || webhookName.isBlank()) {
+            webhookName = jsonTextFromNode(node, "webhookName");
+        }
+        if (webhookName != null && !webhookName.isBlank()) {
+            return AwsArnUtils.Arn.of("codepipeline", region, accountId, "webhook/" + webhookName).toString();
+        }
+        String pipelineArn = firstArn(jsonTextFromNode(node, "pipelineArn"));
+        if (pipelineArn != null) {
+            return pipelineArn;
+        }
+        String name = jsonTextFromNode(node, "name");
+        if (name != null && !name.isBlank()) {
+            return AwsArnUtils.Arn.of("codepipeline", region, accountId, name).toString();
+        }
+        return AwsArnUtils.Arn.of("codepipeline", region, accountId, "*").toString();
+    }
+
+    // ── Elastic Beanstalk ────────────────────────────────────────────────────────
+
+    private String buildElasticBeanstalkArn(ContainerRequestContext ctx, String region, String accountId) {
+        String appName = firstNonBlank(
+                readFormParam(ctx, "ApplicationName"),
+                readFormParamPrefixed(ctx, "ApplicationNames"));
+        String envName = firstNonBlank(
+                readFormParam(ctx, "EnvironmentName"),
+                readFormParamPrefixed(ctx, "EnvironmentNames"));
+        if (appName != null && !appName.isBlank()
+                && envName != null && !envName.isBlank()) {
+            return AwsArnUtils.Arn.of("elasticbeanstalk", region, accountId,
+                    "environment/" + appName + "/" + envName).toString();
+        }
+        if (appName != null && !appName.isBlank()) {
+            return AwsArnUtils.Arn.of("elasticbeanstalk", region, accountId,
+                    "application/" + appName).toString();
+        }
+        return AwsArnUtils.Arn.of("elasticbeanstalk", region, accountId, "environment/*").toString();
+    }
+
+    // ── S3 Vectors ─────────────────────────────────────────────────────────────────
+
+    private String buildS3VectorsArn(ContainerRequestContext ctx, String region, String accountId) {
+        return buildS3VectorsArnFromJson(readJsonBodyNode(ctx), region, accountId);
+    }
+
+    private String buildS3VectorsArnFromJson(JsonNode node, String region, String accountId) {
+        String indexArn = firstArn(jsonTextFromNode(node, "indexArn"));
+        if (indexArn != null) {
+            return indexArn;
+        }
+        String bucketArn = firstArn(
+                jsonTextFromNode(node, "vectorBucketArn"),
+                jsonTextFromNode(node, "VectorBucketArn"));
+        String bucketName = jsonTextFromNode(node, "vectorBucketName");
+        String indexName = jsonTextFromNode(node, "indexName");
+        if (indexName != null && !indexName.isBlank()) {
+            if (bucketName != null && !bucketName.isBlank()) {
+                return AwsArnUtils.Arn.of("s3vectors", region, accountId,
+                        "bucket/" + bucketName + "/index/" + indexName).toString();
+            }
+            if (bucketArn != null) {
+                return bucketArn + "/index/" + indexName;
+            }
+        }
+        if (bucketArn != null) {
+            return bucketArn;
+        }
+        if (bucketName != null && !bucketName.isBlank()) {
+            return AwsArnUtils.Arn.of("s3vectors", region, accountId, "bucket/" + bucketName).toString();
+        }
+        return AwsArnUtils.Arn.of("s3vectors", region, accountId, "bucket/*").toString();
     }
 
     // ── Route 53 ─────────────────────────────────────────────────────────────────

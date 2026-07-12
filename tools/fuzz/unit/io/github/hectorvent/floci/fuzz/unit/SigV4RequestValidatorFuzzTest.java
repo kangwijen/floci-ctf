@@ -3,10 +3,14 @@ package io.github.hectorvent.floci.fuzz.unit;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.github.hectorvent.floci.fuzz.oracle.CrashWatchdog;
 import io.github.hectorvent.floci.fuzz.oracle.SecurityOracle;
+import io.github.hectorvent.floci.fuzz.support.ExtremeValueGenerators;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
+import net.jqwik.api.Arbitraries;
+import net.jqwik.api.Arbitrary;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
+import net.jqwik.api.Provide;
 import net.jqwik.api.constraints.StringLength;
 
 /**
@@ -68,5 +72,41 @@ class SigV4RequestValidatorFuzzTest {
     void parseAccessKeyIdNeverThrows(@ForAll @StringLength(max = 200) String credential) {
         SecurityOracle.runCatching("SigV4RequestValidator.parseAccessKeyId", credential, () ->
                 SigV4RequestValidator.parseAccessKeyIdFromCredential(credential));
+    }
+
+    @Property(tries = 50)
+    void validateExtremeInputsNeverThrows(
+            @ForAll("sigV4ExtremeStrings") String method,
+            @ForAll("sigV4ExtremeStrings") String path,
+            @ForAll("sigV4ExtremeStrings") String query,
+            @ForAll("sigV4ExtremeStrings") String authHeader,
+            @ForAll("sigV4ExtremeStrings") String secret) throws Exception {
+        String seed = String.valueOf(method) + "|" + path + "|" + authHeader;
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        if (authHeader != null) {
+            headers.add("authorization", authHeader);
+        }
+        headers.add("host", "localhost:4566");
+        CrashWatchdog.run("SigV4RequestValidator.validate.extreme", seed, 2500, () -> {
+            SecurityOracle.runCatching("SigV4RequestValidator.validate.extreme", seed, () ->
+                    SigV4RequestValidator.validate(
+                            method == null || method.isBlank() ? "GET" : method,
+                            path == null || path.isBlank() ? "/" : path,
+                            query == null ? "" : query,
+                            headers,
+                            authHeader == null ? "" : authHeader,
+                            secret == null || secret.isBlank() ? "secret" : secret,
+                            new byte[0]));
+            return null;
+        });
+    }
+
+    @Provide
+    Arbitrary<String> sigV4ExtremeStrings() {
+        return Arbitraries.oneOf(
+                Arbitraries.strings().ofMaxLength(200),
+                ExtremeValueGenerators.emptyAndWhitespace(),
+                ExtremeValueGenerators.unicodeAndControl(),
+                ExtremeValueGenerators.oversizedString(ExtremeValueGenerators.DEFAULT_CRASH_MAX_STRING));
     }
 }

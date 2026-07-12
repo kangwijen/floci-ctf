@@ -1,0 +1,17 @@
+# Neptune Gremlin and DocumentDB Mongo are intentional transparent TCP relays under CTF.
+# SigV4 credentials in WebSocket upgrade headers are relayed to the backend, not validated.
+# HTTP control-plane IAM still scopes neptune/docdb query APIs; do not add a fake TCP SigV4 validator.
+GET /gremlin HTTP/1.1
+Host: neptune-cluster.cluster-abcdefghijkl.us-east-1.neptune.amazonaws.com:8182
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Version: 13
+X-Amz-Security-Token: ASIAEXAMPLE
+Authorization: AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/20260712/us-east-1/neptune-db/aws4_request, SignedHeaders=host;x-amz-date, Signature=deadbeef
+GET / HTTP/1.1
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: fuzz-extreme-key-????????????????????????????????????????????????????????????????????????????
+Sec-WebSocket-Protocol: gremlin
+\x00\xff\xfe\xfd garbage-after-headers

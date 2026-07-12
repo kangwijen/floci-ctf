@@ -338,7 +338,44 @@ public class IamActionRegistry {
         rule("iot", "POST",   "^/rules/[^/]+/?$",           "iot:CreateTopicRule"),
         rule("iot", "GET",    "^/rules/[^/]+/?$",           "iot:GetTopicRule"),
         rule("iot", "DELETE", "^/rules/[^/]+/?$",           "iot:DeleteTopicRule"),
-        rule("iot", "GET",    "^/rules/?$",                 "iot:ListTopicRules")
+        rule("iot", "GET",    "^/rules/?$",                 "iot:ListTopicRules"),
+
+        // ── AWS Batch (REST JSON /v1) ─────────────────────────────────────────
+        rule("batch", "POST", "^/v1/createcomputeenvironment/?$",   "batch:CreateComputeEnvironment"),
+        rule("batch", "POST", "^/v1/describecomputeenvironments/?$", "batch:DescribeComputeEnvironments"),
+        rule("batch", "POST", "^/v1/createjobqueue/?$",             "batch:CreateJobQueue"),
+        rule("batch", "POST", "^/v1/describejobqueues/?$",          "batch:DescribeJobQueues"),
+        rule("batch", "POST", "^/v1/registerjobdefinition/?$",      "batch:RegisterJobDefinition"),
+        rule("batch", "POST", "^/v1/deregisterjobdefinition/?$",    "batch:DeregisterJobDefinition"),
+        rule("batch", "POST", "^/v1/describejobdefinitions/?$",    "batch:DescribeJobDefinitions"),
+        rule("batch", "POST", "^/v1/submitjob/?$",                  "batch:SubmitJob"),
+        rule("batch", "POST", "^/v1/describejobs/?$",               "batch:DescribeJobs"),
+        rule("batch", "POST", "^/v1/listjobs/?$",                   "batch:ListJobs"),
+
+        // ── Amazon MQ (REST JSON /v1/brokers) ─────────────────────────────────
+        rule("mq", "POST",   "^/v1/brokers/?$",                           "mq:CreateBroker"),
+        rule("mq", "GET",    "^/v1/brokers/?$",                           "mq:ListBrokers"),
+        rule("mq", "GET",    "^/v1/brokers/[^/]+/?$",                     "mq:DescribeBroker"),
+        rule("mq", "DELETE", "^/v1/brokers/[^/]+/?$",                     "mq:DeleteBroker"),
+        rule("mq", "POST",   "^/v1/brokers/[^/]+/reboot/?$",             "mq:RebootBroker"),
+        rule("mq", "POST",   "^/v1/brokers/[^/]+/users/[^/]+/?$",        "mq:CreateUser"),
+        rule("mq", "GET",    "^/v1/brokers/[^/]+/users/[^/]+/?$",        "mq:DescribeUser"),
+        rule("mq", "GET",    "^/v1/brokers/[^/]+/users/?$",              "mq:ListUsers"),
+        rule("mq", "DELETE", "^/v1/brokers/[^/]+/users/[^/]+/?$",        "mq:DeleteUser"),
+
+        // ── S3 Vectors (REST JSON; excluded from generic S3 bucket rules) ─────
+        rule("s3vectors", "POST", "^/CreateVectorBucket/?$",  "s3vectors:CreateVectorBucket"),
+        rule("s3vectors", "POST", "^/GetVectorBucket/?$",      "s3vectors:GetVectorBucket"),
+        rule("s3vectors", "POST", "^/ListVectorBuckets/?$",    "s3vectors:ListVectorBuckets"),
+        rule("s3vectors", "POST", "^/DeleteVectorBucket/?$",   "s3vectors:DeleteVectorBucket"),
+        rule("s3vectors", "POST", "^/CreateIndex/?$",          "s3vectors:CreateIndex"),
+        rule("s3vectors", "POST", "^/GetIndex/?$",             "s3vectors:GetIndex"),
+        rule("s3vectors", "POST", "^/ListIndexes/?$",          "s3vectors:ListIndexes"),
+        rule("s3vectors", "POST", "^/DeleteIndex/?$",          "s3vectors:DeleteIndex"),
+        rule("s3vectors", "POST", "^/PutVectors/?$",           "s3vectors:PutVectors"),
+        rule("s3vectors", "POST", "^/GetVectors/?$",           "s3vectors:GetVectors"),
+        rule("s3vectors", "POST", "^/DeleteVectors/?$",        "s3vectors:DeleteVectors"),
+        rule("s3vectors", "POST", "^/QueryVectors/?$",         "s3vectors:QueryVectors")
     );
 
     private static ActionRule rule(String service, String method, String path, String action) {

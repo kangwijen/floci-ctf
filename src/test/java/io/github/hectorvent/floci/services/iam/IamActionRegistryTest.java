@@ -538,6 +538,39 @@ class IamActionRegistryTest {
         assertEquals("acm:DescribeCertificate", registry.resolve("acm", ctx));
     }
 
+    @Test
+    void resolveRestRouteScope_batchSubmitJob() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/v1/submitjob",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"jobName\":\"run\"}");
+        assertEquals("batch", registry.resolveRestRouteScope(ctx));
+        assertEquals("batch:SubmitJob", registry.resolve("batch", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_mqDescribeBroker() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/v1/brokers/b-abc123",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("mq", registry.resolveRestRouteScope(ctx));
+        assertEquals("mq:DescribeBroker", registry.resolve("mq", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_s3VectorsQueryVectors() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/QueryVectors",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{\"vectorBucketName\":\"b\",\"indexName\":\"i\"}");
+        assertEquals("s3vectors", registry.resolveRestRouteScope(ctx));
+        assertEquals("s3vectors:QueryVectors", registry.resolve("s3vectors", ctx));
+    }
+
     // -------------------------------------------------------------------------
 
     private static ContainerRequestContext dynamodbTargetCtx(String target) {

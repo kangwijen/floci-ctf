@@ -428,7 +428,7 @@ Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merges):
 - Secrets Manager: `SecretsManagerService`, `SecretsManagerJsonHandler`, `SecretsManagerKmsSupport` (single-layer envelopes; rotation must not re-wrap KMS ciphertext)
 - CodePipeline: `CodePipelineService`, `CodePipelineJsonHandler` (storage-backed pipelines; in-process actions inherit IAM on integrated services)
 - S3 Vectors: `S3VectorsService`, `S3VectorsController` (new REST host prefix; standard HTTP IAM/SigV4 path)
-- IoT: `IotService`, `IotController`, `IotDataController`, `IotMqttBrokerService` (new REST JSON + MQTT; standard HTTP IAM/SigV4 path)
+- IoT: `IotService`, `IotController`, `IotDataController`, `IotMqttBrokerService` (REST JSON + MQTT; HTTP IAM/SigV4 on control/data REST. When IAM enforcement is on, MQTT CONNECT with blank username is rejected via `allowMqttConnect`)
 - Elastic Beanstalk: `ElasticBeanstalkService`, `ElasticBeanstalkQueryHandler`
 - MemoryDB ACLs: `MemoryDbService`, `MemoryDbHandler`, `services/memorydb/model/Acl`, `User`
 - AppSync `$util`: `services/appsync/graphql/util/*`

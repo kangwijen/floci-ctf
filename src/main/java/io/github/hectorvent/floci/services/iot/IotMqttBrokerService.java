@@ -2,7 +2,9 @@ package io.github.hectorvent.floci.services.iot;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.iot.model.IotRetainedMessage;
+import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
 import io.netty.handler.codec.mqtt.MqttQoS;
+import io.vertx.mqtt.MqttAuth;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import io.vertx.core.Vertx;
@@ -142,8 +144,28 @@ public class IotMqttBrokerService {
                 .toList();
     }
 
+    /**
+     * CTF MQTT CONNECT gate. When IAM enforcement is on, CONNECT without a username is rejected.
+     * Password and SigV4 credential validation are not performed here.
+     */
+    public static boolean allowMqttConnect(boolean enforcementEnabled, String username) {
+        if (!enforcementEnabled) {
+            return true;
+        }
+        return username != null && !username.isBlank();
+    }
+
     private void handleEndpoint(MqttEndpoint endpoint) {
         String clientId = endpoint.clientIdentifier();
+        MqttAuth auth = endpoint.auth();
+        String username = auth == null ? null : auth.getUsername();
+        if (!allowMqttConnect(config.services().iam().enforcementEnabled(), username)) {
+            LOG.warnv("IoT MQTT CONNECT rejected: missing username under IAM enforcement (clientId={0})",
+                    clientId);
+            endpoint.reject(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
+            return;
+        }
+
         SocketAddress remoteAddress = endpoint.remoteAddress();
         ClientSession session = new ClientSession(
                 clientId,

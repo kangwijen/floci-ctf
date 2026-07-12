@@ -11,6 +11,10 @@ import net.jqwik.api.Provide;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -82,6 +86,28 @@ class ServiceProtocolCampaignTest {
     @Test
     void unsignedEcrRegistryV2Denied() throws Exception {
         assertUnsignedGetDenied("/v2/", "ServiceProtocol.ecr.v2");
+    }
+
+    @Test
+    void invalidEcrBasicAuthDoesNotReturnManifest() throws Exception {
+        int registryPort = registryPort();
+        Assumptions.assumeTrue(portOpen("127.0.0.1", registryPort),
+                "ECR registry auth proxy not reachable on port " + registryPort);
+
+        String endpoint = "http://127.0.0.1:" + registryPort;
+        DifferentialHttpOracle oracle = new DifferentialHttpOracle(endpoint);
+        String path = "/v2/fuzz-repo/manifests/latest";
+        String header = "Basic "
+                + Base64.getEncoder().encodeToString("AWS:garbage".getBytes(StandardCharsets.UTF_8));
+        DifferentialHttpOracle.ProbeResult result = oracle.exchange(
+                "GET", path, Map.of("Authorization", header), null);
+        if (result.success() && looksLikeManifest(result.bodySnippet())) {
+            SecurityOracle.failSecurity(
+                    "ServiceProtocol.ecr.invalidBasic",
+                    path,
+                    "invalid Basic AWS auth returned manifest body",
+                    Map.of("status", String.valueOf(result.status()), "body", result.bodySnippet()));
+        }
     }
 
     @Test
@@ -245,5 +271,45 @@ class ServiceProtocolCampaignTest {
         List<String> paths = CorpusLoader.orFallback(
                 "paths/rest.txt", FuzzBodyGenerators.highValueRestPaths());
         return Arbitraries.of(paths);
+    }
+
+    private static int registryPort() {
+        String configured = firstNonBlank(
+                System.getenv("FUZZ_ECR_REGISTRY_PORT"),
+                System.getProperty("fuzz.ecr.registryPort"),
+                "5100");
+        return Integer.parseInt(configured);
+    }
+
+    private static boolean portOpen(String host, int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), 500);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean looksLikeManifest(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String trimmed = body.trim();
+        return trimmed.startsWith("{")
+                && (trimmed.contains("\"schemaVersion\"")
+                || trimmed.contains("\"mediaType\"")
+                || trimmed.contains("\"config\""));
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

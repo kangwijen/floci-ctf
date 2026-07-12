@@ -50,6 +50,12 @@ public final class FuzzBodyGenerators {
             case "ecr" -> "{\"repositoryName\":\"" + n + "\"}";
             case "glue" -> "{\"DatabaseName\":\"" + n + "\"}";
             case "kafka" -> "{\"clusterName\":\"" + n + "\"}";
+            case "mq" -> "{\"brokerName\":\"" + n + "\",\"brokerId\":\"b-" + n + "\"}";
+            case "batch" -> "{\"jobQueueName\":\"" + n + "\",\"jobName\":\"job-" + n + "\",\"jobDefinition\":\"def-" + n + "\"}";
+            case "lightsail" -> "{\"instanceName\":\"" + n + "\"}";
+            case "memorydb" -> "{\"ClusterName\":\"" + n + "\"}";
+            case "codepipeline" -> "{\"name\":\"" + n + "\"}";
+            case "s3vectors" -> "{\"vectorBucketName\":\"fuzz-" + n + "\",\"indexName\":\"idx-" + n + "\"}";
             case "securityhub" -> securityHubBody(n);
             case "apigatewayv2" -> "{\"ApiId\":\"" + n + "\"}";
             case "servicediscovery" -> "{\"ServiceId\":\"srv-" + n + "\"}";

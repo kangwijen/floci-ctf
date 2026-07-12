@@ -26,7 +26,8 @@ public final class FuzzCredentialScopes {
                 "kafka", "pipes", "codebuild", "codedeploy", "acm", "backup", "route53",
                 "cloudfront", "bedrock", "bedrock-runtime", "cur", "bcm-data-exports",
                 "transfer", "transcribe", "appconfig", "appconfigdata", "iot", "iotdata",
-                "textract", "tagging"
+                "textract", "tagging", "mq", "batch", "lightsail", "memorydb", "codepipeline",
+                "elasticbeanstalk", "s3vectors", "docdb"
         );
     }
 
@@ -63,7 +64,7 @@ public final class FuzzCredentialScopes {
      * Documented intentional {@code *} IAM resources (AGENTS.md): no per-resource ARN builder arm.
      */
     public static List<String> intentionalWildcardScopes() {
-        return List.of("ce", "pricing", "api.pricing", "ec2messages");
+        return List.of("ce", "pricing", "api.pricing", "ec2messages", "cloudcontrolapi");
     }
 
     /** Catalog-only scopes excluding documented intentional wildcards. */
@@ -105,6 +106,11 @@ public final class FuzzCredentialScopes {
                 "/DeleteVectors",
                 "/QueryVectors"
         );
+    }
+
+    /** Intentional transparent TCP data-plane relays (no wire SigV4 validator under CTF). */
+    public static List<String> openDataPlaneTcpScopes() {
+        return List.of("neptune", "docdb");
     }
 
     /** Expected ARN service segment for namespace oracles (aliases map to canonical). */

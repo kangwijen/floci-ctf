@@ -1129,6 +1129,86 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:route53:::hostedzone/Z123", arn);
     }
 
+    // ── Amazon MQ ───────────────────────────────────────────────────────────────
+
+    @Test
+    void mqDescribeBrokerBuildsBrokerArnFromPathAndName() {
+        ContainerRequestContext ctx = pathCtx("/v1/brokers/b-abc123", jsonBodyCtx("""
+                {"brokerName":"orders","brokerId":"b-abc123"}
+                """));
+        String arn = builder.build("mq", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:mq:us-east-1:222222222222:broker:orders:b-abc123", arn);
+    }
+
+    // ── AWS Batch ───────────────────────────────────────────────────────────────
+
+    @Test
+    void batchSubmitJobBuildsJobQueueArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"jobQueueName":"high-priority","jobName":"run-1","jobDefinition":"def-1"}
+                """);
+        String arn = builder.build("batch", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:batch:us-east-1:222222222222:job-queue/high-priority", arn);
+    }
+
+    // ── Lightsail ─────────────────────────────────────────────────────────────────
+
+    @Test
+    void lightsailGetInstanceBuildsInstanceArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"instanceName\":\"web-a\"}");
+        String arn = builder.build("lightsail", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lightsail:us-east-1:222222222222:Instance/web-a", arn);
+    }
+
+    // ── MemoryDB ──────────────────────────────────────────────────────────────────
+
+    @Test
+    void memoryDbDescribeClustersBuildsClusterArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"ClusterName\":\"my-cluster\"}");
+        String arn = builder.build("memorydb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:memorydb:us-east-1:222222222222:cluster/my-cluster", arn);
+    }
+
+    // ── CodePipeline ──────────────────────────────────────────────────────────────
+
+    @Test
+    void codePipelineGetPipelineBuildsPipelineArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("{\"name\":\"deploy\"}");
+        String arn = builder.build("codepipeline", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:codepipeline:us-east-1:222222222222:deploy", arn);
+    }
+
+    // ── Elastic Beanstalk ─────────────────────────────────────────────────────────
+
+    @Test
+    void elasticBeanstalkDescribeEnvironmentsBuildsEnvironmentArn() {
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=DescribeEnvironments&ApplicationName=shop&EnvironmentNames.member.1=shop-prod");
+        String arn = builder.build("elasticbeanstalk", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:elasticbeanstalk:us-east-1:222222222222:environment/shop/shop-prod", arn);
+    }
+
+    // ── S3 Vectors ────────────────────────────────────────────────────────────────
+
+    @Test
+    void s3VectorsQueryVectorsBuildsIndexArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"vectorBucketName":"vectors","indexName":"embeddings"}
+                """);
+        String arn = builder.build("s3vectors", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:s3vectors:us-east-1:222222222222:bucket/vectors/index/embeddings", arn);
+    }
+
+    // ── DocDB (RDS alias) ─────────────────────────────────────────────────────────
+
+    @Test
+    void docDbDescribeDbInstancesBuildsRdsDbArn() {
+        ContainerRequestContext ctx = formBodyCtx(
+                "Action=DescribeDBInstances&DBInstanceIdentifier=docdb-1");
+        String arn = builder.build("docdb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:rds:us-east-1:222222222222:db:docdb-1", arn);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ContainerRequestContext jsonBodyCtx(String json) {
