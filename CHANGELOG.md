@@ -7,10 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upstream has not tagged **1.5.33** yet. The following items are from post-**1.5.32** commits through tip **`483cc5b1`** (merged 2026-07-12). Pom version remains **1.5.32**.
+
+### Added
+
+- **cognito:** `GlobalSignOut` and `RevokeToken`, with `jti` / `origin_jti` on issued tokens ([#1701](https://github.com/floci-io/floci/pull/1701), [#1705](https://github.com/floci-io/floci/pull/1705))
+- **stepfunctions:** JSONata workflow variables via ASL `Assign` ([#1824](https://github.com/floci-io/floci/pull/1824))
+- **apigateway:** request-header forwarding coverage on the `_user_request_` path ([#1830](https://github.com/floci-io/floci/pull/1830))
+
+### Fixed
+
+- **s3:** `GetBucketEncryption` returns default SSE-S3 instead of 404 when no encryption config is set ([#1838](https://github.com/floci-io/floci/pull/1838))
+- **s3:** `DeleteBucketReplication` removes replication config without deleting the bucket ([#1837](https://github.com/floci-io/floci/pull/1837))
+
 ### Added (CTF fork)
 
 - **iam:** IoT / `iotdata` REST action mapping and thing ARN scoping (`IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`)
 - **sts:** unsigned `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` under strict IAM (`StsWebIdentityStrictUnsignedIntegrationTest`)
+
+### Changed (CTF fork, post-1.5.32 merge)
+
+- **cognito:** keep `InProcessTargetAuthorizer` on Cognito delivery paths across `GlobalSignOut` / `RevokeToken` / `jti` work
+- **stepfunctions:** keep `AslExecutor` `InProcessIamAuthorizer` and CloudTrail audit across JSONata `Assign`
 
 ### Changed (CTF fork, upstream 1.5.32 merge)
 

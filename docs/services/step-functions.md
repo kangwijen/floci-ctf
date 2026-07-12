@@ -82,9 +82,13 @@ aws stepfunctions get-execution-history \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
 
+## JSONata Assign
+
+With `"QueryLanguage": "JSONata"`, ASL states can use the `Assign` field to store workflow variables and reference them in later states (AWS Step Functions variables). Floci evaluates `Assign` through `JsonataEvaluator` during execution.
+
 ## CTF fork {#ctf-fork}
 
-When IAM enforcement is enabled, in-process service integrations use `InProcessIamAuthorizer` with the state machine execution role. Missing or unauthorized role credentials deny the task instead of falling back to permissive access.
+When IAM enforcement is enabled, in-process service integrations use `InProcessIamAuthorizer` with the state machine execution role. Missing or unauthorized role credentials deny the task instead of falling back to permissive access. JSONata `Assign` only changes workflow variable state. It does not bypass in-process IAM on `aws-sdk` tasks.
 
 Supported `aws-sdk` task integrations (in addition to existing Lambda, SNS, SQS, DynamoDB, etc.):
 

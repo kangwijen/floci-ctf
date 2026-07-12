@@ -250,3 +250,5 @@ When IAM enforcement is enabled:
 - OAuth and well-known paths (`/oauth2/*`, `/.well-known/*`, pool discovery) accept client credentials and issue tokens without SigV4.
 - Cognito **data-plane** JSON API calls (`X-Amz-Target: AWSCognitoIdentityProviderService.*`) require SigV4 from a registered IAM principal; Bearer tokens from `/oauth2/token` do not bypass signature checks on those routes.
 - Attach `cognito-idp:*` (or scoped) policies to participant IAM users for admin-style pool operations.
+
+Token revocation (upstream post-1.5.32): issued access and ID tokens carry `jti` and `origin_jti`. `AdminUserGlobalSignOut`, self-service `GlobalSignOut`, and `RevokeToken` mark tokens revoked so later user-pool API use and refresh fail. CTF keeps `InProcessTargetAuthorizer` on Cognito delivery paths (for example Lambda invoke from Cognito triggers) when IAM enforcement is on.

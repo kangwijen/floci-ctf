@@ -12,7 +12,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 |---|---|
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
-| Latest upstream merge | 1.5.32 (2026-07-11) |
+| Latest upstream merge | 1.5.32 + tip `483cc5b1` (2026-07-12) |
 | Port | 4566 (HTTP API) |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
@@ -374,7 +374,9 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 
 ## Upstream sync
 
-**Latest merge:** upstream **main** (23 commits through **`f93e0290`**, release **1.5.32**, merged 2026-07-11): Lightsail, S3 auth enforcement (`enforce-auth`), IAM `UserName` default from calling access key, ECS secrets resolution (SM/SSM) + awsvpc dynamic host ports, CloudFormation provisioner registry, AppSync Phase 5, SES Contact CRUD, KMS `ListAliases` KeyId filter, Secrets Manager batch partial results, TLS `host.docker.internal` SAN. **CTF preserved:** full `IamEnforcementFilter`; `PreSignedUrlFilter` SigV4; `EcsContainerManager` `ContainerEnvHardening` + credentials server + `LaunchedContainerAwsEnv`; `ScheduleInvoker` `InProcessTargetAuthorizer`; `SecretsManagerKmsSupport`; GuardDuty/SecurityHub alongside Lightsail/Cloud Control.
+**Latest merge:** upstream **main** (6 commits through **`483cc5b1`**, post **1.5.32**, pom still **1.5.32**, merged 2026-07-12): Cognito `GlobalSignOut` / `RevokeToken` with `jti` / `origin_jti`, S3 `GetBucketEncryption` default SSE-S3 and `DeleteBucketReplication`, Step Functions JSONata `Assign` workflow variables, API Gateway `_user_request_` header-forwarding regression test. **CTF preserved:** Cognito `InProcessTargetAuthorizer` on delivery paths; `AslExecutor` `InProcessIamAuthorizer` + CloudTrail on in-process SDK tasks.
+
+**Previous merge:** upstream **main** (23 commits through **`f93e0290`**, release **1.5.32**, merged 2026-07-11): Lightsail, S3 auth enforcement (`enforce-auth`), IAM `UserName` default from calling access key, ECS secrets resolution (SM/SSM) + awsvpc dynamic host ports, CloudFormation provisioner registry, AppSync Phase 5, SES Contact CRUD, KMS `ListAliases` KeyId filter, Secrets Manager batch partial results, TLS `host.docker.internal` SAN. **CTF preserved:** full `IamEnforcementFilter`; `PreSignedUrlFilter` SigV4; `EcsContainerManager` `ContainerEnvHardening` + credentials server + `LaunchedContainerAwsEnv`; `ScheduleInvoker` `InProcessTargetAuthorizer`; `SecretsManagerKmsSupport`; GuardDuty/SecurityHub alongside Lightsail/Cloud Control.
 
 **Previous merge:** upstream **main** (40 commits through **`ebf5a2e8`**, release **1.5.31**, merged 2026-07-10): Lambda read-only code volumes, ECS env baseline via `LaunchedContainerAwsEnv`, CloudWatch Logs Insights, EventBridge Firehose targets, Scheduler ECS `RunTask`, RDS Data API, EC2 images/snapshots, Cloud Control API, SQS XML errors, Smithy protocol claiming. **CTF preserved:** full `IamEnforcementFilter`; `LaunchedContainerAwsEnv` uses `OperatorCredentialEnv` (no `test`/`test`); Lambda/ECS container credential servers + `ContainerEnvHardening`; `InProcessTargetAuthorizer` on Pipes/EventBridge/Scheduler/ELB; ECR auth-proxy `resolveRegistryBaseUrl`; Floci Duck operator creds only; GuardDuty/SecurityHub alongside upstream Cloud Control.
 
@@ -405,7 +407,8 @@ Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merges):
 - S3 presign: `PreSignedUrlGenerator` (keep SigV4 + root AKIA; do not take upstream account-id signing)
 - IAM/STS: `StsQueryHandler`, `IamService`, `SessionCredential` (merge CTF caller-identity + `originAccountId`), `ResourcePolicyResolver`, `ResourceArnBuilder`, `PolicyPrincipalMatcher`, `IamActionRegistry`
 - APIGW: `ApiGatewayExecuteController`, `AwsServiceRouter` (keep JSON `integration.credentials`, query `invokeQuery` IAM, Lambda path routing, and CloudTrail audit)
-- Cognito: `CognitoService`, `CognitoAuthFlowHandler` (keep `InProcessTargetAuthorizer` on delivery paths; preserve revoked-token checks on global sign-out)
+- Cognito: `CognitoService`, `CognitoAuthFlowHandler` (keep `InProcessTargetAuthorizer` on delivery paths; preserve revoked-token checks on `AdminUserGlobalSignOut` / `GlobalSignOut` / `RevokeToken` and `jti` / `origin_jti`)
+- Step Functions: `AslExecutor`, `JsonataEvaluator` (keep `InProcessIamAuthorizer` and CloudTrail on aws-sdk tasks across JSONata `Assign`)
 - EC2: `Ec2Service`, `Ec2QueryHandler`, `Ec2ContainerManager`, `Ec2MetadataServer` (flow logs + persisted spot requests; Network ACL storage; empty `stateReason` omission)
 - APIGW v2: `ApiGatewayV2Service` (cascade delete)
 - CloudFormation: `SamTransformProcessor`, `CloudFormationResourceProvisioner` (SAM Globals, implicit Api)

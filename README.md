@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.32**, latest merge `f93e0290`, 2026-07-11) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.32** plus tip `483cc5b1`, merged 2026-07-12) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -274,11 +274,11 @@ For operation-level compatibility, see the [Services Overview](https://floci.io/
 | AWS IoT Core | In-process + MQTT broker | Thing/certificate/policy lifecycle, device shadows, topic rules, IoT Data publish; embedded Vert.x MQTT broker |
 | IAM | In-process | Users, roles, groups, policies, instance profiles, access keys |
 | STS | In-process | AssumeRole, WebIdentity, SAML, GetFederationToken, GetSessionToken |
-| Cognito | In-process | User pools, app clients, auth flows, JWKS and OpenID well-known endpoints; `AdminUserGlobalSignOut` revokes access and refresh tokens |
+| Cognito | In-process | User pools, app clients, auth flows, JWKS and OpenID well-known endpoints; `AdminUserGlobalSignOut`, `GlobalSignOut`, and `RevokeToken` with `jti` / `origin_jti` revocation |
 | KMS | In-process | Encrypt, decrypt, sign, verify, data keys, aliases; typed `KeySpec` / `KeyUsage` enums and signing algorithms in key metadata |
 | Kinesis | In-process | Streams, shards, enhanced fan-out, split and merge |
 | Secrets Manager | In-process | Versioning, resource policies, tagging, automatic rotation lifecycle via Lambda |
-| Step Functions | In-process | ASL execution, task tokens, execution history |
+| Step Functions | In-process | ASL execution, task tokens, execution history, JSONata `Assign` workflow variables |
 | CloudFormation | In-process | Stacks, change sets, resource provisioning, StackSets (cross-account instances), SAM Globals merge, implicit API from Api events |
 | EventBridge | In-process | Custom buses, rules, SQS, SNS and Lambda targets |
 | EventBridge Pipes | In-process | Poller-based integration connecting SQS, Kinesis, DynamoDB Streams, and MSK/Kafka (`smk://`) sources to targets with optional filtering |
@@ -496,6 +496,15 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (6 commits through **`483cc5b1`**, post **1.5.32**, pom still **1.5.32**, merged 2026-07-12):
+
+| Area | Change |
+|---|---|
+| Cognito | `GlobalSignOut` and `RevokeToken`; issued tokens carry `jti` / `origin_jti` for revocation |
+| S3 | `GetBucketEncryption` returns default SSE-S3 when no config is set; `DeleteBucketReplication` no longer deletes the bucket |
+| Step Functions | JSONata workflow variables via ASL `Assign` |
+| API Gateway | Regression coverage for request-header forwarding on `_user_request_` |
+
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (23 commits through **`f93e0290`**, release **1.5.32**, merged 2026-07-11):
 
 | Area | Change |
@@ -672,7 +681,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.32** (latest `f93e0290`, merged 2026-07-11). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `LaunchedContainerAwsEnv` / `OperatorCredentialEnv` (no `test`/`test`), `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, `InProcessTargetAuthorizer` on delivery paths, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.32 plus tip `483cc5b1`** (merged 2026-07-12, no 1.5.33 tag yet). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `LaunchedContainerAwsEnv` / `OperatorCredentialEnv` (no `test`/`test`), `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, `InProcessTargetAuthorizer` on delivery paths (including Cognito), `AslExecutor` in-process IAM + CloudTrail, or the SNS default-topic-policy gate when IAM enforcement is on.
 
 **High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `LaunchedContainerAwsEnv.java`, `ContainerLauncher.java`, `EcsContainerManager.java` (must keep `ContainerEnvHardening` and container credential servers), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `EventBridgeInvoker.java`, `PipesPoller.java`, `EcrRegistryManager.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 
