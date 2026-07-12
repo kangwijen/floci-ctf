@@ -1,0 +1,73 @@
+# STS / IAM
+GetCallerIdentity
+AssumeRole
+AssumeRoleWithWebIdentity
+AssumeRoleWithSAML
+GetSessionToken
+GetFederationToken
+ListUsers
+CreateUser
+CreateAccessKey
+GetPolicyVersion
+CreatePolicyVersion
+AttachUserPolicy
+# SQS / SNS
+ReceiveMessage
+SendMessage
+ListQueues
+PurgeQueue
+DeleteMessage
+ChangeMessageVisibility
+Publish
+Subscribe
+Unsubscribe
+ListTopics
+CreateTopic
+DeleteTopic
+GetTopicAttributes
+# CloudFormation
+DescribeStacks
+CreateStack
+DeleteStack
+UpdateStack
+DescribeStackEvents
+# EC2
+DescribeInstances
+RunInstances
+TerminateInstances
+CreateVpc
+DescribeVpcs
+CreateSubnet
+CreateSecurityGroup
+CreateNetworkAcl
+DescribeNetworkAcls
+CreateVolume
+DescribeImages
+# RDS / DocDB / Neptune
+DescribeDBInstances
+CreateDBInstance
+DescribeDBClusters
+CreateDBCluster
+# ElastiCache
+DescribeCacheClusters
+CreateCacheCluster
+DescribeReplicationGroups
+# ELBv2 / Auto Scaling / Elastic Beanstalk
+DescribeLoadBalancers
+CreateLoadBalancer
+DescribeTargetGroups
+DescribeAutoScalingGroups
+CreateAutoScalingGroup
+DescribeEnvironments
+CreateEnvironment
+# SES v1
+SendEmail
+SendRawEmail
+ListIdentities
+VerifyEmailIdentity
+DescribeConfigurationSet
+# CloudWatch (Query protocol)
+GetMetricStatistics
+ListMetrics
+PutMetricAlarm
+DescribeAlarms

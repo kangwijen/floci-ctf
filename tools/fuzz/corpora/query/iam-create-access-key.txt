@@ -1,0 +1,5 @@
+Action=CreateAccessKey&Version=2010-05-08&UserName=fuzz-participant
+Action=CreateAccessKey&Version=2010-05-08&UserName=participant-user
+Action=ListUsers&Version=2010-05-08&MaxItems=100
+Action=GetUser&Version=2010-05-08&UserName=fuzz-participant
+Action=CreateUser&Version=2010-05-08&UserName=fuzz-new-user

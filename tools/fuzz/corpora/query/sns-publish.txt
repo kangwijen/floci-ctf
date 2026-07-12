@@ -1,0 +1,4 @@
+Action=Publish&Version=2010-03-31&TopicArn=arn:aws:sns:us-east-1:000000000000:fuzz-topic&Message=hello-fuzz&Subject=fuzz
+Action=Publish&Version=2010-03-31&TopicArn=arn:aws:sns:us-east-1:111111111111:alerts&Message=%7B%22event%22%3A%22test%22%7D&MessageStructure=json
+Action=Publish&Version=2010-03-31&TargetArn=arn:aws:sns:us-east-1:000000000000:endpoint%2FAPNS%2Fapp%2F00000000-0000-0000-0000-000000000000&Message=push
+Action=Subscribe&Version=2010-03-31&TopicArn=arn:aws:sns:us-east-1:000000000000:fuzz-topic&Protocol=sqs&Endpoint=arn:aws:sqs:us-east-1:000000000000:fuzz-queue

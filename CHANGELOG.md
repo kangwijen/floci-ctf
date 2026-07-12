@@ -38,7 +38,8 @@ Upstream has not tagged **1.5.33** yet. The following items are from post-**1.5.
 - **athena / duck / s3select:** under IAM enforcement, Duck and S3 Select no longer use operator S3 keys (`AthenaDuckOperatorS3BypassIntegrationTest`)
 - **in-process:** IAM on IoT rules, Secrets Manager rotation, CodePipeline actions, CloudFormation `Custom::`, and Step Functions `ecs:runTask` plus Map `ItemReader` S3 (`InProcessTargetAuthorizerTest`)
 - **iam:** ASIA session account is used when building IAM resource ARNs (`IamEnforcementFilterTest`)
-- **iam:** expanded S3 route-scope overclaim exclusions (`IamActionRegistryTest`)
+- **iam:** expanded S3 route-scope overclaim exclusions without treating every `/lambda*` path as non-S3 (`IamActionRegistryTest`; Function URL prefix `/lambda-url` only)
+- **auth:** SigV4 still verifies Authorization on `/_floci/*` operator routes when signatures are required so root bypass stays tied to `SIGV4_VERIFIED` (`CloudTrailEventInjectionIntegrationTest`)
 - **eventbridge:** `StartReplay` requires same-bus destination (`EventBridgeReplayIntegrationTest`)
 - **rds-data:** sanitize database name in JDBC URLs (`RdsDataConnectionFactoryTest`)
 

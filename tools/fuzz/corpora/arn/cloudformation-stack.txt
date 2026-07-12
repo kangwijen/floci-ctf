@@ -1,0 +1,4 @@
+Action=DescribeStacks&Version=2010-05-15&StackName=fuzz-stack
+Action=CreateStack&Version=2010-05-15&StackName=fuzz-stack&TemplateBody=%7B%22AWSTemplateFormatVersion%22%3A%222010-09-09%22%2C%22Resources%22%3A%7B%7D%7D
+Action=DeleteStack&Version=2010-05-15&StackName=fuzz-stack
+Action=UpdateStack&Version=2010-05-15&StackName=fuzz-stack&UsePreviousTemplate=true

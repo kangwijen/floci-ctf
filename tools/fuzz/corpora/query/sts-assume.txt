@@ -1,0 +1,5 @@
+Action=AssumeRole&Version=2011-06-15&RoleArn=arn:aws:iam::000000000000:role/fuzz-reader&RoleSessionName=fuzz-session&DurationSeconds=3600
+Action=AssumeRole&Version=2011-06-15&RoleArn=arn:aws:iam::222222222222:role/cross-account-reader&RoleSessionName=cross&ExternalId=fuzz-external-id
+Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=arn:aws:iam::000000000000:role/oidc-reader&RoleSessionName=oidc&WebIdentityToken=eyJhbGciOiJub25lIn0.e30.
+Action=GetSessionToken&Version=2011-06-15&DurationSeconds=900
+Action=GetCallerIdentity&Version=2011-06-15

@@ -1,0 +1,6 @@
+/health
+/_floci/health
+/_localstack/health
+/_aws/cloudformation/ready
+/oauth2/token
+/oauth2/userInfo

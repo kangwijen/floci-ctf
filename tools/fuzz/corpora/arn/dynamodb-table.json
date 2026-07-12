@@ -1,0 +1,7 @@
+{
+  "TableName": "fuzz-orders",
+  "IndexName": "gsi-status",
+  "Key": {
+    "pk": { "S": "order-1" }
+  }
+}

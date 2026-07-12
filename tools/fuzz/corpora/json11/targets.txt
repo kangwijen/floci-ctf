@@ -1,0 +1,96 @@
+# DynamoDB
+DynamoDB_20120810.GetItem
+DynamoDB_20120810.PutItem
+DynamoDB_20120810.Query
+DynamoDB_20120810.ExecuteStatement
+DynamoDB_20120810.BatchExecuteStatement
+DynamoDBStreams_20120810.DescribeStream
+DynamoDBStreams_20120810.GetRecords
+# KMS
+TrentService.Decrypt
+TrentService.Encrypt
+TrentService.GenerateDataKey
+# Secrets Manager
+secretsmanager.GetSecretValue
+secretsmanager.PutSecretValue
+secretsmanager.RotateSecret
+# EventBridge
+AWSEvents.PutEvents
+AWSEvents.PutRule
+AWSEvents.StartReplay
+AWSEvents.DescribeReplay
+# SSM
+AmazonSSM.GetParameter
+AmazonSSM.PutParameter
+AmazonSSMMessageDeliveryService.AcknowledgeMessage
+# Step Functions
+AWSStepFunctions.StartExecution
+AWSStepFunctions.DescribeExecution
+# CloudTrail
+com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents
+com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.StopLogging
+CloudTrail_20131101.LookupEvents
+CloudTrail_20131101.StopLogging
+# Athena
+AmazonAthena.StartQueryExecution
+AmazonAthena.CreateWorkGroup
+# CodeBuild / CodeDeploy / CodePipeline
+CodeBuild_20161006.BatchGetProjects
+CodeDeploy_20141006.GetDeployment
+CodePipeline_20150709.GetPipeline
+CodePipeline_20150709.StartPipelineExecution
+# Firehose / Glue
+Firehose_20150804.PutRecord
+Firehose_20150804.CreateDeliveryStream
+AWSGlue.GetDatabase
+AWSGlue.CreateTable
+# EKS (JSON control plane)
+AmazonEKSV3.DescribeCluster
+# GuardDuty / Config / Security Hub
+GuardDuty_2017-11-28.GetFindings
+GuardDuty_2017-11-28.GetDetector
+StarlingDoveService.PutConfigRule
+StarlingDoveService.DescribeConfigRules
+AWSSecurityHub.GetFindings
+AWSSecurityHub.BatchImportFindings
+# Cognito
+AWSCognitoIdentityProviderService.AdminGetUser
+AWSCognitoIdentityProviderService.InitiateAuth
+# Kinesis / Logs / CloudWatch metrics
+Kinesis_20131202.PutRecord
+Kinesis_20131202.DescribeStream
+Logs_20140328.CreateLogGroup
+Logs_20140328.PutLogEvents
+GraniteServiceVersion20100801.PutMetricData
+GraniteServiceVersion20100801.GetMetricData
+# ECS / ECR / ACM
+AmazonEC2ContainerServiceV20141113.DescribeClusters
+AmazonEC2ContainerRegistry_V20150921.DescribeRepositories
+CertificateManager.DescribeCertificate
+# EMR / WAFv2
+ElasticMapReduce.DescribeCluster
+ElasticMapReduce.TerminateJobFlows
+AWSWAF_20190729.GetWebACL
+AWSWAF_20190729.CreateWebACL
+# API Gateway v2
+AmazonApiGatewayV2.GetApi
+AmazonApiGatewayV2.CreateApi
+# Service Discovery (Cloud Map)
+Route53AutoNaming_v20170314.GetService
+Route53AutoNaming_v20170314.CreateService
+# MemoryDB / Lightsail / Cloud Control
+AmazonMemoryDB.DescribeClusters
+Lightsail_20161128.GetInstance
+CloudApiService.GetResource
+# Transfer / Transcribe / Textract
+TransferService.DescribeServer
+Transcribe.GetTranscriptionJob
+Textract.GetDocumentTextDetection
+# Cost / billing
+AWSPriceListService.GetProducts
+AWSInsightsIndexService.GetCostAndUsage
+AWSOrigamiServiceGatewayService.PutReportDefinition
+AWSBillingAndCostManagementDataExports.GetExport
+# Tagging
+ResourceGroupsTaggingAPI_20170126.TagResources
+ResourceGroupsTaggingAPI_20170126.GetResources

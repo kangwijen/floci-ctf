@@ -1,0 +1,564 @@
+version: 1
+
+stages:
+  - unit-parsers
+  - unit-bypass
+  - operator-http
+  - operator-nonhttp
+  - operator-delivery
+
+# Inventory: 70 entries (69 AWS service packages under services/ plus floci internal).
+# Unit class names verified under tools/fuzz/unit/ and tools/fuzz/operator/.
+# Use "arn-matrix" when ResourceArnBuilderScopedFuzzTest covers the IAM scope via FuzzCredentialScopes.
+# Use "protocol-smoke" when only ServiceProtocolCampaignTest unsigned REST/JSON/Query probes apply.
+# Use "none" when no direct fuzz target exists yet.
+
+services:
+  acm:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: no dedicated acm corpus or signed differential
+
+  amazonmq:
+    protocol: [rest]
+    unit: [CatalogOnlyScopeFuzzTest, ThinRestServicePathFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: no arn-matrix scope (catalog-only wildcard)
+
+  apigateway:
+    protocol: [rest, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, ZipAndVtlFuzzTest, InProcessAuthorizerFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt, scopes/all-scopes.txt]
+    gaps: execute-api stage invoke unsigned smoke only via rest corpus
+
+  apigatewayv2:
+    protocol: [json11, rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt, json11/targets.txt]
+    gaps: v2 route IAM split relies on unit Json11Split test
+
+  appconfig:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: appconfigdata session paths not in operator corpus
+
+  appsync:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, ZipAndVtlFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: GraphQL resolver auth not operator-fuzzed
+
+  athena:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [NonHttpCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/athena-start.json, json11/targets.txt]
+    gaps: Duck operator S3 path covered only by unsigned smoke
+
+  autoscaling:
+    protocol: [query]
+    unit: [arn-matrix, IamActionRegistryFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: no dedicated autoscaling corpus
+
+  backup:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: vault policy resource smoke only
+
+  batch:
+    protocol: [rest]
+    unit: [CatalogOnlyScopeFuzzTest, ThinRestServicePathFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: no arn-matrix (catalog-only wildcard)
+
+  bcmdataexports:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: Parquet delivery in-process only via InProcessDeliveryMatrix
+
+  bedrockruntime:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: converse vs invoke paths share one operator test
+
+  ce:
+    protocol: [json11]
+    unit: [IntentionalWildcardScopeFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: intentional wildcard only (no per-resource ARN)
+
+  cloudcontrol:
+    protocol: [json11]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: catalog-only wildcard; thin json11 target list
+
+  cloudformation:
+    protocol: [query, in-process]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, IamActionRegistryFuzzTest, InProcessAuthorizerFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/cloudformation-stack.txt, query/actions.txt]
+    gaps: Custom resource delivery not operator-fuzzed
+
+  cloudfront:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: invalidation scoped ARN not in operator corpus
+
+  cloudmap:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: no dedicated cloudmap corpus
+
+  cloudtrail:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/cloudtrail-stop.json, json11/targets.txt]
+    gaps: audit injection API not fuzzed
+
+  cloudwatch:
+    protocol: [query, json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: metrics query vs logs json11 split thin
+
+  codebuild:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, SecurityBypassAndEnvFuzzTest]
+    operator: [ContainerCredentialsCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: blank serviceRole operator path relies on src/test regressions
+
+  codedeploy:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: no dedicated codedeploy operator probe
+
+  codepipeline:
+    protocol: [json11, in-process]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, InProcessAuthorizerFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: catalog-only wildcard; stage action IAM not operator-fuzzed
+
+  cognito:
+    protocol: [json11, rest, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, PathClassificationMatrixFuzzTest, SecurityBypassAndEnvFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt, json11/targets.txt]
+    gaps: OAuth token path classification only at unit layer
+
+  configservice:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: snapshot delivery S3 path in-process only
+
+  cur:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: billingreports delivery not operator-fuzzed
+
+  docdb:
+    protocol: [query, tcp]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest]
+    operator: [NonHttpCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: catalog-only wildcard; TCP wire auth not fuzzed
+
+  dynamodb:
+    protocol: [json11]
+    unit: [arn-matrix, ResourceArnBuilderPartiqlFuzzTest, ResourceArnBuilderFuzzTest, ResourceArnBuilderJazzerTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/dynamodb-table.json, json11/ddb-get.json, json11/ddb-put.json, json11/ddb-partiql-join.json, json11/targets.txt, policy/allow-one-table.json]
+    gaps: streams scoped ARN not in dedicated corpus
+
+  ec2:
+    protocol: [query, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: flow log delivery unsigned provisioning not probed
+
+  ecr:
+    protocol: [json11, rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, IamActionRegistryRestRulesFuzzTest, EcrRegistryPathFuzzTest, EcrRegistryAuthFuzzTest]
+    operator: [ServiceProtocolCampaignTest, NonHttpCampaignTest]
+    corpora: [rest/paths.txt, json11/targets.txt, json11/ecr-describe.json]
+    gaps: signed /v2 participant differential when FUZZ_PARTICIPANT_* set (SignedDifferentialCampaignTest covers HTTP SigV4 services only)
+
+  ecs:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, SecurityBypassAndEnvFuzzTest]
+    operator: [ContainerCredentialsCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: RunTask in-process IAM not operator-fuzzed
+
+  eks:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: token webhook SigV4 not in fuzz harness
+
+  elasticache:
+    protocol: [query, tcp]
+    unit: [arn-matrix, IamActionRegistryFuzzTest]
+    operator: [NonHttpCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: TCP token SigV4 not fuzzed at operator layer
+
+  elasticbeanstalk:
+    protocol: [query]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: catalog-only wildcard
+
+  elbv2:
+    protocol: [query, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: no dedicated elbv2 corpus
+
+  emr:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: multi-cluster JobFlowIds not in operator corpus
+
+  eventbridge:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, InProcessAuthorizerFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [DeliveryCampaignTest, DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/events-put.json, json11/targets.txt, delivery/target-arns.txt]
+    gaps: archive replay cross-bus scope unit-only
+
+  firehose:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: extended S3 destination IAM not operator-fuzzed
+
+  floci:
+    protocol: [rest]
+    unit: [PathClassificationMatrixFuzzTest, SecurityBypassAndEnvFuzzTest, AccountAndIpFuzzTest]
+    operator: [HttpDifferentialCampaignTest]
+    corpora: [paths/internal.txt, rest/paths.txt]
+    gaps: state reset and injection controllers not property-fuzzed
+
+  glue:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: no dedicated glue corpus
+
+  guardduty:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt, rest/paths.txt]
+    gaps: detector REST path in corpus but unsigned only
+
+  iam:
+    protocol: [query]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, IamActionRegistryFuzzTest, IamPolicyAndPrincipalFuzzTest, IamSessionAndResourcePolicyFuzzTest, FederatedTokenParserFuzzTest, SigV4RequestValidatorFuzzTest, SigV4CredentialSmugglingFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt, query/iam-create-access-key.txt, query/sts-assume.txt, arn/sts-assume-role.txt, policy/allow-star.json, policy/resource-root-principal.json, policy/session-allow-s3.json, scopes/all-scopes.txt]
+    gaps: STS federated unsigned path relies on unit FederatedTokenParser
+
+  iot:
+    protocol: [rest, mqtt]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [NonHttpCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: MQTT CONNECT accepted without IAM in product; operator hang-only until broker gates auth
+
+  kinesis:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: catch-all REST mis-route closed in src/test not re-fuzzed here
+
+  kms:
+    protocol: [json11]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/kms-key.json, json11/kms-decrypt.json, json11/targets.txt]
+    gaps: grant fallback in-process only
+
+  lambda:
+    protocol: [rest, in-process]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, ZipAndVtlFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, SecurityBypassAndEnvFuzzTest, InProcessAuthorizerFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [PresignAndAnonymousCampaignTest, DeliveryCampaignTest, ContainerCredentialsCampaignTest, HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/lambda-function.json, rest/paths.txt]
+    gaps: blank Role operator cred injection covered in src/test not operator fuzz
+
+  lightsail:
+    protocol: [json11]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: catalog-only wildcard
+
+  memorydb:
+    protocol: [tcp]
+    unit: [CatalogOnlyScopeFuzzTest, IamActionRegistryFuzzTest, TcpAuthTokenFuzzTest]
+    operator: [NonHttpCampaignTest]
+    corpora: [tcp/tokens.txt]
+    gaps: catalog-only wildcard; operator AUTH hang-only when proxy down
+
+  msk:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: Kafka pipe source not operator-fuzzed
+
+  neptune:
+    protocol: [query, tcp]
+    unit: [arn-matrix, IamActionRegistryFuzzTest]
+    operator: [NonHttpCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt, rest/paths.txt]
+    gaps: openCypher TCP auth not fuzzed
+
+  opensearch:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: domain policy differential thin
+
+  pipes:
+    protocol: [rest, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, InProcessAuthorizerFuzzTest]
+    operator: [DeliveryCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt, delivery/target-arns.txt]
+    gaps: MSK source pipe not in operator corpus
+
+  pricing:
+    protocol: [json11]
+    unit: [IntentionalWildcardScopeFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: intentional wildcard only (no per-resource ARN)
+
+  rds:
+    protocol: [query, tcp]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, TcpAuthTokenFuzzTest]
+    operator: [NonHttpCampaignTest, HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt, tcp/tokens.txt]
+    gaps: operator Postgres IAM wire not probed (RDS proxy hang-only on open ports)
+
+  rdsdata:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: JDBC URL injection covered in src/test not fuzz corpus
+
+  resourcegroupstagging:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: multi-ARN TagResources unit-only via arn-matrix
+
+  route53:
+    protocol: [rest]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: health check paths not in corpus
+
+  s3:
+    protocol: [rest, in-process]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, ResourceArnBuilderJazzerTest, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, IamPolicyAndPrincipalFuzzTest, IamSessionAndResourcePolicyFuzzTest, SigV4RequestValidatorFuzzTest, SigV4aAndPresignPathFuzzTest, PresignedPostConditionFuzzTest, PathClassificationMatrixFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, PresignAndAnonymousCampaignTest, ServiceProtocolCampaignTest, DeliveryProvisionSmokeCampaignTest, SignedDifferentialCampaignTest]
+    corpora: [policy/deny-s3.json, policy/session-allow-s3.json, rest/paths.txt, presign/post-policies.txt]
+    gaps: live presigned POST allow path needs FUZZ_PRESIGN_* and provisioned bucket
+
+  s3vectors:
+    protocol: [rest]
+    unit: [CatalogOnlyScopeFuzzTest, ThinRestServicePathFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: no arn-matrix (catalog-only wildcard); s3vectors paths excluded from S3 route inference
+
+  scheduler:
+    protocol: [rest, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryRestRulesFuzzTest, InProcessAuthorizerFuzzTest]
+    operator: [DeliveryProvisionSmokeCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [rest/paths.txt]
+    gaps: ECS RunTask target not operator-fuzzed
+
+  secretsmanager:
+    protocol: [json11]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest, SignedDifferentialCampaignTest]
+    corpora: [arn/secrets-path.json, json11/secrets-name.json, json11/secrets-path.json, json11/targets.txt]
+    gaps: KMS envelope rotation not in fuzz corpora
+
+  securityhub:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: ASFF batch import multi-ARN unit-only
+
+  ses:
+    protocol: [query, rest, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [query/actions.txt]
+    gaps: v2 REST paths thin in rest corpus
+
+  sns:
+    protocol: [query, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamPolicyAndPrincipalFuzzTest, InProcessAuthorizerFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, DeliveryCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/sns-topic.json, query/sns-publish.txt, query/actions.txt, policy/resource-allow-sqs.json]
+    gaps: topic :root principal oracle unit-only
+
+  sqs:
+    protocol: [query, json11, in-process]
+    unit: [arn-matrix, ResourceArnBuilderFuzzTest, IamActionRegistryFuzzTest, IamPolicyAndPrincipalFuzzTest, InProcessAuthorizerFuzzTest, InProcessDeliveryMatrixFuzzTest]
+    operator: [HttpDifferentialCampaignTest, ServiceProtocolCampaignTest]
+    corpora: [arn/sqs-queueurl.json, query/sqs-receive.txt, query/actions.txt, policy/resource-allow-sqs.json]
+    gaps: JSON 1.1 ReceiveMessage scoped via unit only
+
+  ssm:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [arn/ssm-get-parameter.json, json11/ssm-get.json, json11/targets.txt]
+    gaps: ec2messages json11 split not dedicated
+
+  stepfunctions:
+    protocol: [json11, in-process]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest, InProcessAuthorizerFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: aws-sdk nested task IAM matrix unit-only
+
+  textract:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: sync detect wildcard not in corpus
+
+  transcribe:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: no dedicated transcribe corpus
+
+  transfer:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt]
+    gaps: SFTP data plane not fuzzed
+
+  wafv2:
+    protocol: [json11]
+    unit: [arn-matrix, IamActionRegistryFuzzTest, IamActionRegistryJson11SplitFuzzTest]
+    operator: [ServiceProtocolCampaignTest]
+    corpora: [json11/targets.txt, rest/paths.txt]
+    gaps: regional vs cloudfront scope not split in operator
+
+# Cross-cutting unit targets (not tied to one service row above)
+cross_cutting:
+  unit_parsers:
+    - ResourceArnBuilderFuzzTest
+    - ResourceArnBuilderScopedFuzzTest
+    - ResourceArnBuilderPartiqlFuzzTest
+    - ResourceArnBuilderJazzerTest
+    - IntentionalWildcardScopeFuzzTest
+    - CatalogOnlyScopeFuzzTest
+    - ThinRestServicePathFuzzTest
+    - IamActionRegistryFuzzTest
+    - IamActionRegistryJson11SplitFuzzTest
+    - IamActionRegistryRestRulesFuzzTest
+    - IamPolicyAndPrincipalFuzzTest
+    - IamSessionAndResourcePolicyFuzzTest
+    - SigV4RequestValidatorFuzzTest
+    - SigV4CredentialSmugglingFuzzTest
+    - SigV4aAndPresignPathFuzzTest
+    - PresignedPostConditionFuzzTest
+    - FederatedTokenParserFuzzTest
+    - ZipAndVtlFuzzTest
+    - AccountAndIpFuzzTest
+    - EcrRegistryPathFuzzTest
+    - EcrRegistryAuthFuzzTest
+    - TcpAuthTokenFuzzTest
+  unit_bypass:
+    - SecurityBypassAndEnvFuzzTest
+    - PathClassificationMatrixFuzzTest
+    - InProcessAuthorizerFuzzTest
+    - InProcessDeliveryMatrixFuzzTest
+    - InProcessSfnSdkMatrixFuzzTest
+    - BlankRoleOperatorEnvFuzzTest
+  operator_http:
+    - HttpDifferentialCampaignTest
+    - ServiceProtocolCampaignTest
+    - PresignAndAnonymousCampaignTest
+    - SignedDifferentialCampaignTest
+    - InternalEndpointCampaignTest
+  operator_nonhttp:
+    - NonHttpCampaignTest
+    - ContainerCredentialsCampaignTest
+  operator_delivery:
+    - DeliveryCampaignTest
+    - DeliveryProvisionSmokeCampaignTest
+
+corpora_index:
+  arn: corpora/arn/
+  json11: corpora/json11/
+  query: corpora/query/
+  rest: corpora/rest/paths.txt
+  policy: corpora/policy/
+  delivery: corpora/delivery/
+  paths_internal: corpora/paths/internal.txt
+  paths_internal_mutating: corpora/paths/internal-mutating.txt
+  scopes: corpora/scopes/all-scopes.txt
+  catalog_scopes: corpora/scopes/catalog-scopes.txt
+  tcp: corpora/tcp/tokens.txt
+  presign: corpora/presign/

@@ -1,0 +1,1 @@
+{"ServiceCode":"AmazonEC2","Filters":[{"Field":"instanceType","Value":"t3.micro"}]}

@@ -1,0 +1,7 @@
+# Internal operator / mutating paths (CTF hide mode)
+/_floci/state/reset
+/_floci/cloudtrail/events
+/_floci/cloudtrail/events/batch
+/_localstack/init
+/_localstack/state/reset
+/_aws/cloudformation/ready

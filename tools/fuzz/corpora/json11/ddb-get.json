@@ -1,0 +1,8 @@
+{
+  "TableName": "fuzz-orders",
+  "Key": {
+    "pk": { "S": "order-1" },
+    "sk": { "S": "meta" }
+  },
+  "ConsistentRead": true
+}

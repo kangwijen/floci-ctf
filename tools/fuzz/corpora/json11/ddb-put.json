@@ -1,0 +1,10 @@
+{
+  "TableName": "fuzz-orders",
+  "Item": {
+    "pk": { "S": "order-1" },
+    "sk": { "S": "meta" },
+    "amount": { "N": "42" },
+    "status": { "S": "OPEN" }
+  },
+  "ReturnValues": "NONE"
+}

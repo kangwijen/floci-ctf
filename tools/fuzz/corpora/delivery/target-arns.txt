@@ -1,0 +1,15 @@
+arn:aws:lambda:us-east-1:000000000000:function:fuzz-fn
+arn:aws:sqs:us-east-1:000000000000:fuzz-queue
+arn:aws:sns:us-east-1:000000000000:fuzz-topic
+arn:aws:kinesis:us-east-1:000000000000:stream/fuzz-stream
+arn:aws:states:us-east-1:000000000000:stateMachine:fuzz-sfn
+arn:aws:events:us-east-1:000000000000:event-bus/default
+arn:aws:events:us-east-1:000000000000:event-bus/fuzz-bus
+arn:aws:s3:::fuzz-delivery-bucket
+arn:aws:s3:::fuzz-delivery-bucket/prefix/key.json
+arn:aws:firehose:us-east-1:000000000000:deliverystream/fuzz-stream
+arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/fuzz-fn:*
+arn:aws:dynamodb:us-east-1:000000000000:table/fuzz-orders
+arn:aws:ecs:us-east-1:000000000000:task-definition/fuzz-task:1
+arn:aws:pipes:us-east-1:000000000000:pipe/fuzz-pipe
+arn:aws:scheduler:us-east-1:000000000000:schedule/default/fuzz-schedule

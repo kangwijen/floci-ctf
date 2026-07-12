@@ -211,7 +211,7 @@ _(None from the former SigV4a / SAML X.509 / ECR data-plane / presigned POST ope
 | Duck / Athena / S3 Select uses operator S3 keys under IAM enforcement | Closed | `AthenaDuckOperatorS3BypassIntegrationTest` |
 | In-process IAM gaps (IoT rules, Secrets rotation, CodePipeline, CFN `Custom::`, SFN `ecs:runTask` + ItemReader S3) | Closed | `InProcessTargetAuthorizerTest` |
 | ASIA session account not used for IAM resource ARNs | Closed | `IamEnforcementFilterTest` |
-| S3 route-scope overclaim exclusions incomplete | Closed | `IamActionRegistryTest` |
+| S3 route-scope overclaim exclusions incomplete | Closed | `IamActionRegistryTest` (exclude `/lambda-url`, not `/lambda` prefix, so buckets like `lambda-*` stay S3-scoped) |
 | EventBridge `StartReplay` allows cross-bus destination | Closed | `EventBridgeReplayIntegrationTest` |
 | RDS Data database name JDBC URL injection | Closed | `RdsDataConnectionFactoryTest` |
 | JSON 1.1 SigV4 credential scope vs `X-Amz-Target` service split | Closed | `IamJson11CredentialScopeSplitIntegrationTest` |
@@ -468,6 +468,21 @@ cd compatibility-tests && just test-forensic-java
 
 On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docker_engine` when the configured default is `unix:///var/run/docker.sock` and `DOCKER_HOST` is unset. You can still set `DOCKER_HOST` explicitly before container tests if needed.
 
+### CTF fuzz harness (`tools/fuzz/`)
+
+Separate Maven project under [`tools/fuzz/`](./tools/fuzz/) (not part of default `./mvnw test`). Security-first oracles (auth bypass, policy under-scope, credential escalation, sandbox escape) plus crash/hang secondary.
+
+```bash
+./mvnw install -DskipTests
+./mvnw -f tools/fuzz/pom.xml test
+# or: ./tools/fuzz/scripts/run-unit.sh | run-unit.ps1
+
+# Live operator campaigns (CTF Compose + AWS_ENDPOINT_URL); never put root creds in corpora/
+./tools/fuzz/scripts/run-operator.sh
+```
+
+Details: [`tools/fuzz/README.md`](./tools/fuzz/README.md). Per-service matrix: [`tools/fuzz/coverage.yaml`](./tools/fuzz/coverage.yaml). Findings land in `tools/fuzz/findings/` then graduate to `src/test` PoC/regression tests.
+
 ---
 
 ## CI workflows
@@ -479,6 +494,8 @@ On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docke
 | `.github/workflows/ci.yml` | `dependency-scan` | Same triggers | Trivy `pom.xml` scan, CRITICAL/HIGH, report-only (`exit-code: 0`) |
 | `.github/workflows/compatibility.yml` | `compat-test` | PR (`compatibility-tests/**`, Dockerfiles) | Permissive Floci for upstream SDK parity |
 | `.github/workflows/compatibility.yml` | `ctf-compat-java` | Same triggers | `IamEnforcementTest` with IAM + strict + SigV4 env |
+
+The `tools/fuzz/` harness is operator/local only (not a CI job). Run via [`tools/fuzz/README.md`](./tools/fuzz/README.md).
 
 **Local CTF compat (broader than CI):** from `compatibility-tests/`, `just test-ctf-java` runs `IamEnforcementTest`, `CloudMapIamEnforcementIntegrationTest`, and `AppSyncIamEnforcementIntegrationTest` against a CTF-configured instance.
 

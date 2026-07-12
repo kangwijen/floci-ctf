@@ -1,0 +1,10 @@
+{
+  "QueryString": "SELECT * FROM fuzz_db.fuzz_table LIMIT 10",
+  "QueryExecutionContext": {
+    "Database": "fuzz_db"
+  },
+  "ResultConfiguration": {
+    "OutputLocation": "s3://fuzz-athena-results/out/"
+  },
+  "WorkGroup": "primary"
+}

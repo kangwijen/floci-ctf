@@ -1,0 +1,15 @@
+# Malformed ElastiCache / MemoryDB IAM auth tokens (presigned URL without scheme)
+cache-cluster-01/?Action=connect
+cache-cluster-01/?Action=connect&User=default
+cache-cluster-01/?Action=connect&User=default&X-Amz-Signature=deadbeef
+cache-cluster-01/?Action=connect&User=default&X-Amz-Date=not-a-date&X-Amz-Expires=900&X-Amz-Credential=AKIATEST/20200101/us-east-1/elasticache/aws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=00
+?Action=connect&User=default
+../../../etc/passwd
+%00cache/?Action=connect&User=default
+# Malformed RDS IAM auth tokens (host:port/?...)
+db.example.local:5432/?Action=connect
+db.example.local:5432/?Action=connect&DBUser=admin
+db.example.local:5432/?Action=connect&DBUser=admin&X-Amz-Signature=deadbeef
+db.example.local/?Action=connect&DBUser=admin
+:5432/?Action=connect&DBUser=admin
+db.example.local:99999/?Action=connect&DBUser=admin

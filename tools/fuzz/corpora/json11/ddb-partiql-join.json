@@ -1,0 +1,4 @@
+{
+  "Statement": "SELECT o.pk, i.sk FROM \"fuzz-orders\" o JOIN \"fuzz-items\" i ON o.pk = i.pk WHERE o.pk = 'order-1'",
+  "ConsistentRead": false
+}

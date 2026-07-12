@@ -439,6 +439,14 @@ cd compatibility-tests && cp env.example .env
 just test-forensic-java
 ```
 
+CTF fuzz harness (parsers, validators, HTTP/non-HTTP/delivery campaigns): see [`tools/fuzz/README.md`](./tools/fuzz/README.md).
+
+```bash
+./mvnw install -DskipTests
+./tools/fuzz/scripts/run-unit.ps1
+# Operator (needs running Compose + AWS_ENDPOINT_URL): ./tools/fuzz/scripts/run-operator.ps1
+```
+
 Full map: [AGENTS.md audit services](./AGENTS.md#audit-services-map).
 
 ## Client tooling notes
@@ -490,6 +498,7 @@ On Windows with Docker Desktop, Floci auto-falls back to `npipe:////./pipe/docke
 | Compose CTF profile | [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile) |
 | Audit profile (CloudTrail, Config, storage) | [docs/services/cloudtrail.md](./docs/services/cloudtrail.md) |
 | Compatibility / SDK forensic probes | [compatibility-tests/README.md](./compatibility-tests/README.md) |
+| CTF fuzz harness | [tools/fuzz/README.md](./tools/fuzz/README.md) |
 | All `FLOCI_*` variables | [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md) |
 
 Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localstack/init` and `/_localstack/health` endpoints are still served. Once the emulator is up, the log also ends with a LocalStack-style `Ready.` line, so tooling that watches the log for it, such as the default wait strategy of Testcontainers' `LocalStackContainer`, works unchanged. Set `LOCALSTACK_PARITY=false` to opt out of automatic translation.

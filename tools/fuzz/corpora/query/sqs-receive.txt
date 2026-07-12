@@ -1,0 +1,4 @@
+Action=ReceiveMessage&Version=2012-11-05&QueueUrl=http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/fuzz-queue&MaxNumberOfMessages=1&WaitTimeSeconds=0&VisibilityTimeout=30
+Action=ReceiveMessage&Version=2012-11-05&QueueUrl=https://sqs.us-east-1.amazonaws.com/111111111111/orders&AttributeName.1=All&MessageAttributeName.1=All
+Action=ReceiveMessage&Version=2012-11-05&QueueUrl=http://localhost:4566/000000000000/dlq&MaxNumberOfMessages=10
+Action=ReceiveMessage&Version=2012-11-05&QueueName=fuzz-queue

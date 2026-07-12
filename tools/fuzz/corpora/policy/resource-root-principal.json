@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAccountRoot",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::000000000000:root"
+      },
+      "Action": [
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sns:Publish",
+        "s3:GetObject"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

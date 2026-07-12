@@ -1,0 +1,1 @@
+{"ResourceARNList":["arn:aws:s3:::fuzz-bucket","arn:aws:dynamodb:us-east-1:000000000000:table/fuzz-table"]}

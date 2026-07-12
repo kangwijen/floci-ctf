@@ -1,0 +1,9 @@
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[{"bucket":"fuzz-bucket"},{"eq":"$key","uploads/object.txt"}]}
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[["eq","$key","uploads/"],["starts-with","$key","uploads/"]]}
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[["in","$Content-Type",["text/plain","image/jpeg"]]]}
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[["not-eq","$acl","public-read"]]}
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[["content-length-range",0,10485760]]}
+{"expiration":"1990-01-01T00:00:00.000Z","conditions":[{"bucket":"fuzz-bucket"}]}
+not-json
+{"conditions":null}
+{"expiration":"2030-01-01T00:00:00.000Z","conditions":[["unknown-op","$key","x"]]}

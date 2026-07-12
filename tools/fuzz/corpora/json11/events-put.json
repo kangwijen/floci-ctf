@@ -1,0 +1,10 @@
+{
+  "Entries": [
+    {
+      "Source": "fuzz.ctf.local",
+      "DetailType": "FuzzEvent",
+      "Detail": "{\"action\":\"ping\",\"id\":1}",
+      "EventBusName": "default"
+    }
+  ]
+}

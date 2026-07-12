@@ -1,0 +1,1 @@
+Action=AssumeRole&RoleArn=arn:aws:iam::222222222222:role/app-reader-role&RoleSessionName=s
