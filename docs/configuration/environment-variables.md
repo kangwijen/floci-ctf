@@ -39,7 +39,7 @@ Floci is configured exclusively through environment variables. Every option belo
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2:PORT/v2/credentials/{token}` as `AWS_CONTAINER_CREDENTIALS_FULL_URI`; credential servers bind `0.0.0.0`. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers. `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` is omitted when the credential port is not 80 so botocore uses the explicit port in `FULL_URI` instead of link-local port 80 |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
 
-Spawned Lambda, ECS, and CodeBuild containers never receive baked-in `test`/`test` credentials. `LaunchedContainerAwsEnv` sets endpoint and region only; `OperatorCredentialEnv` adds `FLOCI_AUTH_ROOT_*` keys only when no execution/task/build role is configured. `ContainerEnvHardening` strips participant-supplied `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, and credential URI bypass variables from container env.
+Spawned Lambda, ECS, and CodeBuild containers never receive baked-in `test`/`test` credentials. `LaunchedContainerAwsEnv` sets endpoint and region only; `OperatorCredentialEnv` adds `FLOCI_AUTH_ROOT_*` keys only when no execution/task/build role is configured. Under IAM enforcement, Lambda and CodeBuild never fall back to host `AWS_*` for blank roles. `ContainerEnvHardening` strips participant-supplied `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, and credential URI bypass variables from container env.
 
 ### Audit profile (Compose defaults)
 

@@ -14,7 +14,8 @@ import jakarta.inject.Inject;
  * <ul>
  *   <li>Pipes and Scheduler: execution role identity policies on each downstream API</li>
  *   <li>EventBridge (no role): destination resource policies for {@code events.amazonaws.com}</li>
- *   <li>SNS, S3, SES, Logs, ELB, API Gateway, Cognito, CodeDeploy: destination resource policies</li>
+ *   <li>SNS, S3, SES, Logs, ELB, API Gateway, Cognito, CodeDeploy, CodePipeline,
+ *       CloudFormation custom resources: destination resource policies</li>
  *   <li>Lambda event source mappings: function execution role on polled sources</li>
  *   <li>CloudTrail: service principal {@code s3:GetBucketAcl} + {@code s3:PutObject}</li>
  *   <li>Config: service principal {@code s3:GetBucketAcl}, {@code s3:ListBucket}, {@code s3:PutObject}</li>
@@ -22,6 +23,8 @@ import jakarta.inject.Inject;
  *   <li>VPC flow logs: {@code delivery.logs.amazonaws.com} on bucket (same ACL + PutObject pattern as CloudTrail)</li>
  *   <li>BCM Data Exports: {@code bcm-data-exports.amazonaws.com} {@code s3:PutObject} only</li>
  *   <li>Legacy CUR: {@code billingreports.amazonaws.com} {@code s3:PutObject} + {@code s3:GetBucketPolicy}</li>
+ *   <li>IoT topic rules: {@code iot.amazonaws.com} on Lambda/SQS/SNS/Kinesis/DynamoDB/S3 destinations</li>
+ *   <li>Secrets Manager rotation: {@code secretsmanager.amazonaws.com} on rotation Lambda</li>
  * </ul>
  */
 @ApplicationScoped
@@ -36,6 +39,8 @@ public class InProcessTargetAuthorizer {
     public static final String APIGW_SERVICE = "apigateway.amazonaws.com";
     public static final String COGNITO_SERVICE = "cognito-idp.amazonaws.com";
     public static final String CODEDEPLOY_SERVICE = "codedeploy.amazonaws.com";
+    public static final String CODEPIPELINE_SERVICE = "codepipeline.amazonaws.com";
+    public static final String CLOUDFORMATION_SERVICE = "cloudformation.amazonaws.com";
     public static final String CONFIG_SERVICE = "config.amazonaws.com";
     public static final String CLOUDTRAIL_SERVICE = "cloudtrail.amazonaws.com";
     /** AWS CloudTrail S3 delivery canned ACL for trail log objects. */
@@ -46,6 +51,8 @@ public class InProcessTargetAuthorizer {
     public static final String BILLING_REPORTS_SERVICE = "billingreports.amazonaws.com";
     public static final String DELIVERY_LOGS_SERVICE = "delivery.logs.amazonaws.com";
     public static final String LOGGING_SERVICE = "logging.s3.amazonaws.com";
+    public static final String IOT_SERVICE = "iot.amazonaws.com";
+    public static final String SECRETS_MANAGER_SERVICE = "secretsmanager.amazonaws.com";
 
     private final InProcessIamAuthorizer iamAuthorizer;
     private final EmulatorConfig config;
@@ -323,9 +330,114 @@ public class InProcessTargetAuthorizer {
                 COGNITO_SERVICE, "lambda", "InvokeFunction", resolveLambdaArn(functionArnOrName, region), region);
     }
 
+    public void authorizeSecretsManagerLambdaInvoke(String functionArnOrName, String region) {
+        iamAuthorizer.authorizeServicePrincipal(
+                SECRETS_MANAGER_SERVICE, "lambda", "InvokeFunction",
+                resolveLambdaArn(functionArnOrName, region), region);
+    }
+
     public void authorizeCodeDeployLambdaInvoke(String functionArnOrName, String region) {
         iamAuthorizer.authorizeServicePrincipal(
                 CODEDEPLOY_SERVICE, "lambda", "InvokeFunction", resolveLambdaArn(functionArnOrName, region), region);
+    }
+
+    /**
+     * CodePipeline Lambda invoke action. Prefers an action (or pipeline) execution role identity
+     * policy when {@code roleArn} is present; otherwise requires a Lambda resource policy Allow for
+     * {@code codepipeline.amazonaws.com}.
+     */
+    public void authorizeCodePipelineLambdaInvoke(String functionArnOrName, String region) {
+        authorizeCodePipelineLambdaInvoke(functionArnOrName, region, null);
+    }
+
+    public void authorizeCodePipelineLambdaInvoke(String functionArnOrName, String region, String roleArn) {
+        String lambdaArn = resolveLambdaArn(functionArnOrName, region);
+        if (roleArn != null && !roleArn.isBlank()) {
+            iamAuthorizer.authorizeWithResource(roleArn, "lambda", "InvokeFunction", lambdaArn, region);
+        } else {
+            iamAuthorizer.authorizeServicePrincipal(
+                    CODEPIPELINE_SERVICE, "lambda", "InvokeFunction", lambdaArn, region);
+        }
+    }
+
+    public void authorizeCloudFormationLambdaInvoke(String functionArnOrName, String region) {
+        iamAuthorizer.authorizeServicePrincipal(
+                CLOUDFORMATION_SERVICE, "lambda", "InvokeFunction",
+                resolveLambdaArn(functionArnOrName, region), region);
+    }
+
+    /**
+     * IoT topic-rule delivery to Lambda, SQS, SNS, Kinesis, DynamoDB, or S3.
+     * Uses destination resource policies for {@code iot.amazonaws.com}, matching SNS/S3 notification gates.
+     *
+     * @param actionType one of {@code lambda}, {@code sqs}, {@code sns}, {@code kinesis},
+     *                   {@code dynamodb}, {@code s3}
+     * @param resourceArnOrUrl destination ARN, SQS queue URL, Kinesis stream name, DynamoDB table name,
+     *                         or {@code bucket/key} for S3
+     */
+    public void authorizeIotDelivery(String actionType, String resourceArnOrUrl, String region) {
+        if (actionType == null || actionType.isBlank() || resourceArnOrUrl == null || resourceArnOrUrl.isBlank()) {
+            return;
+        }
+        switch (actionType.toLowerCase()) {
+            case "lambda" -> iamAuthorizer.authorizeServicePrincipal(
+                    IOT_SERVICE, "lambda", "InvokeFunction",
+                    resolveLambdaArn(resourceArnOrUrl, region), region);
+            case "sqs" -> {
+                String queueArn = AwsArnUtils.queueUrlToArn(
+                        resourceArnOrUrl, region, config.defaultAccountId());
+                iamAuthorizer.authorizeServicePrincipal(
+                        IOT_SERVICE, "sqs", "SendMessage", queueArn, region);
+            }
+            case "sns" -> iamAuthorizer.authorizeServicePrincipal(
+                    IOT_SERVICE, "sns", "Publish", resourceArnOrUrl, region);
+            case "kinesis" -> {
+                String streamArn = resourceArnOrUrl.startsWith("arn:")
+                        ? resourceArnOrUrl
+                        : "arn:aws:kinesis:" + region + ":" + defaultAccountId() + ":stream/" + resourceArnOrUrl;
+                iamAuthorizer.authorizeServicePrincipal(
+                        IOT_SERVICE, "kinesis", "PutRecord", streamArn, region);
+            }
+            case "dynamodb" -> {
+                String tableArn = resourceArnOrUrl.startsWith("arn:")
+                        ? resourceArnOrUrl
+                        : "arn:aws:dynamodb:" + region + ":" + defaultAccountId() + ":table/" + resourceArnOrUrl;
+                iamAuthorizer.authorizeServicePrincipal(
+                        IOT_SERVICE, "dynamodb", "PutItem", tableArn, region);
+            }
+            case "s3" -> {
+                String bucketName;
+                String objectKey = null;
+                if (resourceArnOrUrl.startsWith("arn:aws:s3:::")) {
+                    String path = resourceArnOrUrl.substring("arn:aws:s3:::".length());
+                    int slash = path.indexOf('/');
+                    if (slash < 0) {
+                        bucketName = path;
+                    } else {
+                        bucketName = path.substring(0, slash);
+                        objectKey = path.substring(slash + 1);
+                    }
+                } else {
+                    int slash = resourceArnOrUrl.indexOf('/');
+                    if (slash < 0) {
+                        bucketName = resourceArnOrUrl;
+                    } else {
+                        bucketName = resourceArnOrUrl.substring(0, slash);
+                        objectKey = resourceArnOrUrl.substring(slash + 1);
+                    }
+                }
+                String objectResource = objectKey != null && !objectKey.isBlank()
+                        ? AwsArnUtils.Arn.of("s3", "", "", bucketName + "/" + objectKey).toString()
+                        : AwsArnUtils.Arn.of("s3", "", "", bucketName).toString() + "/*";
+                iamAuthorizer.authorizeServicePrincipal(
+                        IOT_SERVICE, "s3", "PutObject", objectResource, region);
+            }
+            default -> denyUnmappedTarget(IOT_SERVICE, resourceArnOrUrl);
+        }
+    }
+
+    private String defaultAccountId() {
+        return config.defaultAccountId() != null ? config.defaultAccountId() : "000000000000";
     }
 
     private void authorizeRoleTarget(String roleArn, String targetArn, String region) {

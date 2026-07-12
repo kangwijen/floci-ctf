@@ -257,8 +257,10 @@ public class ContainerLauncher {
                 env.add("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI="
                         + credentialsServer.credentialsRelativeUri(credentialToken));
             }
-        } else if (awsConfigPath.isEmpty()) {
+        } else if (awsConfigPath.isEmpty()
+                && !config.services().iam().enforcementEnabled()) {
             // Host operator credentials last so function env cannot override them.
+            // Never inject operator root when IAM enforcement is on (blank-role escalation).
             OperatorCredentialEnv.addIfPresent(env);
         }
         env.addAll(flociCaEnv(flociCaCert));

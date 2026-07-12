@@ -461,7 +461,11 @@ public class LambdaService {
             fn.setMemorySize(((Number) request.get("MemorySize")).intValue());
         }
         if (request.containsKey("Role")) {
-            fn.setRole((String) request.get("Role"));
+            String role = (String) request.get("Role");
+            if (role == null || role.isBlank()) {
+                throw new AwsException("InvalidParameterValueException", "Role is required", 400);
+            }
+            fn.setRole(role);
         }
         if (request.containsKey("Runtime")) {
             fn.setRuntime((String) request.get("Runtime"));

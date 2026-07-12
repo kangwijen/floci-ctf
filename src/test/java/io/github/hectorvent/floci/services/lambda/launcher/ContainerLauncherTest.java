@@ -79,11 +79,14 @@ class ContainerLauncherTest {
         EmulatorConfig.LambdaServiceConfig lambda = mock(EmulatorConfig.LambdaServiceConfig.class);
         EmulatorConfig.DockerConfig docker = mock(EmulatorConfig.DockerConfig.class);
 
+        EmulatorConfig.IamServiceConfig iam = mock(EmulatorConfig.IamServiceConfig.class);
         when(config.services()).thenReturn(services);
         lenient().when(config.ctf()).thenReturn(ctf);
         lenient().when(ctf.containerCredentialsUseLinkLocalUri()).thenReturn(false);
         lenient().when(ctf.containerCredentialsLinkLocalHost()).thenReturn("169.254.170.2");
         when(services.lambda()).thenReturn(lambda);
+        lenient().when(services.iam()).thenReturn(iam);
+        lenient().when(iam.enforcementEnabled()).thenReturn(false);
         when(lambda.dockerNetwork()).thenReturn(Optional.empty());
         lenient().when(lambda.awsConfigPath()).thenReturn(Optional.empty());
         lenient().when(lambda.containerCredentialsPort()).thenReturn(9171);

@@ -21,6 +21,7 @@ import io.github.hectorvent.floci.services.iot.model.IotThingType;
 import io.github.hectorvent.floci.services.iot.model.IotTopicRule;
 import io.github.hectorvent.floci.services.iot.model.Thing;
 import io.github.hectorvent.floci.services.dynamodb.DynamoDbService;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.kinesis.KinesisService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -76,6 +77,7 @@ public class IotService {
     private final KinesisService kinesisService;
     private final DynamoDbService dynamoDbService;
     private final LambdaService lambdaService;
+    private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
     public IotService(StorageFactory storageFactory,
@@ -89,7 +91,8 @@ public class IotService {
                         S3Service s3Service,
                         KinesisService kinesisService,
                         DynamoDbService dynamoDbService,
-                        LambdaService lambdaService) {
+                        LambdaService lambdaService,
+                        InProcessTargetAuthorizer targetAuthorizer) {
         this(storageFactory.create("iot", "iot-things.json", new TypeReference<Map<String, Thing>>() {}),
                 storageFactory.create("iot", "iot-certificates.json", new TypeReference<Map<String, IotCertificate>>() {}),
                 storageFactory.create("iot", "iot-policies.json", new TypeReference<Map<String, IotPolicy>>() {}),
@@ -104,7 +107,7 @@ public class IotService {
                 storageFactory.create("iot", "iot-thing-groups.json", new TypeReference<Map<String, IotThingGroup>>() {}),
                 storageFactory.create("iot", "iot-thing-group-memberships.json", new TypeReference<Map<String, Set<String>>>() {}),
                 config, regionResolver, objectMapper, publishEventRecorder, mqttBrokerService, sqsService, snsService,
-                s3Service, kinesisService, dynamoDbService, lambdaService);
+                s3Service, kinesisService, dynamoDbService, lambdaService, targetAuthorizer);
     }
 
     IotService(StorageBackend<String, Thing> thingStore,
@@ -131,6 +134,38 @@ public class IotService {
                   KinesisService kinesisService,
                   DynamoDbService dynamoDbService,
                   LambdaService lambdaService) {
+        this(thingStore, certificateStore, policyStore, policyAttachmentStore, thingPrincipalStore, shadowStore,
+                topicRuleStore, retainedMessageStore, jobStore, jobExecutionStore, thingTypeStore, thingGroupStore,
+                thingGroupMembershipStore, config, regionResolver, objectMapper, publishEventRecorder,
+                mqttBrokerService, sqsService, snsService, s3Service, kinesisService, dynamoDbService, lambdaService,
+                null);
+    }
+
+    IotService(StorageBackend<String, Thing> thingStore,
+               StorageBackend<String, IotCertificate> certificateStore,
+               StorageBackend<String, IotPolicy> policyStore,
+                StorageBackend<String, Set<String>> policyAttachmentStore,
+                 StorageBackend<String, Set<String>> thingPrincipalStore,
+                  StorageBackend<String, IotShadow> shadowStore,
+                  StorageBackend<String, IotTopicRule> topicRuleStore,
+                  StorageBackend<String, IotRetainedMessage> retainedMessageStore,
+                  StorageBackend<String, IotJob> jobStore,
+                  StorageBackend<String, IotJobExecution> jobExecutionStore,
+                  StorageBackend<String, IotThingType> thingTypeStore,
+                  StorageBackend<String, IotThingGroup> thingGroupStore,
+                  StorageBackend<String, Set<String>> thingGroupMembershipStore,
+                  EmulatorConfig config,
+                 RegionResolver regionResolver,
+                 ObjectMapper objectMapper,
+                  IotPublishEventRecorder publishEventRecorder,
+                  IotMqttBrokerService mqttBrokerService,
+                  SqsService sqsService,
+                  SnsService snsService,
+                  S3Service s3Service,
+                  KinesisService kinesisService,
+                  DynamoDbService dynamoDbService,
+                  LambdaService lambdaService,
+                  InProcessTargetAuthorizer targetAuthorizer) {
         this.thingStore = thingStore;
         this.certificateStore = certificateStore;
         this.policyStore = policyStore;
@@ -155,6 +190,7 @@ public class IotService {
         this.kinesisService = kinesisService;
         this.dynamoDbService = dynamoDbService;
         this.lambdaService = lambdaService;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public String describeEndpoint(String endpointType) {
@@ -995,6 +1031,7 @@ public class IotService {
             if (!actions.isArray()) {
                 return;
             }
+            String region = config.defaultRegion();
             for (JsonNode action : actions) {
                 JsonNode republish = action.path("republish");
                 if (republish.isObject()) {
@@ -1008,17 +1045,23 @@ public class IotService {
                 if (sqs.isObject()) {
                     String queueUrl = sqs.path("queueUrl").asText(null);
                     if (queueUrl != null && !queueUrl.isBlank()) {
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("sqs", queueUrl, region);
+                        }
                         String body = sqs.path("useBase64").asBoolean(false)
                                 ? Base64.getEncoder().encodeToString(payload)
                                 : new String(payload, StandardCharsets.UTF_8);
-                        sqsService.sendMessage(queueUrl, body, 0, config.defaultRegion());
+                        sqsService.sendMessage(queueUrl, body, 0, region);
                     }
                 }
                 JsonNode sns = action.path("sns");
                 if (sns.isObject()) {
                     String targetArn = sns.path("targetArn").asText(null);
                     if (targetArn != null && !targetArn.isBlank()) {
-                        snsService.publish(targetArn, null, new String(payload, StandardCharsets.UTF_8), null, config.defaultRegion());
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("sns", targetArn, region);
+                        }
+                        snsService.publish(targetArn, null, new String(payload, StandardCharsets.UTF_8), null, region);
                     }
                 }
                 JsonNode s3 = action.path("s3");
@@ -1026,6 +1069,9 @@ public class IotService {
                     String bucketName = s3.path("bucketName").asText(null);
                     String key = s3.path("key").asText(null);
                     if (bucketName != null && !bucketName.isBlank() && key != null && !key.isBlank()) {
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("s3", bucketName + "/" + key, region);
+                        }
                         s3Service.putObject(bucketName, key, payload, "application/octet-stream", Map.of());
                     }
                 }
@@ -1034,24 +1080,35 @@ public class IotService {
                     String streamName = kinesis.path("streamName").asText(null);
                     String partitionKey = kinesis.path("partitionKey").asText("floci-iot");
                     if (streamName != null && !streamName.isBlank()) {
-                        kinesisService.putRecord(streamName, payload, partitionKey, config.defaultRegion());
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("kinesis", streamName, region);
+                        }
+                        kinesisService.putRecord(streamName, payload, partitionKey, region);
                     }
                 }
                 JsonNode dynamoDBv2 = action.path("dynamoDBv2");
                 if (dynamoDBv2.isObject()) {
                     String tableName = dynamoDBv2.path("putItem").path("tableName").asText(null);
                     if (tableName != null && !tableName.isBlank()) {
-                        dynamoDbService.putItem(tableName, toDynamoDbItem(payload), config.defaultRegion());
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("dynamodb", tableName, region);
+                        }
+                        dynamoDbService.putItem(tableName, toDynamoDbItem(payload), region);
                     }
                 }
                 JsonNode lambda = action.path("lambda");
                 if (lambda.isObject()) {
                     String functionArn = lambda.path("functionArn").asText(null);
                     if (functionArn != null && !functionArn.isBlank()) {
-                        lambdaService.invoke(config.defaultRegion(), functionArn, payload, InvocationType.Event);
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotDelivery("lambda", functionArn, region);
+                        }
+                        lambdaService.invoke(region, functionArn, payload, InvocationType.Event);
                     }
                 }
             }
+        } catch (AwsException e) {
+            throw e;
         } catch (Exception e) {
             throw new AwsException("InvalidRequestException", "Invalid topic rule action for " + rule.getRuleName() + ": " + e.getMessage(), 400);
         }

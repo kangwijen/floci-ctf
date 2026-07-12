@@ -89,6 +89,19 @@ public class AthenaService {
             return id;
         }
 
+        // Under IAM enforcement, Duck would need operator root S3 keys for s3://
+        // reads (participant credentials are not forwarded). Fail closed instead
+        // of escalating to OperatorCredentialEnv.
+        if (config.services().iam().enforcementEnabled()) {
+            execution.getStatus().setState(QueryExecutionState.FAILED);
+            execution.getStatus().setStateChangeReason(
+                    "Athena Duck execution is disabled when IAM enforcement is enabled");
+            execution.getStatus().setCompletionDateTime(Instant.now());
+            queryStore.put(id, execution);
+            LOG.infov("Query {0} refused (IAM enforcement, non-mock Athena)", id);
+            return id;
+        }
+
         // Submit async — caller gets the ID immediately while execution runs in background
         vertx.executeBlocking(() -> {
             String setupDdl = buildGlueDdl(database);

@@ -501,7 +501,8 @@ public class CodeBuildRunner {
                 env.put("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
                         credentialsServer.credentialsRelativeUri(credentialToken));
             }
-        } else {
+        } else if (!config.services().iam().enforcementEnabled()) {
+            // Never inject operator root when IAM enforcement is on (blank-role escalation).
             OperatorCredentialEnv.putIfPresent(env);
         }
         env.put("AWS_ENDPOINT_URL", resolveEndpointUrl());

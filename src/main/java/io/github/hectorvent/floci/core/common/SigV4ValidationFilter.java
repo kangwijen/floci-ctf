@@ -32,6 +32,11 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(SigV4ValidationFilter.class);
 
+    /** Set on the request when SigV4 header auth verifies successfully. */
+    public static final String SIGV4_VERIFIED_PROPERTY = "floci.sigv4.verified";
+
+    private static final String AWS4_HMAC_SHA256 = "AWS4-HMAC-SHA256";
+
     private static final Pattern SERVICE_PATTERN =
             Pattern.compile("Credential=\\S+/\\d{8}/[^/]+/([^/]+)/");
 
@@ -54,8 +59,9 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
+        String path = ctx.getUriInfo().getPath();
         if (SecurityBypassPaths.isInternalHealthOrInfoPath(
-                ctx.getUriInfo().getPath(), config.ctf().hideInternalEndpointsMode())) {
+                path, config.ctf().hideInternalEndpointsMode())) {
             return;
         }
 
@@ -63,19 +69,37 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             return;
         }
 
+        if (SecurityBypassPaths.isCognitoOAuthPath(path)) {
+            return;
+        }
+
+        if (SecurityBypassPaths.isFederatedStsAssumeRequest(ctx)) {
+            return;
+        }
+
         String auth = ctx.getHeaderString("Authorization");
         if (auth == null || auth.isBlank()) {
             return;
         }
-        if (!auth.startsWith("AWS4-HMAC-SHA256")) {
+
+        String trimmedAuth = auth.trim();
+        if (!trimmedAuth.startsWith(AWS4_HMAC_SHA256)) {
+            if (isCredentialSmugglingOrMalformedSigV4(trimmedAuth)) {
+                LOG.debugv("SigV4 validation DENY: malformed Authorization (missing {0} prefix)",
+                        AWS4_HMAC_SHA256);
+                ctx.abortWith(errorResponse("IncompleteSignature",
+                        "Authorization header requires '" + AWS4_HMAC_SHA256 + "' algorithm prefix.",
+                        extractService(trimmedAuth),
+                        ctx.getMediaType()));
+            }
             return;
         }
 
-        String akid = accountResolver.extractAccessKeyId(auth);
+        String akid = accountResolver.extractAccessKeyId(trimmedAuth);
         if (akid == null) {
             ctx.abortWith(errorResponse("InvalidClientTokenId",
                     "The security token included in the request is invalid.",
-                    extractService(auth),
+                    extractService(trimmedAuth),
                     ctx.getMediaType()));
             return;
         }
@@ -85,7 +109,7 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
             LOG.debugv("SigV4 validation: no secret for access key {0}", akid);
             ctx.abortWith(errorResponse("InvalidClientTokenId",
                     "The security token included in the request is invalid.",
-                    extractService(auth),
+                    extractService(trimmedAuth),
                     ctx.getMediaType()));
             return;
         }
@@ -101,17 +125,15 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
                 ctx.getUriInfo().getRequestUri().getRawPath(),
                 ctx.getUriInfo().getRequestUri().getRawQuery(),
                 ctx.getHeaders(),
-                auth,
+                trimmedAuth,
                 secret.get(),
                 body);
 
         switch (result) {
-            case VALID -> {
-                // continue
-            }
+            case VALID -> ctx.setProperty(SIGV4_VERIFIED_PROPERTY, Boolean.TRUE);
             case EXPIRED -> ctx.abortWith(errorResponse("RequestExpired",
                     "Request is expired.",
-                    extractService(auth),
+                    extractService(trimmedAuth),
                     ctx.getMediaType()));
             case INVALID_AUTHORIZATION, INVALID_SIGNATURE -> {
                 LOG.debugv("SigV4 validation failed for access key {0}: {1}", akid, result);
@@ -119,10 +141,24 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
                         "The request signature we calculated does not match the signature you provided. "
                                 + "Check your AWS Secret Access Key and signing method. "
                                 + "Consult the service documentation for details.",
-                        extractService(auth),
+                        extractService(trimmedAuth),
                         ctx.getMediaType()));
             }
         }
+    }
+
+    /**
+     * True when the header carries a SigV4 {@code Credential=} field or a case-variant
+     * algorithm token, but lacks the exact {@code AWS4-HMAC-SHA256} prefix.
+     */
+    static boolean isCredentialSmugglingOrMalformedSigV4(String trimmedAuth) {
+        if (trimmedAuth == null || trimmedAuth.isBlank()) {
+            return false;
+        }
+        if (trimmedAuth.contains("Credential=")) {
+            return true;
+        }
+        return trimmedAuth.regionMatches(true, 0, AWS4_HMAC_SHA256, 0, AWS4_HMAC_SHA256.length());
     }
 
     private Optional<String> resolveSecret(String akid) {
@@ -206,6 +242,7 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
     private static Response jsonError(String code, String message) {
         String type = switch (code) {
             case "SignatureDoesNotMatch" -> "SignatureDoesNotMatch";
+            case "IncompleteSignature" -> "IncompleteSignature";
             case "InvalidClientTokenId" -> "InvalidClientTokenId";
             case "RequestExpired" -> "RequestExpiredException";
             default -> code;

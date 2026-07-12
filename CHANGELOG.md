@@ -30,6 +30,18 @@ Upstream has not tagged **1.5.33** yet. The following items are from post-**1.5.
 - **cognito:** keep `InProcessTargetAuthorizer` on Cognito delivery paths across `GlobalSignOut` / `RevokeToken` / `jti` work
 - **stepfunctions:** keep `AslExecutor` `InProcessIamAuthorizer` and CloudTrail audit across JSONata `Assign`
 
+### Security (CTF fork)
+
+- **auth:** reject SigV4 `Credential=` smuggling that omits the `AWS4-HMAC-SHA256` Authorization prefix (`SigV4CredentialSmugglingBypassIntegrationTest`)
+- **lambda / codebuild:** blank Lambda `Role` or CodeBuild `serviceRole` no longer injects operator `AWS_*` under IAM enforcement (`LambdaBlankRoleOperatorCredentialIntegrationTest`, `CodeBuildBlankServiceRoleIntegrationTest`, `ContainerLauncherTest`)
+- **iam:** `PolicyPrincipalMatcher` service-principal matching is limited to bare service names and `aws-service-role` SLR paths (`PolicyPrincipalMatcherTest`)
+- **athena / duck / s3select:** under IAM enforcement, Duck and S3 Select no longer use operator S3 keys (`AthenaDuckOperatorS3BypassIntegrationTest`)
+- **in-process:** IAM on IoT rules, Secrets Manager rotation, CodePipeline actions, CloudFormation `Custom::`, and Step Functions `ecs:runTask` plus Map `ItemReader` S3 (`InProcessTargetAuthorizerTest`)
+- **iam:** ASIA session account is used when building IAM resource ARNs (`IamEnforcementFilterTest`)
+- **iam:** expanded S3 route-scope overclaim exclusions (`IamActionRegistryTest`)
+- **eventbridge:** `StartReplay` requires same-bus destination (`EventBridgeReplayIntegrationTest`)
+- **rds-data:** sanitize database name in JDBC URLs (`RdsDataConnectionFactoryTest`)
+
 ### Changed (CTF fork, upstream 1.5.32 merge)
 
 - **s3:** preserve CTF IAM/SigV4 hardening over upstream S3 `enforce-auth` merge (Compose still uses `IamEnforcementFilter` + SigV4; `FLOCI_SERVICES_S3_ENFORCE_AUTH` stays default `false`)

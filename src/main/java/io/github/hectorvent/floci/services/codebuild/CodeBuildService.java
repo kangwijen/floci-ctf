@@ -196,7 +196,12 @@ public class CodeBuildService {
         if (artifacts != null) { project.setArtifacts(artifacts); }
         if (secondaryArtifacts != null) { project.setSecondaryArtifacts(secondaryArtifacts); }
         if (environment != null) { project.setEnvironment(environment); }
-        if (serviceRole != null) { project.setServiceRole(serviceRole); }
+        if (serviceRole != null) {
+            if (serviceRole.isBlank()) {
+                throw new AwsException("InvalidInputException", "serviceRole is required", 400);
+            }
+            project.setServiceRole(serviceRole);
+        }
         if (timeoutInMinutes != null) { project.setTimeoutInMinutes(timeoutInMinutes); }
         if (queuedTimeoutInMinutes != null) { project.setQueuedTimeoutInMinutes(queuedTimeoutInMinutes); }
         if (encryptionKey != null) { project.setEncryptionKey(encryptionKey); }

@@ -62,6 +62,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final RegionResolver regionResolver;
     private final KmsService kmsService;
     private final AnonymousAccessGate anonymousAccessGate;
+    private final RequestContext requestContext;
 
     @Inject
     public IamEnforcementFilter(EmulatorConfig config,
@@ -73,7 +74,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 ResourcePolicyResolver resourcePolicyResolver,
                                 RegionResolver regionResolver,
                                 KmsService kmsService,
-                                AnonymousAccessGate anonymousAccessGate) {
+                                AnonymousAccessGate anonymousAccessGate,
+                                RequestContext requestContext) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
@@ -84,6 +86,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         this.regionResolver = regionResolver;
         this.kmsService = kmsService;
         this.anonymousAccessGate = anonymousAccessGate;
+        this.requestContext = requestContext;
     }
 
     @Override
@@ -147,6 +150,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        if (config.auth().validateSignatures()
+                && auth.contains("Credential=")
+                && !auth.trim().startsWith("AWS4-HMAC-SHA256")) {
+            LOG.infov("IAM enforcement DENY: malformed SigV4 Authorization on {0}", path);
+            ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
+            return;
+        }
+
         String akid = accountResolver.extractAccessKeyId(auth);
         if (akid == null) {
             LOG.infov("IAM enforcement DENY: non-SigV4 Authorization on {0}", path);
@@ -154,6 +165,13 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
         if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
+            if (!config.auth().validateSignatures()
+                    || Boolean.TRUE.equals(
+                            ctx.getProperty(SigV4ValidationFilter.SIGV4_VERIFIED_PROPERTY))) {
+                return;
+            }
+            LOG.infov("IAM enforcement DENY: unverified operator root on {0}", path);
+            ctx.abortWith(accessDeniedResponse("MissingAuthentication", null, ctx.getMediaType()));
             return;
         }
 
@@ -165,7 +183,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         String region = regionResolver.resolveRegionFromAuth(auth);
-        String accountId = accountResolver.resolve(auth);
+        String accountId = resolveEnforcementAccountId(akid, accountResolver.resolve(auth));
         evaluateAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
     }
 
@@ -187,7 +205,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             }
         }
 
-        String accountId = akid != null && akid.matches("\\d{12}") ? akid : accountResolver.defaultAccountId();
+        String accountId = resolveEnforcementAccountId(
+                akid, accountResolver.resolveFromPresignedCredential(credential));
 
         String action = actionRegistry.resolve("s3", ctx);
         if (action == null) {
@@ -214,6 +233,26 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, "s3", ctx.getMediaType()));
         }
+    }
+
+    /**
+     * Resolves the account used for IAM resource ARNs the same way as
+     * {@link AccountContextFilter}: prefer the request-scoped account already set by that
+     * filter, then {@link SessionAccountLookup} for temporary ASIA keys, then the
+     * {@link AccountResolver} fallback (12-digit AKID or default account).
+     */
+    private String resolveEnforcementAccountId(String akid, String resolverFallback) {
+        String fromContext = requestContext.getAccountId();
+        if (fromContext != null && !fromContext.isBlank()) {
+            return fromContext;
+        }
+        if (akid != null && !akid.matches("\\d{12}")) {
+            Optional<String> sessionAccount = iamService.resolveAccountId(akid);
+            if (sessionAccount.isPresent()) {
+                return sessionAccount.get();
+            }
+        }
+        return resolverFallback;
     }
 
     private void evaluateAndAbortIfDenied(ContainerRequestContext ctx,

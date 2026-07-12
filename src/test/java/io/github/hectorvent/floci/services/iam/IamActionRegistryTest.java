@@ -359,6 +359,123 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void resolveRestRouteScope_appconfigNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/applications/foo",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("appconfig", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_iotThingNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/things/device-1",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("iot", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_schedulerNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/schedules/daily-job",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("scheduler", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_lambdaDatedApiNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "DELETE", "/2017-10-31/functions/my-fn/concurrency",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("lambda", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+        assertEquals("lambda:DeleteFunctionConcurrency", registry.resolve("lambda", ctx));
+    }
+
+    @Test
+    void resolve_s3ScopeDoesNotMapLambdaDatedListPathToGetObject() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/2017-10-31/functions",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertNull(registry.resolve("s3", ctx));
+        assertNull(registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_opensearchDatedApiNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/2021-01-01/opensearch/domain/demo",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertNull(registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_bedrockModelNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "POST", "/model/anthropic.claude-v2/converse",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "{}");
+        assertEquals("bedrock", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_iotPoliciesNotClaimedAsS3() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/policies/device-policy",
+                new MultivaluedHashMap<>(),
+                MediaType.APPLICATION_JSON_TYPE,
+                "");
+        assertEquals("iot", registry.resolveRestRouteScope(ctx));
+        assertNull(registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void resolveRestRouteScope_s3ControlPathStillS3CredentialScope() {
+        ContainerRequestContext ctx = mockCtx(
+                "GET", "/v20180820/tags/arn:aws:s3:::demo-bucket",
+                new MultivaluedHashMap<>(),
+                null,
+                "");
+        assertEquals("s3", registry.resolveRestRouteScope(ctx));
+    }
+
+    @Test
+    void isS3BucketStylePath_excludesReservedPrefixes() {
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/applications/foo"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/things/x/shadow"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/schedules/job"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/2017-10-31/functions"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/2021-01-01/domain"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/model/x/invoke"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/policies/p"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/_floci/health"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/_localstack/health"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/_aws/cloudformation/ready"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/cognito-idp/oauth2/token"));
+        assertEquals(false, IamActionRegistry.isS3BucketStylePath("/health"));
+        assertEquals(true, IamActionRegistry.isS3BucketStylePath("/v20180820/tags/arn"));
+        assertEquals(true, IamActionRegistry.isS3BucketStylePath("/my-bucket/key"));
+    }
+
+    @Test
     void resolvesCodeBuildBatchGetProjectsFromJson11Target() {
         ContainerRequestContext ctx = json11TargetCtx(
                 "CodeBuild_20161006.BatchGetProjects",

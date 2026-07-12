@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.services.s3;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsEventStreamEncoder;
+import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.services.floci.duck.FlociDuckClient;
@@ -24,11 +26,13 @@ public class S3SelectService {
 
     private final ObjectMapper objectMapper;
     private final FlociDuckClient duckClient;
+    private final EmulatorConfig config;
 
     @Inject
-    public S3SelectService(ObjectMapper objectMapper, FlociDuckClient duckClient) {
+    public S3SelectService(ObjectMapper objectMapper, FlociDuckClient duckClient, EmulatorConfig config) {
         this.objectMapper = objectMapper;
         this.duckClient = duckClient;
+        this.config = config;
     }
 
     public byte[] select(S3Object object, String requestXml) {
@@ -42,10 +46,17 @@ public class S3SelectService {
         if (rawData == null) return new byte[0];
         long bytesScanned = rawData.length;
 
+        boolean iamEnforcement = config.services().iam().enforcementEnabled();
+        // Under IAM enforcement Duck must not re-read s3:// with operator keys.
+        // Prefer the in-memory Java evaluator; Parquet has no Java path so refuse.
         String result;
         if (isParquet(object)) {
+            if (iamEnforcement) {
+                throw new AwsException("InvalidRequest",
+                        "S3 Select on Parquet is disabled when IAM enforcement is enabled", 400);
+            }
             result = selectParquet(object, expression, outputFormat);
-        } else if (duckClient.isAvailable() && canUseDuck(inputType, fileHeaderInfo)) {
+        } else if (!iamEnforcement && duckClient.isAvailable() && canUseDuck(inputType, fileHeaderInfo)) {
             result = selectViaDuck(object, expression, inputType, outputFormat);
         } else if ("CSV".equals(inputType)) {
             String content = new String(rawData, StandardCharsets.UTF_8);

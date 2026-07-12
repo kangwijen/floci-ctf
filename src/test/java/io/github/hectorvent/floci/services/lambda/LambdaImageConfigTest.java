@@ -233,9 +233,13 @@ class LambdaImageConfigTest {
             EmulatorConfig.LambdaServiceConfig lambda = mock(EmulatorConfig.LambdaServiceConfig.class);
             EmulatorConfig.DockerConfig docker = mock(EmulatorConfig.DockerConfig.class);
 
+            EmulatorConfig.IamServiceConfig iam = mock(EmulatorConfig.IamServiceConfig.class);
             when(config.services()).thenReturn(services);
             when(services.lambda()).thenReturn(lambda);
+            lenient().when(services.iam()).thenReturn(iam);
+            lenient().when(iam.enforcementEnabled()).thenReturn(false);
             when(lambda.dockerNetwork()).thenReturn(Optional.empty());
+            lenient().when(lambda.awsConfigPath()).thenReturn(Optional.empty());
             when(config.docker()).thenReturn(docker);
             when(docker.logMaxSize()).thenReturn("10m");
             when(docker.logMaxFile()).thenReturn("3");

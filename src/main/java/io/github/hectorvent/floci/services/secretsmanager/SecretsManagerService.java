@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -51,6 +52,7 @@ public class SecretsManagerService {
     private final SecretsManagerKmsSupport kmsSupport;
     private final LambdaService lambdaService;
     private final ObjectMapper objectMapper;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ExecutorService rotationExecutor = Executors.newCachedThreadPool();
     private final java.util.concurrent.ConcurrentHashMap<String, Object> rotationLocks = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -61,44 +63,54 @@ public class SecretsManagerService {
     @Inject
     public SecretsManagerService(StorageFactory factory, EmulatorConfig config, RegionResolver regionResolver,
                                  SecretsManagerKmsSupport kmsSupport,
-                                 LambdaService lambdaService, ObjectMapper objectMapper) {
+                                 LambdaService lambdaService, ObjectMapper objectMapper,
+                                 InProcessTargetAuthorizer targetAuthorizer) {
         this(factory.create("secretsmanager", "secretsmanager-secrets.json",
                         new TypeReference<Map<String, Secret>>() {}),
                 config.services().secretsmanager().defaultRecoveryWindowDays(),
                 regionResolver,
                 kmsSupport,
                 lambdaService,
-                objectMapper);
+                objectMapper,
+                targetAuthorizer);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays) {
-        this(store, defaultRecoveryWindowDays, new RegionResolver("us-east-1", "000000000000"), null, null, new ObjectMapper());
+        this(store, defaultRecoveryWindowDays, new RegionResolver("us-east-1", "000000000000"), null, null, new ObjectMapper(), null);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
                           RegionResolver regionResolver) {
-        this(store, defaultRecoveryWindowDays, regionResolver, null, null, new ObjectMapper());
+        this(store, defaultRecoveryWindowDays, regionResolver, null, null, new ObjectMapper(), null);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
                           RegionResolver regionResolver, SecretsManagerKmsSupport kmsSupport) {
-        this(store, defaultRecoveryWindowDays, regionResolver, kmsSupport, null, new ObjectMapper());
+        this(store, defaultRecoveryWindowDays, regionResolver, kmsSupport, null, new ObjectMapper(), null);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
                           RegionResolver regionResolver, LambdaService lambdaService, ObjectMapper objectMapper) {
-        this(store, defaultRecoveryWindowDays, regionResolver, null, lambdaService, objectMapper);
+        this(store, defaultRecoveryWindowDays, regionResolver, null, lambdaService, objectMapper, null);
     }
 
     SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
                           RegionResolver regionResolver, SecretsManagerKmsSupport kmsSupport,
                           LambdaService lambdaService, ObjectMapper objectMapper) {
+        this(store, defaultRecoveryWindowDays, regionResolver, kmsSupport, lambdaService, objectMapper, null);
+    }
+
+    SecretsManagerService(StorageBackend<String, Secret> store, int defaultRecoveryWindowDays,
+                          RegionResolver regionResolver, SecretsManagerKmsSupport kmsSupport,
+                          LambdaService lambdaService, ObjectMapper objectMapper,
+                          InProcessTargetAuthorizer targetAuthorizer) {
         this.store = store;
         this.defaultRecoveryWindowDays = defaultRecoveryWindowDays;
         this.regionResolver = regionResolver;
         this.kmsSupport = kmsSupport;
         this.lambdaService = lambdaService;
         this.objectMapper = objectMapper;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     @PreDestroy
@@ -586,6 +598,9 @@ public class SecretsManagerService {
             return;
         }
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeSecretsManagerLambdaInvoke(lambdaArn, region);
+            }
             ObjectNode payload = objectMapper.createObjectNode();
             payload.put("Step", step);
             payload.put("SecretId", secretArn);

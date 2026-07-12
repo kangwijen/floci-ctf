@@ -127,16 +127,23 @@ public class FlociDuckClient {
         body.put("s3_region", config.defaultRegion());
         // A 12-digit access key flows through AccountResolver and selects the
         // matching account partition for any S3 read/write the SQL performs.
-        // Credentials come from the caller or Floci's own environment when set.
-        Map<String, String> operatorCreds = OperatorCredentialEnv.snapshot();
+        // Under IAM enforcement, never inject OperatorCredentialEnv (operator root)
+        // into Duck: that would let Athena / S3 Select read s3:// as the operator.
+        // Callers may still pass an explicit accessKeyId (e.g. CUR account routing)
+        // without an operator secret when enforcement is on.
+        boolean iamEnforcement = config.services().iam().enforcementEnabled();
         String s3AccessKey = accessKeyId;
-        if (s3AccessKey == null || s3AccessKey.isEmpty()) {
-            s3AccessKey = operatorCreds.get("AWS_ACCESS_KEY_ID");
+        String s3SecretKey = null;
+        if (!iamEnforcement) {
+            Map<String, String> operatorCreds = OperatorCredentialEnv.snapshot();
+            if (s3AccessKey == null || s3AccessKey.isEmpty()) {
+                s3AccessKey = operatorCreds.get("AWS_ACCESS_KEY_ID");
+            }
+            s3SecretKey = operatorCreds.get("AWS_SECRET_ACCESS_KEY");
         }
         if (s3AccessKey != null && !s3AccessKey.isEmpty()) {
             body.put("s3_access_key", s3AccessKey);
         }
-        String s3SecretKey = operatorCreds.get("AWS_SECRET_ACCESS_KEY");
         if (s3SecretKey != null && !s3SecretKey.isEmpty()) {
             body.put("s3_secret_key", s3SecretKey);
         }

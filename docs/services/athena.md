@@ -135,3 +135,7 @@ See [S3 Select](s3.md#s3-select) for details on execution modes and supported SQ
 Set `FLOCI_SERVICES_ATHENA_MOCK=true` to skip DuckDB entirely for Athena. In this mode queries transition to `SUCCEEDED` immediately with an empty result set — useful for unit tests that only exercise the Athena state machine, not the query results.
 
 When mock mode is enabled the sidecar does **not** start. S3 Select will use the Java evaluator for CSV and JSON. Parquet queries will fail unless `FLOCI_SERVICES_DUCK_URL` points to an already-running floci-duck instance.
+
+## CTF fork
+
+When IAM enforcement is enabled, Duck does **not** receive operator S3 keys (`OperatorCredentialEnv`). `StartQueryExecution` with `FLOCI_SERVICES_ATHENA_MOCK=false` fails closed rather than escalating to operator credentials. Regression: `AthenaDuckOperatorS3BypassIntegrationTest`.

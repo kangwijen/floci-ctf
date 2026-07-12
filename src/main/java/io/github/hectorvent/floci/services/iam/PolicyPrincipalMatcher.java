@@ -341,13 +341,12 @@ public final class PolicyPrincipalMatcher {
         if (service == null || service.isBlank() || callerArn == null) {
             return false;
         }
+        // In-process delivery callers pass the bare service principal (e.g. "sns.amazonaws.com").
         if (service.equalsIgnoreCase(callerArn) || IamPolicyEvaluator.globMatches(service, callerArn)) {
             return true;
         }
-        // Service-linked role sessions embed the service principal in the role path.
-        if (callerArn.contains(":assumed-role/") && callerArn.contains(service)) {
-            return true;
-        }
-        return callerArn.contains("/" + service + "/");
+        // Service-linked roles use path /aws-service-role/<service>/... Do not match solely
+        // because RoleSessionName (or an IAM user/role name) equals the service string.
+        return callerArn.contains("/aws-service-role/" + service + "/");
     }
 }

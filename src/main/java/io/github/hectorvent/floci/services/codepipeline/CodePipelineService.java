@@ -19,6 +19,7 @@ import io.github.hectorvent.floci.services.codepipeline.model.CodePipelineExecut
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelinePipeline;
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelinePipeline.TransitionState;
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelineStoredItem;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
@@ -61,6 +62,7 @@ public class CodePipelineService {
     private final CodeDeployService codeDeployService;
     private final LambdaService lambdaService;
     private final S3Service s3Service;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, Object> pipelineLocks = new ConcurrentHashMap<>();
     private final Map<String, byte[]> runtimeArtifacts = new ConcurrentHashMap<>();
@@ -69,7 +71,8 @@ public class CodePipelineService {
     @SuppressWarnings("unchecked")
     public CodePipelineService(StorageFactory storageFactory, ObjectMapper mapper,
                                CodeBuildService codeBuildService, CodeDeployService codeDeployService,
-                               LambdaService lambdaService, S3Service s3Service) {
+                               LambdaService lambdaService, S3Service s3Service,
+                               InProcessTargetAuthorizer targetAuthorizer) {
         this.pipelineStore = (AccountAwareStorageBackend<CodePipelinePipeline>) storageFactory.create(
                 "codepipeline", "codepipeline-pipelines.json", new TypeReference<Map<String, CodePipelinePipeline>>() {});
         this.executionStore = (AccountAwareStorageBackend<CodePipelineExecution>) storageFactory.create(
@@ -81,6 +84,7 @@ public class CodePipelineService {
         this.codeDeployService = codeDeployService;
         this.lambdaService = lambdaService;
         this.s3Service = s3Service;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     public JsonNode handle(String action, JsonNode request, String region, String account) {
@@ -783,7 +787,7 @@ public class CodePipelineService {
             case "S3" -> executeS3(execution, action, state);
             case "CodeBuild" -> executeCodeBuild(execution, action, state);
             case "CodeDeploy" -> executeCodeDeploy(execution, action, state);
-            case "Lambda" -> executeLambda(execution, action, state);
+            case "Lambda" -> executeLambda(pipeline, execution, action, state);
             case "CodePipeline" -> executeNestedPipeline(execution, action, state);
             default -> throw new AwsException("InvalidActionDeclarationException",
                     "Provider " + provider + " is not available in Floci CodePipeline", 400);
@@ -868,8 +872,18 @@ public class CodePipelineService {
         }
     }
 
-    private void executeLambda(CodePipelineExecution execution, JsonNode action, ActionExecution state) {
+    private void executeLambda(CodePipelinePipeline pipeline, CodePipelineExecution execution,
+                               JsonNode action, ActionExecution state) {
         String functionName = action.path("configuration").path("FunctionName").asText(null);
+        String roleArn = textOrNull(action.path("roleArn"));
+        if (roleArn == null && pipeline != null && pipeline.getDeclaration() != null) {
+            // Pipeline service role is the AWS default identity for Invoke; action roleArn wins when set.
+            roleArn = textOrNull(pipeline.getDeclaration().path("roleArn"));
+        }
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeCodePipelineLambdaInvoke(
+                    functionName, execution.getRegion(), roleArn);
+        }
         ObjectNode event = mapper.createObjectNode();
         ObjectNode cpJob = event.putObject("CodePipeline.job");
         cpJob.put("id", state.getActionExecutionId());
@@ -881,6 +895,14 @@ public class CodePipelineService {
             throw new AwsException("ActionExecutionFailed",
                     "Lambda invocation failed: " + result.getFunctionError(), 400);
         }
+    }
+
+    private static String textOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String value = node.asText(null);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private void executeNestedPipeline(CodePipelineExecution execution, JsonNode action, ActionExecution state) {

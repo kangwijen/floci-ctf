@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 class IamEnforcementFilterTest {
 
     @Test
-    void filterBuildsResourceArnWithSessionAccountFromAccountResolver() {
+    void filterBuildsResourceArnWithAccountFromRequestContext() {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
         EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
@@ -54,6 +54,8 @@ class IamEnforcementFilterTest {
         RegionResolver regionResolver = mock(RegionResolver.class);
         KmsService kmsService = mock(KmsService.class);
         AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("222233334444");
         ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
         UriInfo uriInfo = mock(UriInfo.class);
 
@@ -69,7 +71,8 @@ class IamEnforcementFilterTest {
         when(config.ctf()).thenReturn(ctfConfig);
         when(ctfConfig.hideInternalEndpointsMode()).thenReturn(CtfHideInternalEndpointsMode.PREFIXED);
         when(accountResolver.extractAccessKeyId(auth)).thenReturn("ASIASESSION");
-        when(accountResolver.resolve(auth)).thenReturn("222233334444");
+        // AccountResolver alone collapses ASIA keys to the default account.
+        when(accountResolver.resolve(auth)).thenReturn("000000000000");
         when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("us-east-1");
         when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
         when(containerRequest.getUriInfo()).thenReturn(uriInfo);
@@ -93,11 +96,141 @@ class IamEnforcementFilterTest {
 
         IamEnforcementFilter filter = new IamEnforcementFilter(
                 config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
-                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate);
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext);
 
         filter.filter(containerRequest);
 
         verify(arnBuilder).build("lambda", containerRequest, "us-east-1", "222233334444");
+    }
+
+    @Test
+    void filterBuildsResourceArnViaSessionLookupWhenRequestContextUnset() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        EmulatorConfig.CtfConfig ctfConfig = mock(EmulatorConfig.CtfConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        IamService iamService = mock(IamService.class);
+        IamPolicyEvaluator evaluator = mock(IamPolicyEvaluator.class);
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        ResourceArnBuilder arnBuilder = mock(ResourceArnBuilder.class);
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+
+        String auth = "AWS4-HMAC-SHA256 Credential=ASIASESSION/20260629/us-east-1/lambda/aws4_request, "
+                + "SignedHeaders=host, Signature=abc";
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(true);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(config.ctf()).thenReturn(ctfConfig);
+        when(ctfConfig.hideInternalEndpointsMode()).thenReturn(CtfHideInternalEndpointsMode.PREFIXED);
+        when(accountResolver.extractAccessKeyId(auth)).thenReturn("ASIASESSION");
+        when(accountResolver.resolve(auth)).thenReturn("000000000000");
+        when(iamService.resolveAccountId("ASIASESSION")).thenReturn(Optional.of("222233334444"));
+        when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("us-east-1");
+        when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
+        when(containerRequest.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/2015-03-31/functions/fn/invocations");
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(actionRegistry.resolveRestRouteScope(containerRequest)).thenReturn(null);
+        when(actionRegistry.resolve("lambda", containerRequest)).thenReturn("lambda:InvokeFunction");
+        when(iamService.resolveCallerContext("ASIASESSION"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"lambda:InvokeFunction",
+                           "Resource":"arn:aws:lambda:us-east-1:222233334444:function:fn"}
+                        ]}""")));
+        when(arnBuilder.build("lambda", containerRequest, "us-east-1", "222233334444"))
+                .thenReturn("arn:aws:lambda:us-east-1:222233334444:function:fn");
+        when(resourcePolicyResolver.resolve(eq("lambda"), anyString(), eq("us-east-1")))
+                .thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("lambda:InvokeFunction"),
+                eq("arn:aws:lambda:us-east-1:222233334444:function:fn"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        IamEnforcementFilter filter = new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext);
+
+        filter.filter(containerRequest);
+
+        verify(arnBuilder).build("lambda", containerRequest, "us-east-1", "222233334444");
+    }
+
+    @Test
+    void enforcePresignedS3UsesSessionAccountNotDefault() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        IamService iamService = mock(IamService.class);
+        IamPolicyEvaluator evaluator = mock(IamPolicyEvaluator.class);
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        ResourceArnBuilder arnBuilder = mock(ResourceArnBuilder.class);
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("555566667777");
+        ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+        MultivaluedHashMap<String, String> query = new MultivaluedHashMap<>();
+        String credential = "ASIAPRESIGNED/20260629/us-east-1/s3/aws4_request";
+        query.add("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+        query.add("X-Amz-Credential", credential);
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(true);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(accountResolver.extractAccessKeyIdFromCredential(credential)).thenReturn("ASIAPRESIGNED");
+        when(accountResolver.resolveFromPresignedCredential(credential)).thenReturn("000000000000");
+        when(accountResolver.defaultAccountId()).thenReturn("000000000000");
+        when(regionResolver.getDefaultRegion()).thenReturn("us-east-1");
+        when(containerRequest.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/bucket/key");
+        when(uriInfo.getQueryParameters()).thenReturn(query);
+        when(containerRequest.getProperty(io.github.hectorvent.floci.services.s3.PreSignedUrlFilter.PRESIGN_VERIFIED_PROPERTY))
+                .thenReturn(Boolean.TRUE);
+        when(actionRegistry.resolve("s3", containerRequest)).thenReturn("s3:GetObject");
+        when(iamService.resolveCallerContext("ASIAPRESIGNED"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"s3:GetObject",
+                           "Resource":"arn:aws:s3:::bucket/key"}
+                        ]}""")));
+        when(arnBuilder.build("s3", containerRequest, "us-east-1", "555566667777"))
+                .thenReturn("arn:aws:s3:::bucket/key");
+        when(resourcePolicyResolver.resolve(eq("s3"), anyString(), eq("us-east-1")))
+                .thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("s3:GetObject"),
+                eq("arn:aws:s3:::bucket/key"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        IamEnforcementFilter filter = new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext);
+
+        filter.filter(containerRequest);
+
+        verify(arnBuilder).build("s3", containerRequest, "us-east-1", "555566667777");
     }
 
     @Test

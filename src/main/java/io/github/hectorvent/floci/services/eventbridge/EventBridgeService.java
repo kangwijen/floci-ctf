@@ -1185,6 +1185,9 @@ public class EventBridgeService {
                 .orElseThrow(() -> new AwsException("ResourceNotFoundException",
                         "Archive not found: " + archiveName, 404));
 
+        // AWS: Destination.Arn must be the same event bus used to create the archive.
+        validateReplayDestinationMatchesArchive(archive.getEventSourceArn(), destinationArn);
+
         List<ArchivedEvent> events = archivedEventStore
                 .get(archivedEventKey(region, archiveName))
                 .orElse(List.of());
@@ -1318,6 +1321,39 @@ public class EventBridgeService {
         if (arn == null) return null;
         int idx = arn.lastIndexOf("archive/");
         return idx >= 0 ? arn.substring(idx + "archive/".length()) : arn;
+    }
+
+    /**
+     * AWS ReplayDestination.Arn: events may only be replayed to the event bus that created the archive.
+     */
+    private static void validateReplayDestinationMatchesArchive(String archiveEventSourceArn,
+                                                                String destinationArn) {
+        if (destinationArn == null || destinationArn.isBlank()) {
+            throw new AwsException("ValidationException", "Destination Arn is required.", 400);
+        }
+        if (archiveEventSourceArn == null || archiveEventSourceArn.isBlank()) {
+            throw new AwsException("ValidationException",
+                    "Archive EventSourceArn is missing; cannot validate replay destination.", 400);
+        }
+        if (sameEventBus(archiveEventSourceArn, destinationArn)) {
+            return;
+        }
+        throw new AwsException("ValidationException",
+                "Destination Arn must match the archive EventSourceArn event bus."
+                        + " Cross-bus replay is not supported.",
+                400);
+    }
+
+    private static boolean sameEventBus(String archiveEventSourceArn, String destinationArn) {
+        if (archiveEventSourceArn.equals(destinationArn)) {
+            return true;
+        }
+        try {
+            return extractBusNameFromArn(archiveEventSourceArn)
+                    .equals(extractBusNameFromArn(destinationArn));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private void startSchedulerIfNeeded(Rule rule) {

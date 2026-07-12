@@ -107,6 +107,22 @@ public class IamActionRegistry {
         rule("lambda", "POST",   "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:CreateFunctionUrlConfig"),
         rule("lambda", "PUT",    "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:UpdateFunctionUrlConfig"),
         rule("lambda", "DELETE", "^/2021-10-31/functions/[^/]+/url/?$",                "lambda:DeleteFunctionUrlConfig"),
+        rule("lambda", "PUT",    "^/2017-10-31/functions/[^/]+/concurrency/?$",         "lambda:PutFunctionConcurrency"),
+        rule("lambda", "DELETE", "^/2017-10-31/functions/[^/]+/concurrency/?$",         "lambda:DeleteFunctionConcurrency"),
+        rule("lambda", "GET",    "^/2019-09-30/functions/[^/]+/concurrency/?$",         "lambda:GetFunctionConcurrency"),
+        rule("lambda", "GET",    "^/2019-09-25/functions/[^/]+/event-invoke-config/?$", "lambda:GetFunctionEventInvokeConfig"),
+        rule("lambda", "PUT",    "^/2019-09-25/functions/[^/]+/event-invoke-config/?$", "lambda:PutFunctionEventInvokeConfig"),
+        rule("lambda", "POST",   "^/2019-09-25/functions/[^/]+/event-invoke-config/?$", "lambda:UpdateFunctionEventInvokeConfig"),
+        rule("lambda", "DELETE", "^/2019-09-25/functions/[^/]+/event-invoke-config/?$", "lambda:DeleteFunctionEventInvokeConfig"),
+        rule("lambda", "GET",    "^/2018-10-31/layers/?$",                              "lambda:ListLayers"),
+        rule("lambda", "POST",   "^/2018-10-31/layers/[^/]+/versions/?$",             "lambda:PublishLayerVersion"),
+        rule("lambda", "GET",    "^/2018-10-31/layers/[^/]+/versions/?$",             "lambda:ListLayerVersions"),
+        rule("lambda", "GET",    "^/2018-10-31/layers/[^/]+/versions/[^/]+/?$",       "lambda:GetLayerVersion"),
+        rule("lambda", "DELETE", "^/2018-10-31/layers/[^/]+/versions/[^/]+/?$",       "lambda:DeleteLayerVersion"),
+        rule("lambda", "GET",    "^/2017-03-31/tags/.+",                               "lambda:ListTags"),
+        rule("lambda", "POST",   "^/2017-03-31/tags/.+",                               "lambda:TagResource"),
+        rule("lambda", "DELETE", "^/2017-03-31/tags/.+",                               "lambda:UntagResource"),
+        rule("lambda", "GET",    "^/2020-06-30/functions/[^/]+/code-signing-config/?$", "lambda:GetFunctionCodeSigningConfig"),
         rule("lambda", "GET",    "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
         rule("lambda", "POST",   "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
         rule("lambda", "PUT",    "^/lambda-url/[^/]+(?:/.*)?$",                        "lambda:InvokeFunctionUrl"),
@@ -391,20 +407,24 @@ public class IamActionRegistry {
             return IamUnrestrictedActions.canonicalAction(targetScope + ":" + operationName);
         }
 
+        // REST-JSON: match against rule table
+        String method = ctx.getMethod().toUpperCase();
+        String path   = ctx.getUriInfo().getPath();
+        if (!path.startsWith("/")) path = "/" + path;
+
         // S3: query params disambiguate versioning APIs (AWS IAM action names).
-        if ("s3".equals(credentialScope)) {
+        // Non-bucket reserved paths must not resolve as S3 actions.
+        if ("s3".equals(credentialScope) && isS3BucketStylePath(path)) {
             String s3Action = resolveS3Action(ctx);
             if (s3Action != null) {
                 return s3Action;
             }
         }
 
-        // REST-JSON: match against rule table
-        String method = ctx.getMethod().toUpperCase();
-        String path   = ctx.getUriInfo().getPath();
-        if (!path.startsWith("/")) path = "/" + path;
-
         for (ActionRule rule : RULES) {
+            if ("s3".equals(rule.service()) && !isS3BucketStylePath(path)) {
+                continue;
+            }
             if (rule.service().equals(credentialScope)
                     && rule.method().equals(method)
                     && rule.pathPattern().matcher(path).find()) {
@@ -475,7 +495,11 @@ public class IamActionRegistry {
 
     /**
      * S3 REST rules use {@code /{bucket}/key} shapes that also match other services (e.g.
-     * {@code /restapis/{id}/resources}). Restrict S3 route inference to real bucket paths.
+     * {@code /restapis/{id}/resources}, {@code /applications/{id}}). Restrict S3 route
+     * inference and action mapping to real bucket paths on the shared emulator endpoint.
+     *
+     * <p>{@code /v20180820} (S3 Control) is intentionally not excluded: AWS signs those
+     * calls with credential scope {@code s3}.
      */
     static boolean isS3BucketStylePath(String path) {
         if (path == null || path.isBlank() || "/".equals(path)) {
@@ -484,15 +508,46 @@ public class IamActionRegistry {
         String normalized = path.startsWith("/") ? path : "/" + path;
         return !normalized.startsWith("/restapis")
                 && !normalized.startsWith("/execute-api")
+                && !normalized.startsWith("/_floci")
+                && !normalized.startsWith("/_localstack")
+                && !normalized.startsWith("/_aws")
+                && !normalized.startsWith("/cognito-idp")
+                && !"/health".equals(normalized)
                 && !normalized.startsWith("/v1/")
                 && !normalized.startsWith("/v2/")
+                && !normalized.startsWith("/api/")
                 && !normalized.startsWith("/lambda")
                 && !normalized.startsWith("/2015-03-31/")
                 && !normalized.startsWith("/2013-04-01/")
+                && !normalized.startsWith("/2017-10-31/")
+                && !normalized.startsWith("/2018-10-31/")
+                && !normalized.startsWith("/2019-09-25/")
+                && !normalized.startsWith("/2019-09-30/")
+                && !normalized.startsWith("/2017-03-31/")
+                && !normalized.startsWith("/2020-06-30/")
+                && !normalized.startsWith("/2021-10-31/")
+                && !normalized.startsWith("/2021-01-01/")
+                && !normalized.startsWith("/2020-05-31/")
                 && !normalized.startsWith("/backup-vaults")
                 && !normalized.startsWith("/backup/")
                 && !normalized.startsWith("/clusters/")
-                && !normalized.startsWith("/Execute");
+                && !normalized.startsWith("/Execute")
+                && !normalized.startsWith("/applications")
+                && !normalized.startsWith("/things")
+                && !normalized.startsWith("/schedules")
+                && !normalized.startsWith("/schedule-groups")
+                && !normalized.startsWith("/model/")
+                && !normalized.startsWith("/policies")
+                && !normalized.startsWith("/deploymentstrategies")
+                && !normalized.startsWith("/configurationsessions")
+                && !normalized.startsWith("/configuration")
+                && !normalized.startsWith("/certificates")
+                && !normalized.startsWith("/endpoint")
+                && !normalized.startsWith("/topics/")
+                && !normalized.startsWith("/retainedMessage")
+                && !normalized.startsWith("/hostedzone")
+                && !normalized.startsWith("/distribution")
+                && !normalized.startsWith("/rules");
     }
 
     /**

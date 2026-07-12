@@ -55,6 +55,7 @@ import io.github.hectorvent.floci.services.elbv2.model.Rule;
 import io.github.hectorvent.floci.services.elbv2.model.RuleCondition;
 import io.github.hectorvent.floci.services.elbv2.model.TargetGroup;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.LambdaLayerService;
@@ -156,6 +157,7 @@ public class CloudFormationResourceProvisioner {
     private final CloudWatchMetricsService cloudWatchMetricsService;
     private final AutoScalingService autoScalingService;
     private final FirehoseService firehoseService;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     // Item 15 decomposition: extracted per-service provisioners are consulted before the switch
     // below. As types migrate, their switch cases and provisionXxx methods are removed here; the
     // now-dead service deps above are cleared in the final cleanup once the switch is empty.
@@ -189,7 +191,8 @@ public class CloudFormationResourceProvisioner {
                                              CloudWatchMetricsService cloudWatchMetricsService,
                                              AutoScalingService autoScalingService,
                                              FirehoseService firehoseService,
-                                             CloudFormationResourceRegistry resourceRegistry) {
+                                             CloudFormationResourceRegistry resourceRegistry,
+                                             InProcessTargetAuthorizer targetAuthorizer) {
         this.s3Service = s3Service;
         this.sqsService = sqsService;
         this.snsService = snsService;
@@ -222,6 +225,7 @@ public class CloudFormationResourceProvisioner {
         this.autoScalingService = autoScalingService;
         this.firehoseService = firehoseService;
         this.resourceRegistry = resourceRegistry;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     /**
@@ -3140,6 +3144,10 @@ public class CloudFormationResourceProvisioner {
             event.set("ResourceProperties", resourceProperties);
             if (oldResourceProperties != null) {
                 event.set("OldResourceProperties", oldResourceProperties);
+            }
+
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeCloudFormationLambdaInvoke(serviceToken, region);
             }
 
             byte[] payload = objectMapper.writeValueAsBytes(event);

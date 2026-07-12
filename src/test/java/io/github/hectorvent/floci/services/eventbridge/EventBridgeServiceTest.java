@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.InMemoryStorage;
+import io.github.hectorvent.floci.services.eventbridge.model.Archive;
 import io.github.hectorvent.floci.services.eventbridge.model.EventBus;
 import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
@@ -14,6 +15,7 @@ import io.github.hectorvent.floci.services.resourcegroupstagging.ResourceGroupsT
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -744,5 +746,51 @@ class EventBridgeServiceTest {
         com.fasterxml.jackson.databind.JsonNode envelope = OBJECT_MAPPER.readTree(json.getValue());
         assertEquals(REGION, envelope.path("region").asText());
         assertEquals("000000000000", envelope.path("account").asText());
+    }
+
+    // ──────────────────────────── Archive replay destination ────────────────────────────
+
+    @Test
+    void startReplayRejectsCrossBusDestination() {
+        EventBus sourceBus = service.createEventBus("replay-source-bus", null, null, REGION);
+        EventBus otherBus = service.createEventBus("replay-other-bus", null, null, REGION);
+        Archive archive = service.createArchive(
+                "cross-bus-archive", sourceBus.getArn(), null, null, 7, REGION);
+
+        Instant start = Instant.now().minusSeconds(60);
+        Instant end = Instant.now().plusSeconds(60);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                service.startReplay(
+                        "cross-bus-replay",
+                        null,
+                        archive.getArchiveArn(),
+                        start,
+                        end,
+                        otherBus.getArn(),
+                        REGION));
+
+        assertEquals("ValidationException", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("Destination Arn must match"));
+    }
+
+    @Test
+    void startReplayRejectsBlankDestination() {
+        EventBus sourceBus = service.createEventBus("blank-dest-bus", null, null, REGION);
+        Archive archive = service.createArchive(
+                "blank-dest-archive", sourceBus.getArn(), null, null, 7, REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                service.startReplay(
+                        "blank-dest-replay",
+                        null,
+                        archive.getArchiveArn(),
+                        Instant.now().minusSeconds(60),
+                        Instant.now().plusSeconds(60),
+                        "  ",
+                        REGION));
+
+        assertEquals("ValidationException", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("Destination Arn is required"));
     }
 }

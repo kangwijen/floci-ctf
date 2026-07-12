@@ -362,11 +362,94 @@ class InProcessTargetAuthorizerTest {
     }
 
     @Test
+    void secretsManagerLambdaInvokeUsesServicePrincipal() {
+        authorizer.authorizeSecretsManagerLambdaInvoke(LAMBDA_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.SECRETS_MANAGER_SERVICE), eq("lambda"), eq("InvokeFunction"),
+                eq(LAMBDA_ARN), eq(REGION));
+    }
+
+    @Test
+    void iotDeliveryMapsLambdaToInvokeFunction() {
+        authorizer.authorizeIotDelivery("lambda", LAMBDA_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.IOT_SERVICE), eq("lambda"), eq("InvokeFunction"),
+                eq(LAMBDA_ARN), eq(REGION));
+    }
+
+    @Test
+    void iotDeliveryMapsSqsUrlToSendMessage() {
+        String queueUrl = "https://sqs." + REGION + ".amazonaws.com/" + ACCOUNT + "/example-queue";
+
+        authorizer.authorizeIotDelivery("sqs", queueUrl, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.IOT_SERVICE), eq("sqs"), eq("SendMessage"),
+                eq(SQS_ARN), eq(REGION));
+    }
+
+    @Test
+    void iotDeliveryMapsSnsToPublish() {
+        authorizer.authorizeIotDelivery("sns", SNS_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.IOT_SERVICE), eq("sns"), eq("Publish"),
+                eq(SNS_ARN), eq(REGION));
+    }
+
+    @Test
+    void iotDeliveryMapsS3BucketKeyToPutObject() {
+        authorizer.authorizeIotDelivery("s3", "delivery-bucket/iot/payload.json", REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.IOT_SERVICE), eq("s3"), eq("PutObject"),
+                eq("arn:aws:s3:::delivery-bucket/iot/payload.json"), eq(REGION));
+    }
+
+    @Test
+    void iotDeliverySkipsBlankResource() {
+        authorizer.authorizeIotDelivery("lambda", null, REGION);
+
+        verifyNoInteractions(iamAuthorizer);
+    }
+
+    @Test
     void codeDeployLambdaInvokeUsesServicePrincipal() {
         authorizer.authorizeCodeDeployLambdaInvoke(LAMBDA_ARN, REGION);
 
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CODEDEPLOY_SERVICE), eq("lambda"), eq("InvokeFunction"),
+                eq(LAMBDA_ARN), eq(REGION));
+    }
+
+    @Test
+    void codePipelineLambdaInvokeUsesServicePrincipalWhenNoRole() {
+        authorizer.authorizeCodePipelineLambdaInvoke(LAMBDA_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CODEPIPELINE_SERVICE), eq("lambda"), eq("InvokeFunction"),
+                eq(LAMBDA_ARN), eq(REGION));
+    }
+
+    @Test
+    void codePipelineLambdaInvokePrefersRoleWhenPresent() {
+        authorizer.authorizeCodePipelineLambdaInvoke(LAMBDA_ARN, REGION, ROLE_ARN);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("lambda"), eq("InvokeFunction"), eq(LAMBDA_ARN), eq(REGION));
+        verify(iamAuthorizer, never()).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CODEPIPELINE_SERVICE), eq("lambda"), eq("InvokeFunction"),
+                any(), any());
+    }
+
+    @Test
+    void cloudFormationLambdaInvokeUsesServicePrincipal() {
+        authorizer.authorizeCloudFormationLambdaInvoke(LAMBDA_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.CLOUDFORMATION_SERVICE), eq("lambda"), eq("InvokeFunction"),
                 eq(LAMBDA_ARN), eq(REGION));
     }
 

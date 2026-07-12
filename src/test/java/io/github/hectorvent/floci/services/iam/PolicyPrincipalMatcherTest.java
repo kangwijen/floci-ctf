@@ -117,6 +117,13 @@ class PolicyPrincipalMatcherTest {
     }
 
     @Test
+    void servicePrincipalMatchesBareServiceString() throws Exception {
+        JsonNode principal = objectMapper.readTree("{\"Service\":\"sns.amazonaws.com\"}");
+        assertTrue(PolicyPrincipalMatcher.matchesPrincipalDimension(
+                principal, null, "sns.amazonaws.com", ACCOUNT));
+    }
+
+    @Test
     void servicePrincipalMatchesServiceLinkedRoleSession() throws Exception {
         JsonNode principal = objectMapper.readTree("{\"Service\":\"s3.amazonaws.com\"}");
         String serviceSession = "arn:aws:sts::" + ACCOUNT
@@ -126,10 +133,33 @@ class PolicyPrincipalMatcherTest {
     }
 
     @Test
+    void servicePrincipalMatchesSnsServiceLinkedRoleSession() throws Exception {
+        JsonNode principal = objectMapper.readTree("{\"Service\":\"sns.amazonaws.com\"}");
+        String serviceSession =
+                "arn:aws:sts::000000000000:assumed-role/aws-service-role/sns.amazonaws.com/"
+                        + "AWSServiceRoleForSNS/session";
+        assertTrue(PolicyPrincipalMatcher.matchesPrincipalDimension(
+                principal, null, serviceSession, "000000000000"));
+    }
+
+    @Test
     void servicePrincipalDoesNotMatchUnrelatedUser() throws Exception {
         JsonNode principal = objectMapper.readTree("{\"Service\":\"s3.amazonaws.com\"}");
         assertFalse(PolicyPrincipalMatcher.matchesPrincipalDimension(
                 principal, null, USER_ARN, ACCOUNT));
+    }
+
+    /**
+     * Regression (VULN-3): RoleSessionName equal to a service principal must not match
+     * Principal.Service. Only aws-service-role path SLRs (or bare service strings) match.
+     */
+    @Test
+    void assumedRoleSessionNameDoesNotMatchServicePrincipal() throws Exception {
+        JsonNode principal = objectMapper.readTree("{\"Service\":\"sns.amazonaws.com\"}");
+        String confusedSession =
+                "arn:aws:sts::000000000000:assumed-role/VictimRole/sns.amazonaws.com";
+        assertFalse(PolicyPrincipalMatcher.matchesPrincipalDimension(
+                principal, null, confusedSession, "000000000000"));
     }
 
     @Test

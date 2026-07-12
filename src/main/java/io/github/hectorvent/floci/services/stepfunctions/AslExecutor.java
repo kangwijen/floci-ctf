@@ -597,7 +597,7 @@ public class AslExecutor {
                     ? ".waitForTaskToken"
                     : resource.substring("arn:aws:states:::ecs:runTask".length());
             String region = extractRegionFromArn(sm.getStateMachineArn());
-            return invokeEcsRunTask(mode, input, region);
+            return invokeEcsRunTask(mode, input, region, sm.getRoleArn());
         }
 
         // Nested state machine integration
@@ -814,7 +814,8 @@ public class AslExecutor {
      *             STOPPED, or ".waitForTaskToken" to launch and let the token future carry the result
      *             (both ".sync" and ".waitForTaskToken" fail the state on a placement failure).
      */
-    private JsonNode invokeEcsRunTask(String mode, JsonNode input, String region) throws Exception {
+    private JsonNode invokeEcsRunTask(String mode, JsonNode input, String region, String roleArn) throws Exception {
+        authorizeTask(roleArn, "ecs", "RunTask", input, region, "ECS.");
         String taskDefinition = input.path("TaskDefinition").asText(null);
         if (taskDefinition == null || taskDefinition.isBlank()) {
             throw new FailStateException("States.TaskFailed",
@@ -1588,7 +1589,9 @@ public class AslExecutor {
                         "The ItemReader, ItemBatcher and ResultWriter fields are not supported for INLINE maps");
             }
         }
-        ResolvedMapItems resolvedItems = resolveMapItems(stateDef, input, jsonata, context, variables);
+        String region = extractRegionFromArn(sm.getStateMachineArn());
+        ResolvedMapItems resolvedItems = resolveMapItems(stateDef, input, jsonata, context, variables,
+                sm.getRoleArn(), region);
         JsonNode items = resolvedItems.items();
 
         if (!items.isArray()) {
@@ -1650,7 +1653,8 @@ public class AslExecutor {
     }
 
     private ResolvedMapItems resolveMapItems(JsonNode stateDef, JsonNode input,
-                                             boolean jsonata, JsonNode context, ObjectNode variables) throws Exception {
+                                             boolean jsonata, JsonNode context, ObjectNode variables,
+                                             String roleArn, String region) throws Exception {
         if (jsonata && stateDef.has("Items")) {
             JsonNode itemsNode = stateDef.get("Items");
             if (itemsNode.isTextual() && JsonataEvaluator.isExpression(itemsNode.asText())) {
@@ -1662,7 +1666,8 @@ public class AslExecutor {
         }
 
         if (stateDef.has("ItemReader")) {
-            return resolveItemReaderItems(stateDef.get("ItemReader"), input, context, jsonata, variables);
+            return resolveItemReaderItems(stateDef.get("ItemReader"), input, context, jsonata, variables,
+                    roleArn, region);
         }
 
         JsonNode itemsPath = stateDef.path("ItemsPath");
@@ -1672,7 +1677,8 @@ public class AslExecutor {
 
     private ResolvedMapItems resolveItemReaderItems(JsonNode itemReader, JsonNode input,
                                                     JsonNode context, boolean jsonata,
-                                                    ObjectNode variables) throws Exception {
+                                                    ObjectNode variables, String roleArn,
+                                                    String region) throws Exception {
         String resource = itemReader.path("Resource").asText(null);
         if ("arn:aws:states:::s3:listObjectsV2".equals(resource)) {
             throw new FailStateException("States.ItemReaderFailed",
@@ -1701,6 +1707,8 @@ public class AslExecutor {
         if (bucket == null || key == null) {
             throw new FailStateException("States.Runtime", "ItemReader Parameters must include Bucket and Key");
         }
+
+        authorizeTask(roleArn, "s3", "GetObject", resolvedParameters, region, "S3.");
 
         try {
             S3Object object = s3Service.getObject(bucket, key);

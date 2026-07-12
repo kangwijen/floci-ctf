@@ -291,6 +291,36 @@ class EventBridgeReplayIntegrationTest {
 
     @Test
     @Order(12)
+    void startReplayRejectsCrossBusDestination() {
+        String otherBusArn = given()
+                .contentType(EB_CT)
+                .header("X-Amz-Target", "AWSEvents.CreateEventBus")
+                .body("{\"Name\":\"replay-cross-bus\"}")
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("EventBusArn");
+
+        long afterPut = Instant.now().getEpochSecond() + 1;
+
+        given()
+                .contentType(EB_CT)
+                .header("X-Amz-Target", "AWSEvents.StartReplay")
+                .body("""
+                        {
+                          "ReplayName": "test-replay-cross-bus",
+                          "EventSourceArn": "%s",
+                          "EventStartTime": %d,
+                          "EventEndTime": %d,
+                          "Destination": {"Arn": "%s"}
+                        }
+                        """.formatted(archiveArn, beforePut, afterPut, otherBusArn))
+                .when().post("/")
+                .then().statusCode(400)
+                .body("__type", containsString("ValidationException"));
+    }
+
+    @Test
+    @Order(13)
     void deleteArchive() {
         given()
                 .contentType(EB_CT)
