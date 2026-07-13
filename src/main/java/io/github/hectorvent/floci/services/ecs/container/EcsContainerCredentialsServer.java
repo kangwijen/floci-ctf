@@ -18,12 +18,12 @@ import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * ECS container credentials and task metadata HTTP server bound to port 9170 on the Floci host.
@@ -38,6 +38,7 @@ public class EcsContainerCredentialsServer {
             .withZone(ZoneOffset.UTC);
     private static final String SESSION_CHARS =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final Vertx vertx;
     private final EmulatorConfig config;
@@ -212,9 +213,8 @@ public class EcsContainerCredentialsServer {
 
     private static String randomId(int length) {
         StringBuilder sb = new StringBuilder(length);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
         for (int i = 0; i < length; i++) {
-            sb.append(SESSION_CHARS.charAt(random.nextInt(SESSION_CHARS.length())));
+            sb.append(SESSION_CHARS.charAt(SECURE_RANDOM.nextInt(SESSION_CHARS.length())));
         }
         return sb.toString();
     }

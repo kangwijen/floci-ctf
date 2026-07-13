@@ -247,6 +247,9 @@ _(None from the former SigV4a / SAML X.509 / ECR data-plane / presigned POST ope
 | Lambda execution-role creds on Compose bridge (link-local `extra_hosts`, explicit port in `FULL_URI`, no `RELATIVE_URI` on 9171) | Closed | `ContainerLauncherTest`, `ContainerCredentialsUriBuilderTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
 | ECR registry reconcile on Compose bridge (`5100` published, adopt path backend port, `list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
 | STS `AssumeRole` same-account caller identity (trust-only unless explicit Deny) | Closed | `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
+| IAM policy glob matching exponential backtracking DoS | Closed | `IamPolicyEvaluatorTest`, `IamEnforcementIntegrationTest` |
+| Predictable IAM/STS/container credentials from `ThreadLocalRandom` | Closed | `IamService`, `StsQueryHandler`, `ContainerCredentialsHttpServer`, `Ec2MetadataServer`, `EcsContainerCredentialsServer` (`SecureRandom`) |
+| KMS `GenerateDataKey` / grant tokens from `ThreadLocalRandom` | Closed | `KmsService` (`secureRandom`) |
 | Presigned POST unknown condition operators fail-closed | Closed | `S3PresignedPostIntegrationTest` |
 | OIDC multi-value `aud` trust conditions + federated `nbf`/SAML sig floor | Closed | `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest`, `StsWebIdentityTrustIntegrationTest` |
 | EKS `k8s-aws-v1.*` token SigV4 verify on presigned STS GetCallerIdentity | Closed | `EksTokenSigV4IntegrationTest`, `EksTokenValidatorTest` |

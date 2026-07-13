@@ -53,7 +53,6 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static io.github.hectorvent.floci.services.kms.model.KmsMessageType.DIGEST;
 import static io.github.hectorvent.floci.services.kms.model.KmsMessageType.RAW;
@@ -281,7 +280,7 @@ public class KmsService {
         KmsKey key = resolveKey(keyId, region);
         String grantId = UUID.randomUUID().toString();
         byte[] tokenBytes = new byte[32];
-        ThreadLocalRandom.current().nextBytes(tokenBytes);
+        secureRandom.nextBytes(tokenBytes);
 
         KmsGrant grant = new KmsGrant();
         grant.setGrantId(grantId);
@@ -1061,7 +1060,7 @@ public class KmsService {
         int len = (keySpec != null && keySpec.contains("256")) ? 32 : (numberOfBytes > 0 ? numberOfBytes : 32);
 
         byte[] plaintext = new byte[len];
-        ThreadLocalRandom.current().nextBytes(plaintext);
+        secureRandom.nextBytes(plaintext);
 
         byte[] ciphertext = encrypt(keyId, plaintext, encryptionContext, region);
 

@@ -19,9 +19,9 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Query-protocol handler for STS (Security Token Service) actions.
@@ -33,6 +33,7 @@ public class StsQueryHandler {
 
     private static final Logger LOG = Logger.getLogger(StsQueryHandler.class);
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final IamService iamService;
     private final RegionResolver regionResolver;
@@ -430,7 +431,7 @@ public class StsQueryHandler {
         StringBuilder sb = new StringBuilder(length);
         String upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         for (int i = 0; i < length; i++) {
-            sb.append(upper.charAt(ThreadLocalRandom.current().nextInt(upper.length())));
+            sb.append(upper.charAt(SECURE_RANDOM.nextInt(upper.length())));
         }
         return sb.toString();
     }
@@ -438,7 +439,7 @@ public class StsQueryHandler {
     private static String randomSecret(int length) {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(CHARS.charAt(ThreadLocalRandom.current().nextInt(CHARS.length())));
+            sb.append(CHARS.charAt(SECURE_RANDOM.nextInt(CHARS.length())));
         }
         return sb.toString();
     }

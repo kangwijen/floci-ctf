@@ -56,6 +56,8 @@ In permissive mode, grants are stored and queryable but are **not** evaluated du
 
 When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evaluate grants after identity and key policy checks. A valid grant for the caller principal and operation can allow `Decrypt` (and related crypto actions) when IAM alone would deny. In-process calls from Step Functions `aws-sdk` tasks do not evaluate grants yet; use the state machine execution role's IAM policy for those paths.
 
+**Randomness:** `GenerateDataKey` plaintext bytes and grant tokens use the service `SecureRandom` instance (same CSPRNG path as `GenerateRandom` and encrypt nonces). Non-cryptographic PRNGs are not used for key or token material.
+
 ### CloudTrail audit (HTTP)
 
 When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, KMS API calls emit management events indexed for `lookup-events`. `Decrypt` matches [AWS KMS CloudTrail events](https://docs.aws.amazon.com/kms/latest/developerguide/logging-using-cloudtrail.html):

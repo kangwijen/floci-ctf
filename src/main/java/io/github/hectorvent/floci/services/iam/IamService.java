@@ -25,13 +25,13 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -50,6 +50,7 @@ public class IamService implements SessionAccountLookup {
 
     private static final Logger LOG = Logger.getLogger(IamService.class);
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int SESSION_PURGE_LOOKUP_INTERVAL = 100;
     private static final String TEMPORARY_ACCESS_KEY_PREFIX = "ASIA";
 
@@ -1671,7 +1672,7 @@ public class IamService implements SessionAccountLookup {
     private static String randomId(int length) {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(CHARS.charAt(ThreadLocalRandom.current().nextInt(CHARS.length())));
+            sb.append(CHARS.charAt(SECURE_RANDOM.nextInt(CHARS.length())));
         }
         return sb.toString();
     }
@@ -1680,7 +1681,7 @@ public class IamService implements SessionAccountLookup {
         String secretChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(secretChars.charAt(ThreadLocalRandom.current().nextInt(secretChars.length())));
+            sb.append(secretChars.charAt(SECURE_RANDOM.nextInt(secretChars.length())));
         }
         return sb.toString();
     }

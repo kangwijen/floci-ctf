@@ -11,6 +11,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -513,41 +514,42 @@ public class IamPolicyEvaluator {
 
     /**
      * Case-insensitive glob matching supporting {@code *} (any sequence) and {@code ?} (any char).
+     *
+     * <p>Uses an {@code O(n*m)} dynamic-programming matcher so multi-wildcard patterns cannot
+     * trigger exponential recursive backtracking (algorithmic complexity DoS).
      */
     public static boolean globMatches(String pattern, String value) {
         if (pattern == null || value == null) {
             return false;
         }
-        return globMatchesHelper(pattern.toLowerCase(), value.toLowerCase(), 0, 0);
-    }
+        String pat = pattern.toLowerCase();
+        String val = value.toLowerCase();
+        int m = pat.length();
+        int n = val.length();
 
-    private static boolean globMatchesHelper(String pat, String val, int pi, int vi) {
-        while (pi < pat.length() && vi < val.length()) {
-            char p = pat.charAt(pi);
-            if (p == '*') {
-                while (pi < pat.length() && pat.charAt(pi) == '*') {
-                    pi++;
+        // prev[j] / curr[j]: whether pat[0..i) matches val[0..j)
+        boolean[] prev = new boolean[n + 1];
+        boolean[] curr = new boolean[n + 1];
+        prev[0] = true;
+
+        for (int i = 1; i <= m; i++) {
+            char pc = pat.charAt(i - 1);
+            curr[0] = pc == '*' && prev[0];
+            for (int j = 1; j <= n; j++) {
+                if (pc == '*') {
+                    curr[j] = prev[j] || curr[j - 1];
+                } else if (pc == '?' || pc == val.charAt(j - 1)) {
+                    curr[j] = prev[j - 1];
+                } else {
+                    curr[j] = false;
                 }
-                if (pi == pat.length()) {
-                    return true;
-                }
-                for (int i = vi; i <= val.length(); i++) {
-                    if (globMatchesHelper(pat, val, pi, i)) {
-                        return true;
-                    }
-                }
-                return false;
-            } else if (p == '?' || p == val.charAt(vi)) {
-                pi++;
-                vi++;
-            } else {
-                return false;
             }
+            boolean[] swap = prev;
+            prev = curr;
+            curr = swap;
+            Arrays.fill(curr, false);
         }
-        while (pi < pat.length() && pat.charAt(pi) == '*') {
-            pi++;
-        }
-        return pi == pat.length() && vi == val.length();
+        return prev[n];
     }
 
     // -----------------------------------------------------------------------

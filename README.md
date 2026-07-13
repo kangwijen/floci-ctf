@@ -50,6 +50,8 @@ For service coverage, architecture, SDK examples, and general configuration, use
 | SQS scoped `ReceiveMessage` | JSON 1.0 `QueueUrl` ignored for IAM (scoped policies fail) | Queue ARN from Query form **and** JSON 1.0 body `QueueUrl`; account from URL path |
 | CloudTrail SQS audit | `requestParameters.queueUrl` on Query API only | `queueUrl` and `messageBody` on Query and JSON 1.0 SQS calls (`CloudTrailEventRecorder`) |
 | SQS `ListQueues` IAM deny | May surface as `ServiceNotAvailableException` | HTTP 403 `AccessDenied` (Query XML or JSON `AccessDeniedException`) when identity policy denies `sqs:ListQueues` |
+| IAM credential / KMS key material | `ThreadLocalRandom` for access keys, STS sessions, container creds, `GenerateDataKey`, grant tokens | `SecureRandom` / service CSPRNG for all of the above |
+| IAM policy `*` / `?` matching | Recursive backtracking (exponential on multi-wildcard patterns) | Linear-time DP matcher in `IamPolicyEvaluator.globMatches` |
 
 **Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `LaunchedContainerAwsEnv`, `OperatorCredentialEnv`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenValidator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 

@@ -180,6 +180,13 @@ class IamEnforcementIntegrationTest {
                 "arn:aws:s3:::other-bucket/file.txt"));
     }
 
+    @Test
+    void globMatchesPathologicalPatternDoesNotHang() {
+        String pattern = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa*a*a*a*a*a*a*b";
+        String value = "a".repeat(40);
+        assertFalse(IamPolicyEvaluator.globMatches(pattern, value));
+    }
+
     // =========================================================================
     // Scoped ARN matching — SSM and STS with non-default account
     // =========================================================================

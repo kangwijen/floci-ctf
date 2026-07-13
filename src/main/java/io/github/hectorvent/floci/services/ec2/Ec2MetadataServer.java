@@ -18,6 +18,7 @@ import org.jboss.logging.Logger;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -26,7 +27,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * IMDS-compatible HTTP server bound to port 9169 on the Floci host.
@@ -44,6 +44,7 @@ public class Ec2MetadataServer {
             .withZone(ZoneOffset.UTC);
     private static final String SESSION_CHARS =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String INSTANCE_TAGS_PREFIX = "/latest/meta-data/tags/instance/";
 
     private final Vertx vertx;
@@ -421,9 +422,8 @@ public class Ec2MetadataServer {
 
     private static String randomId(int length) {
         StringBuilder sb = new StringBuilder(length);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
         for (int i = 0; i < length; i++) {
-            sb.append(SESSION_CHARS.charAt(random.nextInt(SESSION_CHARS.length())));
+            sb.append(SESSION_CHARS.charAt(SECURE_RANDOM.nextInt(SESSION_CHARS.length())));
         }
         return sb.toString();
     }
