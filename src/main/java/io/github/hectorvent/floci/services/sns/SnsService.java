@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.sns;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.Resettable;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
@@ -83,6 +84,7 @@ public class SnsService implements Resettable {
     private final HttpClient httpClient;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private OutboundUrlGuard outboundUrlGuard = new OutboundUrlGuard(false, List.of(), false);
     private final Map<String, Instant> fifoDeduplicationCache = new ConcurrentHashMap<>();
     private static final HexFormat HEX = HexFormat.of();
     
@@ -117,6 +119,7 @@ public class SnsService implements Resettable {
                 cloudTrailRecorder,
                 targetAuthorizer
         );
+        this.outboundUrlGuard = new OutboundUrlGuard(config);
     }
 
     /**
@@ -326,6 +329,9 @@ public class SnsService implements Resettable {
             throw new AwsException("InvalidParameter",
                     "Invalid parameter: Endpoint scheme does not match protocol '" + protocol + "'.", 400);
         }
+        if ("http".equals(protocol) || "https".equals(protocol)) {
+            outboundUrlGuard.validateHttpUrl(endpoint);
+        }
 
         for (Subscription existing : subscriptionsByTopic(topicArn, region)) {
             if (protocol.equals(existing.getProtocol())
@@ -373,6 +379,9 @@ public class SnsService implements Resettable {
             Subscription sub = subscriptionStore.get(subKey).orElse(null);
             if (sub == null || !topicArn.equals(sub.getTopicArn())) continue;
             if (token.equals(sub.getAttributes().get("ConfirmationToken"))) {
+                if ("http".equals(sub.getProtocol()) || "https".equals(sub.getProtocol())) {
+                    outboundUrlGuard.validateHttpUrl(sub.getEndpoint());
+                }
                 sub.getAttributes().put("PendingConfirmation", "false");
                 sub.getAttributes().remove("ConfirmationToken");
                 subscriptionStore.put(subKey, sub);
@@ -1327,6 +1336,7 @@ public class SnsService implements Resettable {
                 }
                 case "http", "https" -> {
                     if (httpClient == null) break;
+                    outboundUrlGuard.validateHttpUrl(sub.getEndpoint());
                     boolean rawDelivery = "true".equalsIgnoreCase(sub.getAttributes().get("RawMessageDelivery"));
                     String body = rawDelivery
                             ? message

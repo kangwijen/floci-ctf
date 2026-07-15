@@ -177,10 +177,10 @@ class DynamoDbProjectionIntegrationTest {
                     {"TableName": "%s"}
                     """.formatted(TABLE))
             .when()
-                .post("/")
-            .then()
-                .statusCode(200);
-        } catch (Exception ignored) {}
+                .post("/");
+        } catch (Throwable ignored) {
+            // Best-effort teardown. RestAssured asserts throw AssertionError, not Exception.
+        }
     }
 
     /**

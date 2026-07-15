@@ -14,6 +14,8 @@ floci:
   ctf:
     # Product default is true; tests keep internal routes for EmulatorInfoController etc.
     hide-internal-endpoints: false
+    # Compose CTF enables this. Unit/integration tests use loopback HTTP backends.
+    block-private-outbound-urls: false
     cloud-trail-injection-enabled: true
     sigv4a-signing-public-keys:
       "AKIATESTSIGV4A01": |

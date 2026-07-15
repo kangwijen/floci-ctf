@@ -1,6 +1,5 @@
 package io.github.hectorvent.floci.services.cognito;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.hectorvent.floci.core.common.AwsException;
@@ -15,7 +14,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -25,12 +23,11 @@ import java.util.Map;
  * mocks alone are insufficient for OIDC clients that resolve a user's profile
  * via this endpoint.
  *
- * <p>Floci is a local emulator, not a security boundary: the bearer token is
- * parsed but not signature-verified. The {@code iss} claim determines which
- * pool to look the user up in and {@code sub} identifies the user. Attributes
- * are returned with their raw Cognito names (including the {@code custom:*}
- * prefix) so downstream Jackson mappings such as
- * {@code @JsonProperty("custom:my_attribute")} resolve correctly.
+ * <p>Bearer access tokens are RS256-verified against the issuing user pool signing
+ * key before claims are trusted. The {@code iss} claim determines which pool to
+ * use and {@code sub} identifies the user. Attributes are returned with their raw
+ * Cognito names (including the {@code custom:*} prefix) so downstream Jackson
+ * mappings such as {@code @JsonProperty("custom:my_attribute")} resolve correctly.
  *
  * <p>The response shape mirrors real AWS Cognito: snake_case keys for OIDC
  * standard claims and string-valued {@code email_verified} /
@@ -41,22 +38,18 @@ import java.util.Map;
  */
 @ApplicationScoped
 @Path("/")
-@Produces(MediaType.APPLICATION_JSON)
 public class CognitoUserInfoController {
 
     private static final Logger LOG = Logger.getLogger(CognitoUserInfoController.class);
-    private static final TypeReference<Map<String, Object>> CLAIM_MAP_TYPE = new TypeReference<>() {};
-
-    private final CognitoService cognitoService;
-    private final ObjectMapper objectMapper;
 
     @Inject
-    public CognitoUserInfoController(CognitoService cognitoService, ObjectMapper objectMapper) {
-        this.cognitoService = cognitoService;
-        this.objectMapper = objectMapper;
-    }
+    CognitoService cognitoService;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @GET
+    @Produces(MediaType.APPLICATION_JSON)
     @Path("/cognito-idp/oauth2/userInfo")
     public Response userInfo(@HeaderParam("Authorization") String authorization) {
         if (authorization == null || authorization.isBlank()
@@ -64,18 +57,13 @@ public class CognitoUserInfoController {
             return bearerError(401, "invalid_token", "Bearer token required");
         }
         String token = authorization.substring(7).trim();
-        String[] parts = token.split("\\.");
-        if (parts.length < 2) {
-            return bearerError(401, "invalid_token", "Malformed JWT");
-        }
 
         Map<String, Object> claims;
         try {
-            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
-            claims = objectMapper.readValue(payload, CLAIM_MAP_TYPE);
-        } catch (Exception e) {
-            LOG.debug("Failed to decode JWT payload", e);
-            return bearerError(401, "invalid_token", "Cannot decode JWT payload");
+            claims = cognitoService.verifyAndDecodeAccessToken(token);
+        } catch (AwsException e) {
+            LOG.debug("Access token verification failed", e);
+            return bearerError(401, "invalid_token", e.getMessage() == null ? "Invalid access token" : e.getMessage());
         }
 
         String sub = asString(claims.get("sub"));

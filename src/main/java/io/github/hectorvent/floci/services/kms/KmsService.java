@@ -41,6 +41,8 @@ import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
 import org.jboss.logging.Logger;
 
 import javax.crypto.Mac;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -182,7 +184,11 @@ public class KmsService {
                     new SecureRandom().nextBytes(material);
                     key.setPrivateKeyEncoded(Base64.getEncoder().encodeToString(material));
                 }
-                case SYMMETRIC -> {/* // Use existing mock behavior for symmetric keys */}
+                case SYMMETRIC -> {
+                    byte[] material = new byte[32];
+                    secureRandom.nextBytes(material);
+                    key.setPrivateKeyEncoded(Base64.getEncoder().encodeToString(material));
+                }
                 case RSA -> {
                     KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
                     int size = Integer.parseInt(spec.name().substring(4));
@@ -703,17 +709,20 @@ public class KmsService {
 
     // ──────────────────────────── Crypto Ops (Mocks) ────────────────────────────
 
+    // v3 blob: kms:v3:<keyId>:<base64(nonce)>:<base64(ciphertext-and-tag)>
+    // EncryptionContext is authenticated AES-GCM additional authenticated data.
     // v2 blob: kms:v2:<keyId>:<nonceHex>:<contextFingerprintHex>:<base64(plaintext)>
     // Nonce makes Encrypt non-deterministic; contextFingerprint binds EncryptionContext as AAD.
     // Legacy v1 (kms:<keyId>:<base64>) still accepted on Decrypt for persistent-store back-compat.
+    private static final String BLOB_PREFIX_V3 = "kms:v3:";
     private static final String BLOB_PREFIX_V2 = "kms:v2:";
     private static final String BLOB_PREFIX_V1 = "kms:";
-    private static final int NONCE_BYTES = 8;
+    private static final int GCM_NONCE_BYTES = 12;
+    private static final int GCM_TAG_BITS = 128;
     private static final int MIN_MAC_MESSAGE_BYTES = 1;
     private static final int MAX_MAC_MESSAGE_BYTES = 4096;
     private static final int MIN_MAC_BYTES = 1;
     private static final int MAX_MAC_BYTES = 6144;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     public byte[] encrypt(String keyId, byte[] plaintext, String region) {
         return encrypt(keyId, plaintext, Map.of(), region);
@@ -721,17 +730,21 @@ public class KmsService {
 
     public byte[] encrypt(String keyId, byte[] plaintext, Map<String, String> encryptionContext, String region) {
         KmsKey kmsKey = resolveKey(keyId, region);
-
-        byte[] nonceBytes = new byte[NONCE_BYTES];
-        SECURE_RANDOM.nextBytes(nonceBytes);
-        String nonceHex = HexFormat.of().formatHex(nonceBytes);
-
-        String blob = BLOB_PREFIX_V2
-                + kmsKey.getKeyId() + ":"
-                + nonceHex + ":"
-                + contextFingerprint(encryptionContext) + ":"
-                + Base64.getEncoder().encodeToString(plaintext);
-        return blob.getBytes(StandardCharsets.UTF_8);
+        try {
+            byte[] nonce = new byte[GCM_NONCE_BYTES];
+            secureRandom.nextBytes(nonce);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, encryptionKey(kmsKey), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            cipher.updateAAD(contextAad(encryptionContext));
+            byte[] encrypted = cipher.doFinal(plaintext);
+            String blob = BLOB_PREFIX_V3
+                    + kmsKey.getKeyId() + ":"
+                    + Base64.getUrlEncoder().withoutPadding().encodeToString(nonce) + ":"
+                    + Base64.getUrlEncoder().withoutPadding().encodeToString(encrypted);
+            return blob.getBytes(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new AwsException("InternalFailure", "Failed to encrypt ciphertext: " + e.getMessage(), 500);
+        }
     }
 
     public byte[] decrypt(byte[] ciphertext, String region) {
@@ -740,8 +753,11 @@ public class KmsService {
 
     public byte[] decrypt(byte[] ciphertext, Map<String, String> encryptionContext, String region) {
         ParsedBlob parsed = parseBlob(ciphertext);
-        if (!parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
+        if (parsed.version != 3 && !parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+        }
+        if (parsed.version == 3) {
+            return decryptV3(parsed, encryptionContext, region);
         }
         return Base64.getDecoder().decode(parsed.payload);
     }
@@ -761,16 +777,33 @@ public class KmsService {
     private static final int MAX_NESTED_DECRYPT_DEPTH = 8;
 
     public DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext, String region) {
-        return decryptAndResolveKey(ciphertext, encryptionContext, region, MAX_NESTED_DECRYPT_DEPTH);
+        return decryptAndResolveKey(ciphertext, encryptionContext, region, null, MAX_NESTED_DECRYPT_DEPTH);
+    }
+
+    /**
+     * Decrypt ciphertext and optionally assert that {@code requestedKeyId} resolves to the same CMK
+     * as the encrypting key embedded in the blob (AWS {@code IncorrectKeyException} semantics).
+     */
+    public DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext,
+                                              String region, String requestedKeyId) {
+        return decryptAndResolveKey(ciphertext, encryptionContext, region, requestedKeyId, MAX_NESTED_DECRYPT_DEPTH);
     }
 
     private DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext,
                                                String region, int depthRemaining) {
+        return decryptAndResolveKey(ciphertext, encryptionContext, region, null, depthRemaining);
+    }
+
+    private DecryptResult decryptAndResolveKey(byte[] ciphertext, Map<String, String> encryptionContext,
+                                               String region, String requestedKeyId, int depthRemaining) {
         ParsedBlob parsed = parseBlob(ciphertext);
-        if (!parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
+        assertRequestedKeyMatchesBlob(requestedKeyId, parsed.keyId, region);
+        if (parsed.version != 3 && !parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
         }
-        byte[] plaintext = Base64.getDecoder().decode(parsed.payload);
+        byte[] plaintext = parsed.version == 3
+                ? decryptV3(parsed, encryptionContext, region)
+                : Base64.getDecoder().decode(parsed.payload);
         String keyArn;
         try {
             keyArn = resolveKey(parsed.keyId, region).getArn();
@@ -778,10 +811,22 @@ public class KmsService {
             keyArn = null;
         }
         if (depthRemaining > 0 && looksLikeKmsEnvelope(plaintext)) {
-            DecryptResult inner = decryptAndResolveKey(plaintext, encryptionContext, region, depthRemaining - 1);
+            DecryptResult inner = decryptAndResolveKey(plaintext, encryptionContext, region, null, depthRemaining - 1);
             return new DecryptResult(inner.plaintext(), keyArn != null ? keyArn : inner.keyArn());
         }
         return new DecryptResult(plaintext, keyArn);
+    }
+
+    private void assertRequestedKeyMatchesBlob(String requestedKeyId, String blobKeyId, String region) {
+        if (requestedKeyId == null || requestedKeyId.isBlank()) {
+            return;
+        }
+        KmsKey requested = resolveKey(requestedKeyId, region);
+        KmsKey fromBlob = resolveKey(blobKeyId, region);
+        if (!requested.getKeyId().equals(fromBlob.getKeyId())) {
+            throw new AwsException("IncorrectKeyException",
+                    "The key ID provided does not match the key used to encrypt the ciphertext.", 400);
+        }
     }
 
     private static boolean looksLikeKmsEnvelope(byte[] bytes) {
@@ -799,24 +844,31 @@ public class KmsService {
 
     public record VerifyMacResult(String keyArn) {}
 
-    private record ParsedBlob(String keyId, String nonce, String contextFingerprint, String payload) {}
+    private record ParsedBlob(int version, String keyId, String nonce, String contextFingerprint, String payload) {}
 
     private static ParsedBlob parseBlob(byte[] ciphertext) {
         String data = new String(ciphertext, StandardCharsets.UTF_8);
+        if (data.startsWith(BLOB_PREFIX_V3)) {
+            String[] parts = data.substring(BLOB_PREFIX_V3.length()).split(":", 3);
+            if (parts.length != 3 || parts[0].isBlank() || parts[1].isBlank() || parts[2].isBlank()) {
+                throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+            }
+            return new ParsedBlob(3, parts[0], parts[1], contextFingerprint(Map.of()), parts[2]);
+        }
         if (data.startsWith(BLOB_PREFIX_V2)) {
             // v2: keyId, nonce, contextFingerprint, payload
             String[] parts = data.substring(BLOB_PREFIX_V2.length()).split(":", 4);
             if (parts.length < 4) {
                 throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
             }
-            return new ParsedBlob(parts[0], parts[1], parts[2], parts[3]);
+            return new ParsedBlob(2, parts[0], parts[1], parts[2], parts[3]);
         }
         if (data.startsWith(BLOB_PREFIX_V1)) {
             // Legacy v1: kms:<keyId>:<base64>. No nonce, no context binding.
             // Decrypts only when caller supplies empty/null context (fingerprint "").
             String[] parts = data.substring(BLOB_PREFIX_V1.length()).split(":", 2);
             if (parts.length == 2) {
-                return new ParsedBlob(parts[0], "", "", parts[1]);
+                return new ParsedBlob(1, parts[0], "", "", parts[1]);
             }
         }
         throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
@@ -846,6 +898,40 @@ public class KmsService {
         } catch (NoSuchAlgorithmException e) {
             throw new AwsException("InternalFailure", "SHA-256 unavailable", 500);
         }
+    }
+
+    private byte[] decryptV3(ParsedBlob parsed, Map<String, String> encryptionContext, String region) {
+        try {
+            byte[] nonce = Base64.getUrlDecoder().decode(parsed.nonce);
+            if (nonce.length != GCM_NONCE_BYTES) {
+                throw new IllegalArgumentException("Invalid nonce length");
+            }
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, encryptionKey(resolveKey(parsed.keyId, region)),
+                    new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            cipher.updateAAD(contextAad(encryptionContext));
+            return cipher.doFinal(Base64.getUrlDecoder().decode(parsed.payload));
+        } catch (AwsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+        }
+    }
+
+    private static SecretKeySpec encryptionKey(KmsKey kmsKey) {
+        String encoded = kmsKey.getPrivateKeyEncoded();
+        if (encoded == null || encoded.isBlank()) {
+            throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+        }
+        byte[] material = Base64.getDecoder().decode(encoded);
+        if (material.length != 32) {
+            throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+        }
+        return new SecretKeySpec(material, "AES");
+    }
+
+    private static byte[] contextAad(Map<String, String> encryptionContext) {
+        return contextFingerprint(encryptionContext).getBytes(StandardCharsets.US_ASCII);
     }
 
     public byte[] sign(String keyId, byte[] message, String algorithm, String region) {

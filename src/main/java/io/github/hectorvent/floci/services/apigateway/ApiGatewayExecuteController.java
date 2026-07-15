@@ -3,7 +3,9 @@ package io.github.hectorvent.floci.services.apigateway;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsErrorResponse;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.apigateway.model.ApiGatewayResource;
 import io.github.hectorvent.floci.services.apigateway.model.Integration;
 import io.github.hectorvent.floci.services.apigateway.model.IntegrationResponse;
@@ -12,6 +14,7 @@ import io.github.hectorvent.floci.services.apigateway.model.Stage;
 import io.github.hectorvent.floci.services.apigateway.model.UsagePlan;
 import io.github.hectorvent.floci.services.apigateway.model.UsagePlanKey;
 import io.github.hectorvent.floci.services.apigatewayv2.ApiGatewayV2Service;
+import io.github.hectorvent.floci.services.apigatewayv2.JwtAuthorizerVerifier;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Authorizer;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Route;
 import io.github.hectorvent.floci.services.apigatewayv2.websocket.ConnectionInfo;
@@ -75,6 +78,8 @@ public class ApiGatewayExecuteController {
     private final WebSocketConnectionManager webSocketConnectionManager;
     private final ElbV2Service elbV2Service;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final EmulatorConfig config;
+    private final JwtAuthorizerVerifier jwtAuthorizerVerifier;
 
     @Inject
     public ApiGatewayExecuteController(ApiGatewayService apiGatewayService, ApiGatewayV2Service apiGatewayV2Service,
@@ -83,7 +88,9 @@ public class ApiGatewayExecuteController {
                                        AwsServiceRouter serviceRouter,
                                        WebSocketConnectionManager webSocketConnectionManager,
                                        ElbV2Service elbV2Service,
-                                       InProcessTargetAuthorizer targetAuthorizer) {
+                                       InProcessTargetAuthorizer targetAuthorizer,
+                                       EmulatorConfig config,
+                                       JwtAuthorizerVerifier jwtAuthorizerVerifier) {
         this.apiGatewayService = apiGatewayService;
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.lambdaService = lambdaService;
@@ -94,6 +101,8 @@ public class ApiGatewayExecuteController {
         this.webSocketConnectionManager = webSocketConnectionManager;
         this.elbV2Service = elbV2Service;
         this.targetAuthorizer = targetAuthorizer;
+        this.config = config;
+        this.jwtAuthorizerVerifier = jwtAuthorizerVerifier;
     }
 
     /** Matches an ELBv2 listener ARN (ALB {@code app/} or NLB {@code net/}); group 1 = region. */
@@ -1443,8 +1452,12 @@ public class ApiGatewayExecuteController {
         }
     }
 
-    private final io.github.hectorvent.floci.services.apigatewayv2.proxy.HttpProxyInvoker httpProxyInvoker =
-            new io.github.hectorvent.floci.services.apigatewayv2.proxy.HttpProxyInvoker();
+    @Inject
+    OutboundUrlGuard outboundUrlGuard;
+
+    private io.github.hectorvent.floci.services.apigatewayv2.proxy.HttpProxyInvoker httpProxyInvoker() {
+        return new io.github.hectorvent.floci.services.apigatewayv2.proxy.HttpProxyInvoker(outboundUrlGuard);
+    }
 
     private Response dispatchHttpProxyV2(io.github.hectorvent.floci.services.apigatewayv2.model.Integration integration,
                                           Route route, String httpMethod, String path,
@@ -1504,7 +1517,7 @@ public class ApiGatewayExecuteController {
                 httpMethod, apiId, stageName, path, effective.getIntegrationUri());
 
         io.github.hectorvent.floci.services.apigatewayv2.proxy.ProxyResult result =
-                httpProxyInvoker.invoke(effective, ctx);
+                httpProxyInvoker().invoke(effective, ctx);
 
         Response.ResponseBuilder rb = Response.status(result.statusCode());
         if (result.body() != null) rb.entity(result.body());
@@ -1627,6 +1640,16 @@ public class ApiGatewayExecuteController {
                     .type(MediaType.APPLICATION_JSON).build();
         }
 
+        String issuer = authorizer.getJwtConfiguration() == null
+                ? null
+                : authorizer.getJwtConfiguration().issuer();
+        if (config.ctf().requireJwtSignatureVerification()
+                && !jwtAuthorizerVerifier.verify(token, issuer)) {
+            return Response.status(401)
+                    .entity(jsonMessage("Unauthorized"))
+                    .type(MediaType.APPLICATION_JSON).build();
+        }
+
         JwtClaims claims = parseJwtClaims(token);
         if (claims == null) {
             return Response.status(401)
@@ -1641,7 +1664,6 @@ public class ApiGatewayExecuteController {
         }
 
         if (authorizer.getJwtConfiguration() != null) {
-            String issuer = authorizer.getJwtConfiguration().issuer();
             if (issuer != null && !issuer.isBlank() && !issuer.equals(claims.iss)) {
                 return Response.status(401)
                         .entity(jsonMessage("Unauthorized"))
@@ -1961,8 +1983,12 @@ public class ApiGatewayExecuteController {
 
     private JwtClaims parseJwtClaims(String token) {
         try {
-            String[] parts = token.split("\\.");
-            if (parts.length < 2) return null;
+            String[] parts = token.split("\\.", -1);
+            if (parts.length != 3 || parts[0].isBlank() || parts[1].isBlank() || parts[2].isBlank()) return null;
+            JsonNode header = objectMapper.readTree(new String(Base64.getUrlDecoder().decode(padBase64(parts[0])),
+                    StandardCharsets.UTF_8));
+            String algorithm = header.path("alg").asText(null);
+            if (algorithm == null || algorithm.isBlank() || "none".equalsIgnoreCase(algorithm)) return null;
             byte[] payloadBytes = Base64.getUrlDecoder().decode(padBase64(parts[1]));
             String payload = new String(payloadBytes, StandardCharsets.UTF_8);
             JsonNode claims = objectMapper.readTree(payload);

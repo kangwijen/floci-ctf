@@ -233,6 +233,8 @@ http://localhost:4566/$POOL_ID/.well-known/openid-configuration
 http://localhost:4566/$POOL_ID/.well-known/jwks.json
 ```
 
+Inbound self-service APIs (`GetUser`, `UpdateUserAttributes`, `DeleteUserAttributes`, `ChangePassword`, `GlobalSignOut`) and `/cognito-idp/oauth2/userInfo` verify the access token RS256 signature against the issuing pool signing key, reject unsigned or `alg=none` tokens, and enforce `exp` / `nbf` when present.
+
 Tokens include the `cognito:groups` claim as a JSON array when the authenticated user belongs to one or more groups.
 
 Tokens issued by Cognito auth flows and the OAuth token endpoint use the emulator base URL plus the pool id:

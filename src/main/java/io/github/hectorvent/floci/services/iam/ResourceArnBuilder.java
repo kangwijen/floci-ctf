@@ -310,15 +310,14 @@ public class ResourceArnBuilder {
     }
 
     private String buildKmsArnFromJson(JsonNode node, String region, String accountId) {
+        // Prefer CiphertextBlob so Decrypt / ReEncrypt authorize against the encrypting CMK.
+        String keyFromBlob = keyIdFromCiphertextBlob(jsonText(node, "CiphertextBlob"));
+        if (keyFromBlob != null) {
+            return kmsKeyArn(keyFromBlob, region, accountId);
+        }
         String keyId = jsonText(node, "KeyId");
         if (keyId != null && !keyId.isBlank()) {
-            if (keyId.startsWith("arn:aws:kms:")) {
-                return keyId;
-            }
-            if (keyId.startsWith("alias/")) {
-                return AwsArnUtils.Arn.of("kms", region, accountId, keyId).toString();
-            }
-            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyId).toString();
+            return kmsKeyArn(keyId, region, accountId);
         }
         String alias = jsonText(node, "AliasName");
         if (alias != null && !alias.isBlank()) {
@@ -326,13 +325,6 @@ public class ResourceArnBuilder {
                 alias = "alias/" + alias;
             }
             return AwsArnUtils.Arn.of("kms", region, accountId, alias).toString();
-        }
-        String keyFromBlob = keyIdFromCiphertextBlob(jsonText(node, "CiphertextBlob"));
-        if (keyFromBlob != null) {
-            if (keyFromBlob.startsWith("arn:aws:kms:")) {
-                return keyFromBlob;
-            }
-            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyFromBlob).toString();
         }
         return AwsArnUtils.Arn.of("kms", region, accountId, "key/*").toString();
     }
@@ -958,15 +950,14 @@ public class ResourceArnBuilder {
     // ── KMS ──────────────────────────────────────────────────────────────────────
 
     private String buildKmsArn(ContainerRequestContext ctx, String path, String region, String accountId) {
+        // Prefer CiphertextBlob so Decrypt / ReEncrypt authorize against the encrypting CMK.
+        String keyFromBlob = keyIdFromCiphertextBlob(readJsonStringField(ctx, "CiphertextBlob"));
+        if (keyFromBlob != null) {
+            return kmsKeyArn(keyFromBlob, region, accountId);
+        }
         String keyId = readJsonStringField(ctx, "KeyId");
         if (keyId != null && !keyId.isBlank()) {
-            if (keyId.startsWith("arn:aws:kms:")) {
-                return keyId;
-            }
-            if (keyId.startsWith("alias/")) {
-                return AwsArnUtils.Arn.of("kms", region, accountId, keyId).toString();
-            }
-            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyId).toString();
+            return kmsKeyArn(keyId, region, accountId);
         }
         String alias = readJsonStringField(ctx, "AliasName");
         if (alias != null && !alias.isBlank()) {
@@ -979,18 +970,22 @@ public class ResourceArnBuilder {
         if (pathKey != null) {
             return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + pathKey).toString();
         }
-        String keyFromBlob = keyIdFromCiphertextBlob(readJsonStringField(ctx, "CiphertextBlob"));
-        if (keyFromBlob != null) {
-            if (keyFromBlob.startsWith("arn:aws:kms:")) {
-                return keyFromBlob;
-            }
-            return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyFromBlob).toString();
-        }
         return AwsArnUtils.Arn.of("kms", region, accountId, "key/*").toString();
     }
 
+    private static String kmsKeyArn(String keyIdOrArn, String region, String accountId) {
+        if (keyIdOrArn.startsWith("arn:aws:kms:")) {
+            return keyIdOrArn;
+        }
+        if (keyIdOrArn.startsWith("alias/")) {
+            return AwsArnUtils.Arn.of("kms", region, accountId, keyIdOrArn).toString();
+        }
+        return AwsArnUtils.Arn.of("kms", region, accountId, "key/" + keyIdOrArn).toString();
+    }
+
     /**
-     * Extracts CMK id embedded in Floci KMS ciphertext blobs ({@code kms:v2:KEYID:...}).
+     * Extracts CMK id embedded in Floci KMS ciphertext blobs
+     * ({@code kms:v3:KEYID:...}, {@code kms:v2:KEYID:...}, or legacy {@code kms:KEYID:...}).
      */
     public static String keyIdFromCiphertextBlob(String ciphertextBlobBase64) {
         if (ciphertextBlobBase64 == null || ciphertextBlobBase64.isBlank()) {
@@ -998,6 +993,10 @@ public class ResourceArnBuilder {
         }
         try {
             String data = new String(Base64.getDecoder().decode(ciphertextBlobBase64), StandardCharsets.UTF_8);
+            if (data.startsWith("kms:v3:")) {
+                String[] parts = data.substring("kms:v3:".length()).split(":", 3);
+                return parts.length > 0 && !parts[0].isBlank() ? parts[0] : null;
+            }
             if (data.startsWith("kms:v2:")) {
                 String[] parts = data.substring("kms:v2:".length()).split(":", 4);
                 return parts.length > 0 && !parts[0].isBlank() ? parts[0] : null;

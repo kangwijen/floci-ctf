@@ -467,10 +467,11 @@ Optional CTF controls (see [environment variables](../configuration/environment-
 |---|---|---|
 | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | Hide `/_floci/*`, `/_localstack/*`, `/_aws/*`; `all` also hides `/health` |
 | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | Trust `X-Forwarded-For` for `aws:sourceip` (enable only behind a trusted proxy) |
-| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML `Signature` required on `AssumeRoleWithWebIdentity` / SAML |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` (Compose `true`) | When `true`, require structurally valid JWT/SAML assertions and validate expiry, issuer, and configured verification keys |
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 secret for web identity JWT verification when validation is enabled |
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per-provider HS256 secrets (for example `accounts_google.com`) |
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
+| `FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4` | `true` | Require a valid SigV4 or SigV4a presigned STS `GetCallerIdentity` URL in EKS bearer tokens |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind Lambda/CodeBuild/ECS credential HTTP servers to `127.0.0.1` |
 | `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | Honor `X-Floci-CloudTrail-Source-Ip` for CloudTrail `sourceIPAddress` only |
 | `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED` | `false` | Operator-only `POST /_floci/cloudtrail/events*` for synthetic audit events |
@@ -490,6 +491,8 @@ export AWS_ACCESS_KEY_ID="$FLOCI_AUTH_ROOT_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 docker compose up
 ```
+
+Compose enables federated token validation. Configure an HMAC secret or RSA public key for each lab issuer when you need cryptographic verification. A lab that intentionally needs unsigned web identity tokens must set `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=false` explicitly. When validation is on, unsigned JWTs and `alg=none` are rejected.
 
 S3 presigned URLs use the same SigV4 query-string model as AWS. Sign with `aws s3 presign` using participant or operator IAM credentials, or use Floci's `PreSignedUrlGenerator` (requires `FLOCI_AUTH_ROOT_*` for built-in URL generation).
 
@@ -520,7 +523,7 @@ Under strict enforcement, the legacy `test`/`test` credential pair and other unr
 
 **Policy glob matching:** `IamPolicyEvaluator.globMatches` uses an `O(n*m)` dynamic-programming matcher for `*` and `?` so multi-wildcard Resource or Condition patterns cannot trigger exponential recursive backtracking against long literal ARNs. Regression: `IamPolicyEvaluatorTest.globMatchesPathologicalMultiWildcardCompletesInLinearTime`.
 
-**Cognito OAuth routes:** `/cognito-idp/oauth2/token` and `/cognito-idp/oauth2/userInfo` are not SigV4 APIs. Real Cognito uses `client_secret_basic` (HTTP Basic with `client_id:client_secret`) or `client_secret_post` for the token endpoint, and a Bearer access token for userInfo ([token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)). Floci skips IAM policy evaluation on these paths and lets `CognitoOAuthController` / `CognitoUserInfoController` validate registered app-client credentials. They are **not** listed in `SecurityBypassPaths` as health or internal routes. Under strict enforcement, unauthenticated calls to other paths are denied; OAuth routes still require client credentials or a Bearer token at the controller. A Cognito-issued Bearer JWT does **not** satisfy SigV4 on S3, IAM, or other emulated services — `IamEnforcementFilter` rejects non-SigV4 `Authorization` headers on the data plane.
+**Cognito OAuth routes:** `/cognito-idp/oauth2/token` and `/cognito-idp/oauth2/userInfo` are not SigV4 APIs. Real Cognito uses `client_secret_basic` (HTTP Basic with `client_id:client_secret`) or `client_secret_post` for the token endpoint, and a Bearer access token for userInfo ([token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)). Floci skips IAM policy evaluation on these paths and lets `CognitoOAuthController` / `CognitoUserInfoController` validate registered app-client credentials and access-token signatures. They are **not** listed in `SecurityBypassPaths` as health or internal routes. Under strict enforcement, unauthenticated calls to other paths are denied; OAuth routes still require client credentials or a verified Bearer access token at the controller. A Cognito-issued Bearer JWT does **not** satisfy SigV4 on S3, IAM, or other emulated services — `IamEnforcementFilter` rejects non-SigV4 `Authorization` headers on the data plane.
 
 ### AWS CLI version compatibility
 

@@ -22,6 +22,7 @@ import org.jboss.logging.Logger;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 /**
  * Query-protocol handler for STS (Security Token Service) actions.
@@ -172,8 +173,9 @@ public class StsQueryHandler {
         String providerId = getParam(params, "ProviderId");
         int durationSeconds = getIntParam(params, "DurationSeconds", 3600);
         String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
+        String webIdentityToken = getParam(params, "WebIdentityToken");
         FederatedTrustContext federatedContext = FederatedTokenParser.parseWebIdentityToken(
-                getParam(params, "WebIdentityToken"),
+                webIdentityToken,
                 providerId,
                 roleAccountId,
                 FederatedTokenValidationConfig.from(config.ctf()));

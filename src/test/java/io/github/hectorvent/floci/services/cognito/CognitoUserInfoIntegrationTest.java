@@ -336,6 +336,39 @@ class CognitoUserInfoIntegrationTest {
                 .header("WWW-Authenticate", containsString("invalid_token"));
     }
 
+    @Test
+    @Order(14)
+    void forgedAccessTokenWithValidSubRejected() throws Exception {
+        String userInfo = given()
+                .header("Authorization", "Bearer " + accessToken)
+        .when()
+                .get("/cognito-idp/oauth2/userInfo")
+        .then()
+                .statusCode(200)
+                .extract()
+                .asString();
+        String sub = OBJECT_MAPPER.readTree(userInfo).path("sub").asText();
+        assertFalse(sub.isBlank());
+
+        String header = base64Url("{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"" + poolId + "\"}");
+        String payload = base64Url(("{\"sub\":\"" + sub + "\","
+                + "\"username\":\"" + USERNAME + "\","
+                + "\"iss\":\"http://localhost:4566/" + poolId + "\","
+                + "\"token_use\":\"access\","
+                + "\"exp\":" + (System.currentTimeMillis() / 1000L + 3600) + ","
+                + "\"iat\":" + (System.currentTimeMillis() / 1000L) + ","
+                + "\"jti\":\"" + UUID.randomUUID() + "\"}"));
+        String forged = header + "." + payload + ".not-a-real-signature";
+
+        given()
+                .header("Authorization", "Bearer " + forged)
+        .when()
+                .get("/cognito-idp/oauth2/userInfo")
+        .then()
+                .statusCode(401)
+                .header("WWW-Authenticate", containsString("invalid_token"));
+    }
+
     private static String base64Url(String raw) {
         return java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));

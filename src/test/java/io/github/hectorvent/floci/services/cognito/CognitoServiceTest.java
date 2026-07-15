@@ -1196,6 +1196,24 @@ class CognitoServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void getUserRejectsForgedAccessTokenSignature() {
+        UserPool pool = createPoolAndUser();
+        UserPoolClient client = service.createUserPoolClient(pool.getId(), "test-client",
+                false, false, List.of(), List.of());
+        Map<String, Object> authResult = service.initiateAuth(
+                client.getClientId(), "USER_PASSWORD_AUTH",
+                Map.of("USERNAME", "alice", "PASSWORD", "Perm1234!"));
+        Map<String, Object> auth = (Map<String, Object>) authResult.get("AuthenticationResult");
+        String realToken = (String) auth.get("AccessToken");
+        String[] parts = realToken.split("\\.");
+        String forged = parts[0] + "." + parts[1] + ".AAAA";
+
+        AwsException ex = assertThrows(AwsException.class, () -> service.getUser(forged));
+        assertEquals("NotAuthorizedException", ex.getErrorCode());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void jwtSubIsConsistentAcrossMultipleLogins() {
         UserPool pool = createPoolAndUser();
         UserPoolClient client = service.createUserPoolClient(pool.getId(), "test-client",

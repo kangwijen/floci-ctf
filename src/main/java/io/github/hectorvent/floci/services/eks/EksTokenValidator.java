@@ -16,7 +16,7 @@ import java.util.Optional;
 
 /**
  * Validates {@code k8s-aws-v1.*} bearer tokens for the EKS token webhook.
- * Under IAM enforcement, verifies SigV4 on an embedded presigned STS {@code GetCallerIdentity} URL.
+ * Verifies SigV4 or SigV4a on the embedded presigned STS {@code GetCallerIdentity} URL.
  */
 @ApplicationScoped
 public class EksTokenValidator {
@@ -43,7 +43,7 @@ public class EksTokenValidator {
         if (token == null || !token.startsWith(EKS_TOKEN_PREFIX)) {
             return false;
         }
-        if (!config.services().iam().enforcementEnabled()) {
+        if (!config.ctf().requireEksTokenSigv4()) {
             return true;
         }
         return validatePresignedGetCallerIdentity(token.substring(EKS_TOKEN_PREFIX.length()));
@@ -138,7 +138,8 @@ public class EksTokenValidator {
         if (!urlString.contains("X-Amz-Signature=")) {
             return false;
         }
-        if (!urlString.contains("X-Amz-Algorithm=AWS4-HMAC-SHA256")) {
+        if (!urlString.contains("X-Amz-Algorithm=AWS4-HMAC-SHA256")
+                && !urlString.contains("X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256")) {
             return false;
         }
         return lower.contains("sts") || lower.contains("localhost") || lower.contains("127.0.0.1");

@@ -168,12 +168,25 @@ floci:
     # AWS link-local credential URIs (http://169.254.170.2/v2/credentials/{token}); binds servers to 0.0.0.0
     container-credentials-use-link-local-uri: true
     container-credentials-link-local-host: 169.254.170.2
+    # ECS host volumes remain disabled unless explicitly enabled and constrained to allowed roots.
+    ecs-allow-host-volumes: false
+    # Reject non-public outbound HTTP addresses for HTTP integrations, SNS, and ALB IP targets.
+    # Dev/test default off. Compose CTF sets FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true.
+    block-private-outbound-urls: false           # FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS
+    # outbound-url-host-allowlist:                # FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST
+    #   - api.example.com
+    # outbound-allow-private-addresses: false     # FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES
     # Operator-only: stamp sourceIPAddress on CloudTrail audit events (does not affect IAM aws:sourceip)
     # cloud-trail-allow-source-ip-header: false  # FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER
     # Operator-only: POST /_floci/cloudtrail/events* (requires root AKID + SigV4 when validate-signatures is on)
     cloud-trail-injection-enabled: false  # FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED
-    # Optional JWT/SAML validation for AssumeRoleWithWebIdentity / SAML
+    # Dev default off. Compose CTF sets FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true.
     validate-federated-tokens: false
+    # HTTP API JWT authorizers reject unsigned tokens and verify HS256 with this lab secret.
+    # api-gateway-jwt-hmac-secret:       # FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET
+    require-jwt-signature-verification: true
+    # EKS k8s-aws-v1 tokens must carry a valid presigned STS GetCallerIdentity signature.
+    require-eks-token-sigv4: true
     # federated-jwt-hmac-secret:           # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET
     # federated-jwt-hmac-secrets:          # FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>
     #   accounts.google.com: lab-secret

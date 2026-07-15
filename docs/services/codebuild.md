@@ -130,3 +130,4 @@ When IAM enforcement is enabled:
 - Build containers receive execution-role credentials from the CodeBuild container credentials server on host port **9172** (`floci.services.codebuild.container-credentials-port`).
 - Build environments are hardened the same way as Lambda and ECS tasks (no injected root or static bypass keys).
 - `StartBuild` and artifact uploads to S3 require IAM on the CodeBuild service role and S3 bucket policies as usual.
+- Artifact path patterns resolve under the build workspace only. Paths that escape the workspace are rejected.

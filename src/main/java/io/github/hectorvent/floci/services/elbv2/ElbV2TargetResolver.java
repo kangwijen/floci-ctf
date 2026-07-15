@@ -32,4 +32,12 @@ final class ElbV2TargetResolver {
         }
         return targetId;
     }
+
+    static boolean isRegisteredInstance(Ec2Service ec2Service, TargetGroup targetGroup, String targetId) {
+        return targetGroup != null
+                && "instance".equals(targetGroup.getTargetType())
+                && ec2Service != null
+                && targetId != null
+                && ec2Service.findInstanceById(targetId) != null;
+    }
 }

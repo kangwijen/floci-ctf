@@ -211,4 +211,77 @@ class KmsDecryptScopedKeyIntegrationTest {
                 .when().post("/")
                 .then().statusCode(403);
     }
+
+    @Test
+    @Order(3)
+    void decryptWithMismatchedKeyIdRejected() throws Exception {
+        String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String otherKeyId = given()
+                .header("Authorization", rootAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        // Allow decrypt on the attacker's key only.
+        String narrowPolicy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"kms:Decrypt",
+               "Resource":"arn:aws:kms:us-east-1:%s:key/%s"}
+            ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT, otherKeyId);
+        CtfLabIamTestSupport.putUserPolicy("kms-test-user", "kms-decrypt-one", narrowPolicy);
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));
+        req.put("KeyId", otherKeyId);
+
+        // Ciphertext is under allowedKey, KeyId names otherKey. IAM scopes to the blob key (deny)
+        // once CiphertextBlob is preferred, and the service rejects IncorrectKey when KeyId differs.
+        given()
+                .header("Authorization", CtfLabIamTestSupport.playerAuth(playerAkid).replace("/s3/", "/kms/"))
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(403);
+    }
+
+    @Test
+    @Order(4)
+    void decryptMismatchedKeyIdReturnsIncorrectKeyWhenAuthorizedForBlobKey() throws Exception {
+        String rootAuth = "AWS4-HMAC-SHA256 Credential=" + CtfLabIamEnforcementProfile.ROOT_ACCESS_KEY_ID
+                + "/20260227/us-east-1/kms/aws4_request";
+        String otherKeyId = given()
+                .header("Authorization", rootAuth)
+                .header("X-Amz-Target", "TrentService.CreateKey")
+                .contentType("application/x-amz-json-1.1")
+                .body(objectMapper.createObjectNode().toString())
+                .when().post("/")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("KeyMetadata.KeyId");
+
+        // Allow decrypt on the encrypting key so IAM passes and IncorrectKeyException can surface.
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"kms:Decrypt",
+               "Resource":"arn:aws:kms:us-east-1:%s:key/%s"}
+            ]}""".formatted(CtfLabIamEnforcementProfile.ACCOUNT, allowedKeyId);
+        CtfLabIamTestSupport.putUserPolicy("kms-test-user", "kms-decrypt-one", policy);
+
+        ObjectNode req = objectMapper.createObjectNode();
+        req.put("CiphertextBlob", Base64.getEncoder().encodeToString(ciphertext));
+        req.put("KeyId", otherKeyId);
+
+        given()
+                .header("Authorization", CtfLabIamTestSupport.playerAuth(playerAkid).replace("/s3/", "/kms/"))
+                .header("X-Amz-Target", "TrentService.Decrypt")
+                .contentType("application/x-amz-json-1.1")
+                .body(req.toString())
+                .when().post("/")
+                .then().statusCode(400)
+                .body("__type", org.hamcrest.Matchers.containsString("IncorrectKeyException"));
+    }
 }

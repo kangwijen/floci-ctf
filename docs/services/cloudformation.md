@@ -41,6 +41,10 @@
 | `DescribeStackSetOperation` | - |
 <!-- floci:actions:end -->
 
+## Deleted stacks
+
+After `DeleteStack` finishes, Floci retains the stack briefly so `DescribeStacks` / `DescribeStackEvents` by **stack ARN** can still return `DELETE_COMPLETE`. Retention is `floci.services.cloudformation.deleted-stack-retention-seconds` (default `30`). `DescribeStacks` keyed by ARN does not require the request Signature region to match the stack region. The live stack map entry is removed only after that retained view is registered, so a concurrent describe cannot see an empty gap.
+
 ## Supported Resource Types
 
 Resource types provisioned during `CreateStack` / `UpdateStack` / `DeleteStack`. Each delegates to

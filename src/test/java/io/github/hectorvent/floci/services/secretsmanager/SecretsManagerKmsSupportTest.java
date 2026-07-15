@@ -38,7 +38,7 @@ class SecretsManagerKmsSupportTest {
         Optional<byte[]> detected = support.detectExistingEnvelope(null, envelopeB64);
 
         assertTrue(detected.isPresent());
-        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v2:"));
+        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v3:"));
     }
 
     @Test
@@ -51,7 +51,7 @@ class SecretsManagerKmsSupportTest {
         Optional<byte[]> detected = support.detectExistingEnvelope(null, doubleWrapped);
 
         assertTrue(detected.isPresent());
-        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v2:"));
+        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v3:"));
     }
 
     @Test
@@ -73,7 +73,7 @@ class SecretsManagerKmsSupportTest {
     }
 
     @Test
-    void detectExistingEnvelopeFromRawKmsV2SecretString() {
+    void detectExistingEnvelopeFromRawKmsV3SecretString() {
         byte[] plaintext = "kms-envelope-plaintext".getBytes(StandardCharsets.UTF_8);
         byte[] envelope = kmsService.encrypt(createKeyId(), plaintext, REGION);
         String rawSecretString = new String(envelope, StandardCharsets.UTF_8);
@@ -81,7 +81,7 @@ class SecretsManagerKmsSupportTest {
         Optional<byte[]> detected = support.detectExistingEnvelope(rawSecretString, null);
 
         assertTrue(detected.isPresent());
-        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v2:"));
+        assertTrue(new String(detected.get(), StandardCharsets.UTF_8).startsWith("kms:v3:"));
     }
 
     @Test

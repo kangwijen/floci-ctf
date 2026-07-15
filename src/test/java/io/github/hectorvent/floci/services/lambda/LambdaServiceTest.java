@@ -515,17 +515,29 @@ class LambdaServiceTest {
 
     @Test
     void hotReload_allowListRejection_throwsInvalidParameter() {
-        LambdaService svc = serviceWithHotReload(true, List.of("/allowed/"));
+        LambdaService svc = serviceWithHotReload(true, List.of("/allowed"));
         Map<String, Object> req = baseRequest("hr-denied");
-        req.put("Code", Map.of("S3Bucket", "hot-reload", "S3Key", "/not-allowed/my-fn"));
+        req.put("Code", Map.of("S3Bucket", "hot-reload", "S3Key", "/allowed-outside/my-fn"));
         AwsException ex = assertThrows(AwsException.class, () -> svc.createFunction(REGION, req));
         assertEquals("InvalidParameterValueException", ex.getErrorCode());
         assertTrue(ex.getMessage().contains("allowed"));
     }
 
     @Test
+    void hotReload_requiresNonEmptyAllowList() {
+        LambdaService svc = serviceWithHotReload(true, List.of());
+        Map<String, Object> req = baseRequest("hr-missing-allowlist");
+        req.put("Code", Map.of("S3Bucket", "hot-reload", "S3Key", "/tmp/my-fn"));
+
+        AwsException exception = assertThrows(AwsException.class, () -> svc.createFunction(REGION, req));
+
+        assertEquals("InvalidParameterValueException", exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("allowed path"));
+    }
+
+    @Test
     void hotReload_happyPath_setsHostPathAndClearsCodeLocalPath() {
-        LambdaService svc = serviceWithHotReload(true, null);
+        LambdaService svc = serviceWithHotReload(true, List.of("/tmp"));
         Map<String, Object> req = baseRequest("hr-fn");
         req.put("Code", Map.of("S3Bucket", "hot-reload", "S3Key", "/tmp/my-fn"));
         LambdaFunction fn = svc.createFunction(REGION, req);
@@ -546,7 +558,7 @@ class LambdaServiceTest {
 
     @Test
     void hotReload_updateFunctionCode_setsNewHostPath() {
-        LambdaService svc = serviceWithHotReload(true, null);
+        LambdaService svc = serviceWithHotReload(true, List.of("/tmp"));
         svc.createFunction(REGION, baseRequest("hr-update"));
 
         LambdaFunction updated = svc.updateFunctionCode(REGION, "hr-update",
@@ -559,7 +571,7 @@ class LambdaServiceTest {
     void hotReload_convertFromS3Backed_clearsBucketAndKey() {
         // A function previously deployed from S3 that is later converted to hot-reload
         // must have s3Bucket/s3Key cleared so the reactive S3 sync observer cannot fire.
-        LambdaService svc = serviceWithHotReload(true, null);
+        LambdaService svc = serviceWithHotReload(true, List.of("/tmp"));
         Map<String, Object> req = baseRequest("hr-convert");
         req.put("Code", Map.of("S3Bucket", "my-code-bucket", "S3Key", "fn.zip"));
         // createFunction with a non-existent S3 bucket will fail inside extractZipCodeFromS3

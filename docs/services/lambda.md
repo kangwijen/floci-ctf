@@ -106,16 +106,16 @@ The `S3Key` must be an **absolute path** reachable by the Docker daemon. When Fl
 
 ### Configuration
 
-Hot-reload must be enabled explicitly. By default it is disabled so that `S3Bucket=hot-reload` is treated as a regular S3 bucket name.
+Hot-reload must be enabled explicitly. By default it is disabled so that `S3Bucket=hot-reload` is treated as a regular S3 bucket name. When enabled, `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` must list absolute host-path roots that `S3Key` paths are contained within. Compose CTF leaves hot-reload disabled.
 
 ```bash
 FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED=true
 
-# Optional: restrict which host paths may be bind-mounted (comma-separated)
+# Required when enabled: restrict which host paths may be bind-mounted (comma-separated)
 FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS=/home/user/projects,/tmp
 ```
 
-**Docker Compose setup** — enable the feature and share the Docker socket:
+**Docker Compose setup** — enable the feature, set an allowlist, and share the Docker socket:
 
 ```yaml
 services:
@@ -124,6 +124,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED: "true"
+      FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS: "/home/user/projects,/tmp"
 ```
 
 ### Limitations
@@ -196,7 +197,7 @@ Ports in the Runtime API range are probed on the host before assignment. When th
 | `FLOCI_SERVICES_LAMBDA_REGION_CONCURRENCY_LIMIT` | `1000` | Maximum concurrent executions per region |
 | `FLOCI_SERVICES_LAMBDA_UNRESERVED_CONCURRENCY_MIN` | `100` | Minimum unreserved capacity `PutFunctionConcurrency` must leave |
 | `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED` | `false` | Enable bind-mount hot-reload via `S3Bucket=hot-reload` |
-| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` | *(unset)* | Comma-separated allowlist of host paths that may be bind-mounted |
+| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` | *(unset)* | Required host-path roots when hot-reload is enabled. Paths outside the allowlist are rejected |
 | `FLOCI_SERVICES_LAMBDA_DOCKER_NETWORK` | *(unset)* | Docker network to attach Lambda containers to (overrides `FLOCI_SERVICES_DOCKER_NETWORK`) |
 | `FLOCI_SERVICES_LAMBDA_DOCKER_HOST_OVERRIDE` | *(unset)* | Explicit host/IP that spawned Lambda containers use to reach Floci's Runtime API, bypassing auto-detection |
 

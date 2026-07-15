@@ -48,6 +48,14 @@ Maps to `FLOCI_CTF_*` environment variables.
 | `floci.ctf.federated-jwt-hmac-secret` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 HMAC secret for web identity JWT verification |
 | `floci.ctf.federated-jwt-hmac-secrets` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*` | _(none)_ | Per OIDC provider host HS256 secrets |
 | `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
+| `floci.ctf.ecs-allow-host-volumes` | `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES` | `false` | Permit ECS host source paths only with an allowlist |
+| `floci.ctf.ecs-allowed-host-source-paths` | `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS` | _(none)_ | Allowed host-path roots for ECS volumes |
+| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` | Reject non-public outbound HTTP destinations (Compose sets `true`) |
+| `floci.ctf.outbound-url-host-allowlist` | `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` | _(none)_ | Optional outbound hostname allowlist |
+| `floci.ctf.outbound-allow-private-addresses` | `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES` | `false` | Operator override for private outbound addresses |
+| `floci.ctf.require-jwt-signature-verification` | `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` | `true` | Require HTTP API JWT authorizer signature verification |
+| `floci.ctf.api-gateway-jwt-hmac-secret` | `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET` | _(none)_ | HS256 secret for HTTP API JWT authorizers |
+| `floci.ctf.require-eks-token-sigv4` | `FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4` | `true` | Require SigV4 or SigV4a on EKS bearer tokens |
 | `floci.ctf.cloud-trail-allow-source-ip-header` | `FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER` | `false` | Operator-only: stamp `sourceIPAddress` on audit events |
 | `floci.ctf.cloud-trail-injection-enabled` | `FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED` | `false` | Operator-only `POST /_floci/cloudtrail/events*` (root AKID + SigV4 when validate-signatures is on) |
 
@@ -59,7 +67,12 @@ floci:
     container-credentials-use-link-local-uri: true
     container-credentials-link-local-host: 169.254.170.2
     validate-federated-tokens: false
+    ecs-allow-host-volumes: false
+    block-private-outbound-urls: false
+    require-jwt-signature-verification: true
+    require-eks-token-sigv4: true
     # federated-jwt-hmac-secret: lab-secret
+    # api-gateway-jwt-hmac-secret: lab-jwt-secret
     # federated-jwt-hmac-secrets:
     #   accounts.google.com: provider-secret
     # federated-jwt-rs256-public-key-pem: |
@@ -287,6 +300,7 @@ floci:
 
     cloudformation:
       enabled: true
+      # deleted-stack-retention-seconds: 30   # How long DescribeStacks-by-ARN can still see DELETE_COMPLETE
 
     acm:
       enabled: true

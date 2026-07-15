@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.elbv2;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.ec2.Ec2Service;
 import io.github.hectorvent.floci.services.elbv2.model.Action;
 import io.github.hectorvent.floci.services.elbv2.model.Listener;
@@ -60,6 +61,9 @@ public class ElbV2DataPlane {
 
     @Inject
     EmulatorConfig config;
+
+    @Inject
+    OutboundUrlGuard outboundUrlGuard;
 
     @Inject
     LambdaService lambdaService;
@@ -315,7 +319,18 @@ public class ElbV2DataPlane {
         int idx = Math.abs(counter.getAndIncrement() % candidates.size());
         TargetDescription target = candidates.get(idx);
         int targetPort = ElbV2HealthChecker.effectivePort(target, tg);
-        proxyRequest(req, ElbV2TargetResolver.resolveHost(ec2Service, tg, target), targetPort);
+        String host = ElbV2TargetResolver.resolveHost(ec2Service, tg, target);
+        if ("ip".equalsIgnoreCase(tg.getTargetType())
+                && !ElbV2TargetResolver.isRegisteredInstance(ec2Service, tg, target.getId())
+                && outboundUrlGuard != null) {
+            try {
+                outboundUrlGuard.validateHttpUrl("http://" + targetHost(host));
+            } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+                req.response().setStatusCode(502).end("Target address is not permitted");
+                return;
+            }
+        }
+        proxyRequest(req, host, targetPort);
     }
 
     private void invokeLambdaTarget(io.vertx.core.http.HttpServerRequest req, String functionArn, String region) {
@@ -496,6 +511,10 @@ public class ElbV2DataPlane {
                     })
                     .onFailure(err -> req.response().setStatusCode(503).end("Service unavailable"));
         });
+    }
+
+    private static String targetHost(String host) {
+        return host != null && host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
     }
 
     private void executeRedirect(io.vertx.core.http.HttpServerRequest req, Action action) {

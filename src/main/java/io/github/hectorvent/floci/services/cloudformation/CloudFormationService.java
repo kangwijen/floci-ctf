@@ -672,11 +672,13 @@ public class CloudFormationService {
             addEvent(stack, stack.getStackName(), stack.getStackId(),
                     "AWS::CloudFormation::Stack", "DELETE_COMPLETE", null);
             removeStackExports(stack, region);
-            stacks.remove(key(stack.getStackName(), region));
-            unpersistStack(stack.getStackName(), region);
+            // Publish the retained DELETE_COMPLETE view before removing the live entry so a
+            // concurrent DescribeStacks-by-ARN cannot observe a gap (neither live nor deleted).
             deletedStacks.put(stack.getStackId(), new DeletedStackEntry(
                     stack,
                     now().plusSeconds(config.services().cloudformation().deletedStackRetentionSeconds())));
+            stacks.remove(key(stack.getStackName(), region));
+            unpersistStack(stack.getStackName(), region);
             LOG.infov("Stack {0} deleted", stack.getStackName());
 
         } catch (Exception e) {
@@ -939,9 +941,10 @@ public class CloudFormationService {
                     deletedStacks.remove(stackNameOrArn, deleted);
                     return null;
                 }
-                if (region.equals(deleted.stack().getRegion())) {
-                    return deleted.stack();
-                }
+                // A stack ARN uniquely identifies the retained record. Do not require the request
+                // region (from Authorization) to match — callers may Describe by ARN after signing
+                // for a different region than the stack was created in.
+                return deleted.stack();
             }
         }
         return null;

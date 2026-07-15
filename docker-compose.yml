@@ -22,8 +22,12 @@ services:
       FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: "true"
       FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED: "true"
       FLOCI_AUTH_VALIDATE_SIGNATURES: "true"
+      FLOCI_CTF_VALIDATE_FEDERATED_TOKENS: "true"
+      FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION: "true"
+      FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4: "true"
       # true = hide /_floci/* and /_localstack/* from players; all = also hide /health
       FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS: "true"
+      FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS: "true"
       FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST: "true"
       # Link-local cred URIs (http://169.254.170.2:9171/v2/credentials/{token}); servers bind 0.0.0.0 on 9170/9171/9172.
       # Floci injects extra_hosts on spawned Lambda/ECS/CodeBuild containers (host-gateway or Floci container IP).
@@ -39,7 +43,8 @@ services:
       # If you were using this env var for persistence, migrate: docker volume ls -f label=floci=true
       FLOCI_HOSTNAME: floci
       FLOCI_BASE_URL: http://floci:4566
-      FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED: "true"
+      # Hot-reload requires an explicit allowed host-path list when enabled.
+      FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED: "false"
       # Audit profile: persist service state across restarts; emit management API audit records.
       FLOCI_STORAGE_MODE: hybrid
       FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED: "true"

@@ -59,6 +59,29 @@ class SamlAssertionSignatureVerifierTest {
     }
 
     @Test
+    void verifyRejectsAssertionWithDoctypeEntityExpansion() {
+        String bomb = """
+                <?xml version="1.0"?>
+                <!DOCTYPE lolz [
+                  <!ENTITY lol "lol">
+                  <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+                  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+                ]>
+                <Assertion xmlns="urn:oasis:names:tc:SAML:2.0:assertion">
+                  <Issuer>&lol3;</Issuer>
+                  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <SignedInfo/>
+                    <SignatureValue>AAA</SignatureValue>
+                    <DigestValue>BBB</DigestValue>
+                  </Signature>
+                </Assertion>
+                """;
+        assertFalse(SamlAssertionSignatureVerifier.verify(
+                bomb,
+                List.of(signingMaterial.certificatePem())));
+    }
+
+    @Test
     void federatedParserAcceptsSignedAssertionWhenCertConfigured() {
         FederatedTokenValidationConfig config = new FederatedTokenValidationConfig(
                 true,

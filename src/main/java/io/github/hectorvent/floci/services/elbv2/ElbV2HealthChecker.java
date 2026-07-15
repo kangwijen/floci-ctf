@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.elbv2;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.core.common.Resettable;
 import io.github.hectorvent.floci.services.ec2.Ec2Service;
 import io.github.hectorvent.floci.services.elbv2.model.TargetDescription;
@@ -27,6 +28,7 @@ public class ElbV2HealthChecker implements Resettable {
     private final Vertx vertx;
     private final EmulatorConfig config;
     private final Ec2Service ec2Service;
+    private final OutboundUrlGuard outboundUrlGuard;
 
     // tgArn → (targetKey → TargetState)
     private final Map<String, Map<String, TargetState>> states = new ConcurrentHashMap<>();
@@ -38,6 +40,7 @@ public class ElbV2HealthChecker implements Resettable {
         this.vertx = vertx;
         this.config = config;
         this.ec2Service = ec2Service;
+        this.outboundUrlGuard = new OutboundUrlGuard(config);
     }
 
     public static int effectivePort(TargetDescription target, TargetGroup tg) {
@@ -146,6 +149,13 @@ public class ElbV2HealthChecker implements Resettable {
                 continue;
             }
             String host = ElbV2TargetResolver.resolveHost(ec2Service, tg, targetId);
+            if ("lambda".equalsIgnoreCase(tg.getTargetType()) || targetId.startsWith("arn:")) {
+                continue;
+            }
+            if (!ElbV2TargetResolver.isRegisteredInstance(ec2Service, tg, targetId)
+                    && "ip".equalsIgnoreCase(tg.getTargetType())) {
+                outboundUrlGuard.validateHttpUrl("http://" + targetHost(host));
+            }
             String path = tg.getHealthCheckPath() != null ? tg.getHealthCheckPath() : "/";
             String matcher = tg.getMatcher() != null ? tg.getMatcher() : "200";
             int timeout = tg.getHealthCheckTimeoutSeconds() != null ? tg.getHealthCheckTimeoutSeconds() : 5;
@@ -207,6 +217,10 @@ public class ElbV2HealthChecker implements Resettable {
         } finally {
             conn.disconnect();
         }
+    }
+
+    private static String targetHost(String host) {
+        return host != null && host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
     }
 
     static boolean matchesStatusCode(int code, String matcher) {

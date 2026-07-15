@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.lambda;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.PathSandbox;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
@@ -1374,16 +1375,23 @@ public class LambdaService {
             throw new AwsException("InvalidParameterValueException",
                     "Hot-reload is disabled. Set FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED=true to enable it.", 400);
         }
-        if (hostPath == null || !hostPath.startsWith("/")) {
+        if (hostPath == null || hostPath.isBlank() || !isAbsoluteHostPath(hostPath)) {
             throw new AwsException("InvalidParameterValueException",
                     "Hot-reload S3Key must be an absolute path on the Docker host, got: " + hostPath, 400);
         }
-        config.services().lambda().hotReload().allowedPaths().ifPresent(allowed -> {
-            if (allowed.stream().noneMatch(hostPath::startsWith)) {
-                throw new AwsException("InvalidParameterValueException",
-                        "Path '" + hostPath + "' is not under an allowed hot-reload mount prefix.", 400);
-            }
-        });
+        List<String> allowedRoots = config.services().lambda().hotReload().allowedPaths()
+                .filter(allowed -> !allowed.isEmpty())
+                .orElseThrow(() -> new AwsException("InvalidParameterValueException",
+                        "Hot-reload requires at least one allowed path.", 400));
+        Path candidate = Path.of(hostPath);
+        boolean allowed = allowedRoots.stream()
+                .filter(root -> root != null && !root.isBlank())
+                .map(Path::of)
+                .anyMatch(root -> PathSandbox.isContained(root, candidate));
+        if (!allowed) {
+            throw new AwsException("InvalidParameterValueException",
+                    "Path '" + hostPath + "' is not under an allowed hot-reload mount prefix.", 400);
+        }
         fn.setHotReloadHostPath(hostPath);
         fn.setCodeLocalPath(null);
         fn.setS3Bucket(null);
@@ -1391,6 +1399,11 @@ public class LambdaService {
         fn.setCodeSizeBytes(0);
         fn.setCodeSha256("");
         LOG.infov("Hot-reload configured for function {0}: bind-mounting {1}", fn.getFunctionName(), hostPath);
+    }
+
+    private static boolean isAbsoluteHostPath(String hostPath) {
+        return hostPath.startsWith("/")
+                || hostPath.matches("^[A-Za-z]:[\\\\/].*");
     }
 
     // ──────────────────────────── Permissions (Policy) ────────────────────────────

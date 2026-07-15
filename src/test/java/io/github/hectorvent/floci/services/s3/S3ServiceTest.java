@@ -63,6 +63,15 @@ class S3ServiceTest {
     }
 
     @Test
+    void createBucketRejectsInvalidDnsStyleNames() {
+        for (String bucketName : List.of("Abc", "ab", "bucket/segment", "bucket..name", "192.168.0.1")) {
+            AwsException exception = assertThrows(AwsException.class,
+                    () -> s3Service.createBucket(bucketName, "us-east-1"));
+            assertEquals("InvalidBucketName", exception.getErrorCode());
+        }
+    }
+
+    @Test
     void createBucketStoresRegion() {
         s3Service.createBucket("eu-bucket", "eu-central-1");
         assertEquals("eu-central-1", s3Service.getBucketRegion("eu-bucket"));

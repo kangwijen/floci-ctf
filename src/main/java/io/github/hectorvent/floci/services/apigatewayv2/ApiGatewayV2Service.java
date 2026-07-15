@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
@@ -33,6 +34,7 @@ public class ApiGatewayV2Service {
     private final StorageBackend<String, Model> modelStore;
     private final StorageBackend<String, VpcLink> vpcLinkStore;
     private final RegionResolver regionResolver;
+    private final OutboundUrlGuard outboundUrlGuard;
 
     @Inject
     public ApiGatewayV2Service(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
@@ -57,6 +59,7 @@ public class ApiGatewayV2Service {
         this.vpcLinkStore = storageFactory.create("apigatewayv2", "apigatewayv2-vpclinks.json",
                 new TypeReference<>() {});
         this.regionResolver = regionResolver;
+        this.outboundUrlGuard = new OutboundUrlGuard(config);
     }
 
     // ──────────────────────────── API CRUD ────────────────────────────
@@ -411,6 +414,18 @@ public class ApiGatewayV2Service {
         return path.matches(regex.toString());
     }
 
+    private void validateHttpIntegrationUri(String integrationType, String integrationUri) {
+        if (integrationUri == null || integrationUri.isBlank()) {
+            return;
+        }
+        if (!"HTTP".equalsIgnoreCase(integrationType) && !"HTTP_PROXY".equalsIgnoreCase(integrationType)) {
+            return;
+        }
+        if (integrationUri.startsWith("http://") || integrationUri.startsWith("https://")) {
+            outboundUrlGuard.validateHttpUrl(integrationUri);
+        }
+    }
+
     // ──────────────────────────── Integration CRUD ────────────────────────────
 
     public Integration createIntegration(String region, String apiId, Map<String, Object> request) {
@@ -419,6 +434,7 @@ public class ApiGatewayV2Service {
         integration.setIntegrationId(shortId(8));
         integration.setIntegrationType((String) request.get("integrationType"));
         integration.setIntegrationUri((String) request.get("integrationUri"));
+        validateHttpIntegrationUri(integration.getIntegrationType(), integration.getIntegrationUri());
         integration.setConnectionType((String) request.get("connectionType"));
         integration.setPayloadFormatVersion((String) request.getOrDefault("payloadFormatVersion", "2.0"));
         integration.setIntegrationMethod((String) request.get("integrationMethod"));
@@ -472,6 +488,7 @@ public class ApiGatewayV2Service {
         if (request.containsKey("integrationUri") && request.get("integrationUri") != null) {
             integration.setIntegrationUri((String) request.get("integrationUri"));
         }
+        validateHttpIntegrationUri(integration.getIntegrationType(), integration.getIntegrationUri());
         if (request.containsKey("connectionType") && request.get("connectionType") != null) {
             integration.setConnectionType((String) request.get("connectionType"));
         }

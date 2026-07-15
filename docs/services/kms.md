@@ -58,6 +58,10 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evalua
 
 **Randomness:** `GenerateDataKey` plaintext bytes and grant tokens use the service `SecureRandom` instance (same CSPRNG path as `GenerateRandom` and encrypt nonces). Non-cryptographic PRNGs are not used for key or token material.
 
+**Ciphertext format:** New symmetric `Encrypt` results use a `kms:v3:` envelope with AES-256-GCM, a fresh 96-bit nonce, and the key's symmetric material. Encryption context is authenticated additional data, so changing the ciphertext, authentication tag, or context makes `Decrypt` fail with `InvalidCiphertextException`. Existing `kms:v2:` and `kms:` envelopes remain readable for persisted data compatibility.
+
+**Decrypt `KeyId`:** IAM scopes `kms:Decrypt` and `kms:ReEncrypt*` to the CMK embedded in `CiphertextBlob` when present. When both `KeyId` (or `SourceKeyId` for ReEncrypt) and `CiphertextBlob` are supplied and they resolve to different CMKs, Decrypt returns `IncorrectKeyException` (400), matching AWS semantics.
+
 ### CloudTrail audit (HTTP)
 
 When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, KMS API calls emit management events indexed for `lookup-events`. `Decrypt` matches [AWS KMS CloudTrail events](https://docs.aws.amazon.com/kms/latest/developerguide/logging-using-cloudtrail.html):
@@ -65,7 +69,7 @@ When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, KMS 
 | Field | Behavior |
 |-------|----------|
 | `readOnly` | `true` for `Decrypt` |
-| `requestParameters.keyId` | Full key ARN; resolved from explicit `KeyId`, response `KeyId`, or Floci `kms:v2:` envelope in `CiphertextBlob` |
+| `requestParameters.keyId` | Full key ARN; resolved from explicit `KeyId`, response `KeyId`, or a Floci KMS envelope in `CiphertextBlob` |
 | `requestParameters.encryptionContext` | Present when supplied in the request body |
 | `requestParameters.encryptionAlgorithm` | Defaults to `SYMMETRIC_DEFAULT` when omitted |
 | Sensitive fields | `CiphertextBlob` and `Plaintext` are omitted from audit |

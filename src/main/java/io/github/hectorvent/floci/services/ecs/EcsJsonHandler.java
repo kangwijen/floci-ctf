@@ -32,10 +32,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
+import io.github.hectorvent.floci.core.common.PathSandbox;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -46,11 +49,13 @@ public class EcsJsonHandler {
 
     private final EcsService service;
     private final ObjectMapper objectMapper;
+    private final EmulatorConfig config;
 
     @Inject
-    public EcsJsonHandler(EcsService service, ObjectMapper objectMapper) {
+    public EcsJsonHandler(EcsService service, ObjectMapper objectMapper, EmulatorConfig config) {
         this.service = service;
         this.objectMapper = objectMapper;
+        this.config = config;
     }
 
     public Response handle(String action, JsonNode request, String region) {
@@ -1351,10 +1356,36 @@ public class EcsJsonHandler {
         }
         for (JsonNode item : node) {
             String hostSourcePath = item.path("host").path("sourcePath").asText(null);
+            validateHostSourcePath(hostSourcePath);
             EfsVolumeConfiguration efs = parseEfsVolumeConfiguration(item.path("efsVolumeConfiguration"));
             result.add(new Volume(item.path("name").asText(), hostSourcePath, efs));
         }
         return result;
+    }
+
+    private void validateHostSourcePath(String hostSourcePath) {
+        if (hostSourcePath == null || hostSourcePath.isBlank()) {
+            return;
+        }
+        if (hostSourcePath.toLowerCase(java.util.Locale.ROOT).contains("docker.sock")
+                || "\\\\.\\pipe\\docker_engine".equalsIgnoreCase(hostSourcePath)) {
+            throw new AwsException("InvalidParameterException",
+                    "ECS host source paths cannot reference the Docker socket.", 400);
+        }
+        if (!config.ctf().ecsAllowHostVolumes()) {
+            throw new AwsException("InvalidParameterException",
+                    "ECS host source paths are disabled by configuration.", 400);
+        }
+        List<String> allowedRoots = config.ctf().ecsAllowedHostSourcePaths().orElse(List.of());
+        Path candidate = Path.of(hostSourcePath);
+        boolean allowed = allowedRoots.stream()
+                .filter(root -> root != null && !root.isBlank())
+                .map(Path::of)
+                .anyMatch(root -> PathSandbox.isContained(root, candidate));
+        if (!allowed) {
+            throw new AwsException("InvalidParameterException",
+                    "ECS host source path is not within an allowed root.", 400);
+        }
     }
 
     private EfsVolumeConfiguration parseEfsVolumeConfiguration(JsonNode node) {

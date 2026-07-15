@@ -38,6 +38,14 @@ Floci is configured exclusively through environment variables. Every option belo
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | When link-local URI mode is off: bind credential HTTP servers to `127.0.0.1` only (ports 9170/9171/9172). Ignored when link-local URI mode is on (servers bind `0.0.0.0`) |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | When `true` (default), inject `http://169.254.170.2:PORT/v2/credentials/{token}` as `AWS_CONTAINER_CREDENTIALS_FULL_URI`; credential servers bind `0.0.0.0`. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers. `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` is omitted when the credential port is not 80 so botocore uses the explicit port in `FULL_URI` instead of link-local port 80 |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Hostname used in link-local container credential URIs |
+| `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES` | `false` | Permit ECS task-definition host source paths only when set to `true` and the path is contained by `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS`. Docker socket paths remain rejected |
+| `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS` | _(none)_ | Comma-separated absolute host-path roots allowed for ECS task-definition volumes when host volumes are enabled |
+| `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` (Compose `true`) | Reject non-public outbound HTTP destinations for SNS HTTP(S), API Gateway HTTP integrations, and ALB IP or hostname targets. Literal private IPs and metadata hostnames are rejected. Unresolved public hostnames are allowed at create or subscribe time and still fail closed when DNS resolves to a non-public address at delivery |
+| `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` | _(none)_ | Optional comma-separated hostname allowlist for outbound HTTP destinations |
+| `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES` | `false` | Operator override allowing permitted outbound destinations to use non-public addresses |
+| `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` | `true` | When `true`, HTTP API JWT authorizers reject unsigned tokens and `alg=none`. HS256 verification uses `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET` or the authorizer issuer JWKS when configured |
+| `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET` | _(none)_ | Shared HMAC secret for HTTP API JWT authorizer HS256 verification |
+| `FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4` | `true` | When `true`, EKS `k8s-aws-v1.*` bearer tokens must carry a valid SigV4 or SigV4a signature on the embedded STS `GetCallerIdentity` URL |
 
 Spawned Lambda, ECS, and CodeBuild containers never receive baked-in `test`/`test` credentials. `LaunchedContainerAwsEnv` sets endpoint and region only; `OperatorCredentialEnv` adds `FLOCI_AUTH_ROOT_*` keys only when no execution/task/build role is configured. Under IAM enforcement, Lambda and CodeBuild never fall back to host `AWS_*` for blank roles. `ContainerEnvHardening` strips participant-supplied `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, and credential URI bypass variables from container env.
 
@@ -235,8 +243,8 @@ See [Initialization Hooks](./initialization-hooks.md) for lifecycle phases and s
 | `FLOCI_SERVICES_LAMBDA_CONTAINER_IDLE_TIMEOUT_SECONDS` | `300` | Seconds of inactivity before an idle Lambda container is removed |
 | `FLOCI_SERVICES_LAMBDA_REGION_CONCURRENCY_LIMIT` | `1000` | Maximum concurrent Lambda invocations across all functions in a region |
 | `FLOCI_SERVICES_LAMBDA_UNRESERVED_CONCURRENCY_MIN` | `100` | Minimum unreserved concurrency pool |
-| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED` | `false` | Watch Lambda code directories for changes and reload without redeployment |
-| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` | _(none)_ | Comma-separated host paths that hot-reload is allowed to watch |
+| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED` | `false` | Watch Lambda code directories for changes and reload without redeployment. Compose keeps this disabled |
+| `FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` | _(none)_ | Required comma-separated absolute host-path roots that hot-reload paths must be contained within |
 | `FLOCI_SERVICES_LAMBDA_DOCKER_NETWORK` | _(none)_ | Docker network for Lambda containers (overrides `FLOCI_SERVICES_DOCKER_NETWORK`) |
 | `FLOCI_SERVICES_LAMBDA_DOCKER_HOST_OVERRIDE` | _(none)_ | Explicit host/IP Lambda containers use to reach the Runtime API, bypassing auto-detection (e.g. rootless Podman) |
 | `FLOCI_SERVICES_LAMBDA_AWS_CONFIG_PATH` | _(none)_ | Host path bind-mounted read-only at `/opt/aws-config` inside Lambda containers for real credential discovery |

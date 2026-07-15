@@ -12,8 +12,8 @@ import java.util.Optional;
  * Encrypts secret payloads with a CMK so {@code GetSecretValue} returns a
  * {@code SecretBinary} blob compatible with {@code aws kms decrypt --ciphertext-blob}.
  *
- * <p>Wire format: UTF-8 bytes of the Floci KMS v2 blob (see {@link KmsService#encrypt}),
- * Base64-encoded in the Secrets Manager JSON API field.
+ * <p>Wire format: UTF-8 bytes of the Floci KMS envelope (v3 AES-GCM preferred,
+ * legacy v2/v1 still decryptable), Base64-encoded in the Secrets Manager JSON API field.
  */
 @ApplicationScoped
 public class SecretsManagerKmsSupport {
@@ -122,6 +122,10 @@ public class SecretsManagerKmsSupport {
             return false;
         }
         String data = new String(bytes, StandardCharsets.UTF_8);
+        if (data.startsWith("kms:v3:")) {
+            String[] parts = data.substring("kms:v3:".length()).split(":", 3);
+            return parts.length == 3;
+        }
         if (data.startsWith("kms:v2:")) {
             String[] parts = data.substring("kms:v2:".length()).split(":", 4);
             return parts.length >= 4;

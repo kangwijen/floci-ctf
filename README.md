@@ -95,10 +95,20 @@ All AWS services listen on `http://localhost:4566`. Use the root credentials onl
 | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | Default `true`: `404` on `/_floci/*`, `/_localstack/*`, and `/_aws/*`; `all` also hides `/health`; set `false` for upstream-style introspection |
 | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | Optional; default `false`. When `true`, `X-Forwarded-For` may set `aws:sourceip` in IAM conditions |
 | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | Default `true`: inject `http://169.254.170.2:9171/v2/credentials/...` URIs. Floci adds `extra_hosts` on spawned Lambda/ECS/CodeBuild containers automatically (`169.254.170.2:host-gateway` on native Docker, or `169.254.170.2:<floci-container-ip>` when Floci runs in Compose) |
-| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | Optional; default `false`. When `true`, structural JWT/SAML checks plus optional HS256/RS256 verification via `FLOCI_CTF_FEDERATED_JWT_*` |
+| `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | YAML default `false`, Compose `true`: reject non-public destinations for SNS HTTP(S), API Gateway HTTP integrations, and ALB IP or hostname targets |
+| `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` | Optional comma-separated hostname allowlist for outbound HTTP destinations |
+| `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES` | Default `false`: operator override for permitted non-public outbound destinations |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | Optional; YAML default `false`, Compose `true`. Structural JWT/SAML checks plus optional HS256/RS256 verification via `FLOCI_CTF_FEDERATED_JWT_*` |
+| `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` | Default `true`: HTTP API JWT authorizers require a verified signature |
+| `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET` | Optional HS256 secret for HTTP API JWT authorizers |
+| `FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4` | Default `true`: EKS bearer tokens must carry a valid SigV4 or SigV4a signature |
+| `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES` | Default `false`: ECS host source paths require this plus an allowlist |
 | `FLOCI_DEFAULT_ACCOUNT_ID` | Optional; account id in IAM ARNs and `GetCallerIdentity` (default `000000000000`) |
 
 These are set in [docker-compose.yml](./docker-compose.yml). Pass root credentials from the host as shown above.
+
+Compose keeps Lambda hot-reload disabled. Enable it only with a nonempty
+`FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS` list of approved host roots.
 
 ## Operator workflow
 

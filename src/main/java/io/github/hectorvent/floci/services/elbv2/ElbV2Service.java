@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.dns.EmbeddedDnsServer;
 import io.github.hectorvent.floci.core.storage.StorageBackedMap;
@@ -40,6 +41,9 @@ public class ElbV2Service {
 
     @Inject
     EmulatorConfig config;
+
+    @Inject
+    OutboundUrlGuard outboundUrlGuard;
 
     private static final String CANONICAL_HOSTED_ZONE_ID = "Z35SXDOTRQ7X7K";
 
@@ -733,12 +737,34 @@ public class ElbV2Service {
         TargetGroup tg = requireTargetGroup(region, tgArn);
         List<TargetDescription> existing = tg.getTargets();
         for (TargetDescription t : targets) {
+            if (requiresOutboundHostValidation(tg, t.getId())) {
+                outboundUrlGuard.validateHttpUrl("http://" + targetHost(t.getId()));
+            }
             // replace if same id+port already registered
             existing.removeIf(e -> e.getId().equals(t.getId()) && Objects.equals(e.getPort(), t.getPort()));
             existing.add(t);
         }
         persistRegion(targetGroups, region);
         healthChecker.addTargets(tgArn, targets, tg);
+    }
+
+    private boolean requiresOutboundHostValidation(TargetGroup tg, String targetId) {
+        if (outboundUrlGuard == null || targetId == null || targetId.isBlank()) {
+            return false;
+        }
+        if (!"ip".equalsIgnoreCase(tg.getTargetType())) {
+            return false;
+        }
+        if (targetId.startsWith("arn:")) {
+            return false;
+        }
+        return !ElbV2TargetResolver.isRegisteredInstance(ec2Service, tg, targetId);
+    }
+
+    private static String targetHost(String targetId) {
+        return targetId != null && targetId.contains(":") && !targetId.startsWith("[")
+                ? "[" + targetId + "]"
+                : targetId;
     }
 
     public void deregisterTargets(String region, String tgArn, List<TargetDescription> targets) {

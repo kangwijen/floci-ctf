@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.AwsNamespaces;
+import io.github.hectorvent.floci.core.common.PathSandbox;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
@@ -157,7 +158,7 @@ public class S3Service implements Resettable {
                       boolean enforceAuth, IamService iamService) {
         this.bucketStore = bucketStore;
         this.objectStore = objectStore;
-        this.dataRoot = dataRoot;
+        this.dataRoot = PathSandbox.normalize(dataRoot);
         this.inMemory = inMemory;
         this.sqsService = sqsService;
         this.snsService = snsService;
@@ -174,7 +175,7 @@ public class S3Service implements Resettable {
         this.iamService = iamService;
         if (!inMemory) {
             try {
-                Files.createDirectories(dataRoot);
+                Files.createDirectories(this.dataRoot);
             } catch (IOException e) {
                 throw new UncheckedIOException("Failed to create S3 data directory: " + dataRoot, e);
             }
@@ -188,6 +189,7 @@ public class S3Service implements Resettable {
     }
 
     public Bucket createBucket(String bucketName, String region) {
+        validateBucketName(bucketName);
         var existing = bucketStore.get(bucketName);
         if (existing.isPresent()) {
             Bucket bucket = existing.get();
@@ -210,6 +212,15 @@ public class S3Service implements Resettable {
         return region == null || region.isBlank() || "us-east-1".equalsIgnoreCase(region);
     }
 
+    private static void validateBucketName(String bucketName) {
+        if (bucketName == null
+                || !bucketName.matches("^(?=.{3,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$")
+                || bucketName.matches("\\d+(?:\\.\\d+){3}")) {
+            throw new AwsException("InvalidBucketName",
+                    "The specified bucket name is not valid.", 400);
+        }
+    }
+
     public void deleteBucket(String bucketName) {
         ensureBucketExists(bucketName);
 
@@ -225,7 +236,9 @@ public class S3Service implements Resettable {
             String prefix = bucketName + "/";
             memoryDataStore.keySet().removeIf(k -> k.startsWith(prefix));
         } else {
-            deleteDirectory(dataRoot.resolve(bucketName));
+            Path bucketDir = PathSandbox.requireContained(dataRoot, dataRoot.resolve(bucketName),
+                    "InvalidBucketName", "The specified bucket name is invalid.");
+            deleteDirectory(bucketDir);
         }
         LOG.infov("Deleted bucket: {0}", bucketName);
     }
@@ -2604,18 +2617,16 @@ public class S3Service implements Resettable {
     private static final String DATA_SUFFIX = ".s3data";
 
     private Path resolveObjectPath(String bucketName, String key) {
-        Path bucketDir = dataRoot.resolve(bucketName).normalize();
+        Path bucketDir = PathSandbox.requireContained(dataRoot, dataRoot.resolve(bucketName),
+                "InvalidBucketName", "The specified bucket name is invalid.");
         
         String safeKey = key;
         while (safeKey.startsWith("/")) {
             safeKey = safeKey.substring(1);
         }
         
-        Path resolved = bucketDir.resolve(safeKey + DATA_SUFFIX).normalize();
-        if (!resolved.startsWith(bucketDir)) {
-            throw new AwsException("InvalidKey", "The specified key is invalid.", 400);
-        }
-        return resolved;
+        return PathSandbox.requireContained(bucketDir, bucketDir.resolve(safeKey + DATA_SUFFIX),
+                "InvalidKey", "The specified key is invalid.");
     }
 
     private Path resolveVersionedPath(String bucketName, String key, String versionId) {

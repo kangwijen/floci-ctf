@@ -295,3 +295,4 @@ When IAM enforcement is enabled:
 - `containerDefinitions[].secrets` resolved from Secrets Manager or SSM at launch still pass through the hardened env path (`ContainerEnvHardening` strips blocked credential keys before the container starts).
 - `ContainerEnvHardening` strips operator root keys and other bypass env vars from task containers.
 - Control-plane ECS API calls require SigV4 from a principal with `ecs:*` (or scoped actions) on the cluster/task ARNs.
+- Task-definition host volumes are rejected unless `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES=true` and the host path is under `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS`. Docker socket paths remain rejected.

@@ -561,6 +561,19 @@ public interface EmulatorConfig {
         String containerCredentialsLinkLocalHost();
 
         /**
+         * Allows ECS task definitions to use host source paths.
+         * Env: {@code FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES}.
+         */
+        @WithDefault("false")
+        boolean ecsAllowHostVolumes();
+
+        /**
+         * Host path roots allowed for ECS task-definition volumes.
+         * Env: {@code FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS}.
+         */
+        Optional<List<String>> ecsAllowedHostSourcePaths();
+
+        /**
          * When {@code true}, CloudTrail audit may use the {@code X-Floci-CloudTrail-Source-Ip}
          * request header for {@code sourceIPAddress} (operator attack scripts). Does not affect
          * IAM {@code aws:sourceip} evaluation. Env: {@code FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER}.
@@ -583,6 +596,47 @@ public interface EmulatorConfig {
          */
         @WithDefault("false")
         boolean validateFederatedTokens();
+
+        /**
+         * Shared HMAC secret for HTTP API JWT authorizers.
+         * Env: {@code FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET}.
+         */
+        Optional<String> apiGatewayJwtHmacSecret();
+
+        /**
+         * When {@code true} (default), HTTP API JWT authorizers require a verified signature.
+         * Env: {@code FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION}.
+         */
+        @WithDefault("true")
+        boolean requireJwtSignatureVerification();
+
+        /**
+         * When {@code true} (default), EKS bearer tokens require a valid SigV4 or SigV4a signature.
+         * Env: {@code FLOCI_CTF_REQUIRE_EKS_TOKEN_SIGV4}.
+         */
+        @WithDefault("true")
+        boolean requireEksTokenSigv4();
+
+        /**
+         * When {@code true}, outbound HTTP destinations resolving to non-public addresses are rejected.
+         * Env: {@code FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS}. Dev YAML default is {@code false}.
+         * Compose CTF sets this to {@code true}.
+         */
+        @WithDefault("false")
+        boolean blockPrivateOutboundUrls();
+
+        /**
+         * Optional outbound HTTP hostname allowlist.
+         * Env: {@code FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST}.
+         */
+        Optional<List<String>> outboundUrlHostAllowlist();
+
+        /**
+         * When {@code true}, allowlisted outbound HTTP hosts may resolve to non-public addresses.
+         * Env: {@code FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES}.
+         */
+        @WithDefault("false")
+        boolean outboundAllowPrivateAddresses();
 
         /**
          * Shared HMAC secret for HS256 web identity JWT verification in CTF labs.
@@ -1552,9 +1606,8 @@ public interface EmulatorConfig {
             boolean enabled();
 
             /**
-             * Optional allow-list of absolute path prefixes. When non-empty, the S3Key supplied
-             * to a hot-reload CreateFunction/UpdateFunctionCode must start with one of these
-             * prefixes. Empty = all absolute paths are accepted.
+             * Required allow-list of absolute path roots. The S3Key supplied to a hot-reload
+             * CreateFunction/UpdateFunctionCode must resolve inside one of these roots.
              *
              * Env var: FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ALLOWED_PATHS
              */

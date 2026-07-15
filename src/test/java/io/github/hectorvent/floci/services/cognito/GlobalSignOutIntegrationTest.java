@@ -243,7 +243,7 @@ class GlobalSignOutIntegrationTest {
                 "GlobalSignOut with no AccessToken must fail with InvalidParameterException, body was: " + body);
     }
 
-    /** Build an unsigned JWT-shaped access token — the emulator decodes the payload without verifying the signature. */
+    /** Build an unsigned JWT-shaped access token for nonexistent users or pools. */
     private static String forgeAccessToken(String poolId, String username) {
         long nowSeconds = System.currentTimeMillis() / 1000L;
         String header = base64Url("{\"alg\":\"RS256\",\"typ\":\"JWT\"}");

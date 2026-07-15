@@ -333,6 +333,14 @@ class EventBridgeSchedulerIntegrationTest {
                     public String containerCredentialsLinkLocalHost() { return "169.254.170.2"; }
 
                     @Override
+                    public boolean ecsAllowHostVolumes() { return false; }
+
+                    @Override
+                    public java.util.Optional<java.util.List<String>> ecsAllowedHostSourcePaths() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
                     public boolean cloudTrailAllowSourceIpHeader() { return false; }
 
                     @Override
@@ -340,6 +348,28 @@ class EventBridgeSchedulerIntegrationTest {
 
                     @Override
                     public boolean validateFederatedTokens() { return false; }
+
+                    @Override
+                    public java.util.Optional<String> apiGatewayJwtHmacSecret() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public boolean requireJwtSignatureVerification() { return true; }
+
+                    @Override
+                    public boolean requireEksTokenSigv4() { return true; }
+
+                    @Override
+                    public boolean blockPrivateOutboundUrls() { return true; }
+
+                    @Override
+                    public java.util.Optional<java.util.List<String>> outboundUrlHostAllowlist() {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public boolean outboundAllowPrivateAddresses() { return false; }
 
                     @Override
                     public java.util.Optional<String> federatedJwtHmacSecret() {

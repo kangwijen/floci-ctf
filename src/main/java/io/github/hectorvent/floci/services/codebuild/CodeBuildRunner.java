@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.ContainerEnvHardening;
 import io.github.hectorvent.floci.core.common.OperatorCredentialEnv;
+import io.github.hectorvent.floci.core.common.PathSandbox;
 import io.github.hectorvent.floci.core.common.ContainerTeardown;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
@@ -176,7 +177,7 @@ public class CodeBuildRunner implements ContainerTeardown {
             // PROVISIONING
             beginPhase(build, "PROVISIONING");
             build.setCurrentPhase("PROVISIONING");
-            workspace = Files.createTempDirectory("floci-codebuild-");
+            workspace = PathSandbox.normalize(Files.createTempDirectory("floci-codebuild-"));
             completePhase(build, "PROVISIONING", "SUCCEEDED");
 
             if (stopFlag.get()) { finishStopped(build); return; }
@@ -735,12 +736,20 @@ public class CodeBuildRunner implements ContainerTeardown {
             return;
         }
 
-        Path baseDir = workspace;
+        Path normalizedWorkspace = PathSandbox.normalize(workspace);
+        Path baseDir = normalizedWorkspace;
         if (artifacts.baseDirectory() != null) {
-            baseDir = workspace.resolve(artifacts.baseDirectory());
+            Path configuredBaseDir = Path.of(artifacts.baseDirectory());
+            if (configuredBaseDir.isAbsolute()) {
+                throw new AwsException("InvalidInputException",
+                        "Artifact base directory must be relative to the workspace.", 400);
+            }
+            baseDir = PathSandbox.requireContained(normalizedWorkspace,
+                    normalizedWorkspace.resolve(configuredBaseDir),
+                    "InvalidInputException", "Artifact base directory must remain in the workspace.");
         }
 
-        List<Path> matchedFiles = collectFiles(baseDir, filePatterns);
+        List<Path> matchedFiles = collectArtifactFiles(normalizedWorkspace, baseDir, filePatterns);
         if (matchedFiles.isEmpty()) {
             LOG.warnv("No artifact files matched patterns {0} in {1} for build {2}",
                     filePatterns, baseDir, build.getId());
@@ -771,31 +780,47 @@ public class CodeBuildRunner implements ContainerTeardown {
         }
     }
 
-    private List<Path> collectFiles(Path baseDir, List<String> patterns) throws IOException {
+    static List<Path> collectArtifactFiles(Path workspace, Path baseDir, List<String> patterns) throws IOException {
+        Path normalizedWorkspace = PathSandbox.normalize(workspace);
+        Path normalizedBaseDir = PathSandbox.requireContained(normalizedWorkspace, baseDir,
+                "InvalidInputException", "Artifact base directory must remain in the workspace.");
         List<Path> result = new ArrayList<>();
-        if (!Files.exists(baseDir)) {
-            LOG.warnv("Artifact base directory does not exist: {0}", baseDir);
+        for (String pattern : patterns) {
+            Path patternPath = Path.of(pattern);
+            if (patternPath.isAbsolute() || patternPath.normalize().startsWith("..")) {
+                throw new AwsException("InvalidInputException",
+                        "Artifact file patterns must remain relative to the workspace.", 400);
+            }
+        }
+        if (!Files.exists(normalizedBaseDir)) {
+            LOG.warnv("Artifact base directory does not exist: {0}", normalizedBaseDir);
             return result;
         }
         for (String pattern : patterns) {
             if ("**/*".equals(pattern) || "**".equals(pattern)) {
-                try (var stream = Files.walk(baseDir)) {
-                    stream.filter(Files::isRegularFile).forEach(result::add);
+                try (var stream = Files.walk(normalizedBaseDir)) {
+                    stream.filter(Files::isRegularFile)
+                            .map(path -> PathSandbox.requireContained(normalizedWorkspace, path,
+                                    "InvalidInputException", "Artifact files must remain in the workspace."))
+                            .forEach(result::add);
                 }
             } else if (!pattern.contains("*") && !pattern.contains("?")
                     && !pattern.contains("{") && !pattern.contains("[")) {
                 // Plain filename — resolve directly instead of using PathMatcher
-                Path direct = baseDir.resolve(pattern);
+                Path direct = PathSandbox.requireContained(normalizedWorkspace, normalizedBaseDir.resolve(pattern),
+                        "InvalidInputException", "Artifact files must remain in the workspace.");
                 if (Files.isRegularFile(direct)) {
                     result.add(direct);
                 } else {
                     LOG.warnv("Artifact file not found: {0}", direct);
                 }
             } else {
-                var matcher = baseDir.getFileSystem().getPathMatcher("glob:" + pattern);
-                try (var stream = Files.walk(baseDir)) {
+                var matcher = normalizedBaseDir.getFileSystem().getPathMatcher("glob:" + pattern);
+                try (var stream = Files.walk(normalizedBaseDir)) {
                     stream.filter(Files::isRegularFile)
-                            .filter(p -> matcher.matches(baseDir.relativize(p)))
+                            .map(path -> PathSandbox.requireContained(normalizedWorkspace, path,
+                                    "InvalidInputException", "Artifact files must remain in the workspace."))
+                            .filter(p -> matcher.matches(normalizedBaseDir.relativize(p)))
                             .forEach(result::add);
                 }
             }

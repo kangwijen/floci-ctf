@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.apigatewayv2.proxy;
 
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import org.jboss.logging.Logger;
 
@@ -58,6 +59,15 @@ public class HttpProxyInvoker {
             .build();
 
     private final RequestParameterMapper mapper = new RequestParameterMapper(new ContextValueResolver());
+    private final OutboundUrlGuard outboundUrlGuard;
+
+    public HttpProxyInvoker() {
+        this(new OutboundUrlGuard(false, List.of(), false));
+    }
+
+    public HttpProxyInvoker(OutboundUrlGuard outboundUrlGuard) {
+        this.outboundUrlGuard = outboundUrlGuard;
+    }
 
     public ProxyResult invoke(Integration integration, RequestContext ctx) {
         // 1. Resolve target URL from IntegrationUri template + captured path params
@@ -90,6 +100,12 @@ public class HttpProxyInvoker {
 
         // 5. Build java.net.http.HttpRequest
         String finalUrl = buildFinalUrl(builder);
+        try {
+            outboundUrlGuard.validateHttpUrl(finalUrl);
+        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+            LOG.warnv("HTTP_PROXY target rejected: {0}", e.getMessage());
+            return errorResult("Bad Gateway: " + e.getMessage());
+        }
         if (hasHeader(builder, "Host") && finalUrl.startsWith("http://")) {
             try {
                 return invokeHttpWithHostOverride(finalUrl, method, builder);

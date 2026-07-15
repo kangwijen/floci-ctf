@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.proxy;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpServer;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -226,6 +227,22 @@ class HttpProxyInvokerTest {
 
         // Restart backend so @AfterEach doesn't NPE
         try { backend.start(); } catch (IllegalStateException ignored) {}
+    }
+
+    @Test
+    void rejectsNonPublicBackendAddress() {
+        Integration integration = httpProxyIntegration(
+                "http://127.0.0.1:" + backendPort + "/foo", null);
+        RequestContext ctx = ctxFor("GET", "/wallet/foo", "foo",
+                Map.of(), Map.of(), null, Map.of());
+
+        ProxyResult result = new HttpProxyInvoker(new OutboundUrlGuard(true, java.util.List.of(), false))
+                .invoke(integration, ctx);
+
+        assertEquals(502, result.statusCode());
+        String body = new String(result.body(), StandardCharsets.UTF_8);
+        assertTrue(body.contains("non-public") || body.contains("not permitted"), body);
+        assertNull(received.get());
     }
 
     @Test

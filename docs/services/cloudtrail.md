@@ -234,7 +234,7 @@ After `StartLogging`, exercise live APIs and confirm `lookup-events` `requestPar
 
 | API | Graded field candidate |
 |-----|------------------------|
-| `kms:Decrypt` | `requestParameters.keyId` (from explicit `KeyId`, response `KeyId`, or Floci `kms:v2:` envelope in `CiphertextBlob`) |
+| `kms:Decrypt` | `requestParameters.keyId` (from response `KeyId`, or Floci `kms:v3:` / `kms:v2:` / legacy `kms:` envelope in `CiphertextBlob`. Explicit request `KeyId` must match the blob CMK or Decrypt fails with `IncorrectKeyException`) |
 | `sns:Publish` | `requestParameters.topicArn` |
 | `dynamodb:PutItem` | `requestParameters.tableName` |
 | S3 `GetObject` + bucket logging | Access log `REST.GET.OBJECT`; Remote IP vs CloudTrail `sourceIPAddress` when `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` |

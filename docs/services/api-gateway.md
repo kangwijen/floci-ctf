@@ -62,6 +62,12 @@ Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`, `ApiGatewaySqsIntegrat
 
 **Unsigned invoke under strict IAM:** On the execute plane (`/execute-api/...` or `/restapis/{id}/{stage}/_user_request_/...`), `AnonymousAccessGate` permits unsigned requests only when the matched REST method has `authorizationType=NONE`. Methods configured with `authorizationType=AWS_IAM` (or any other non-`NONE` value) require SigV4 like any other data-plane path. Positive regression: `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`. Negative regression: `AnonymousAccessGateBypassIntegrationTest`. See [Anonymous-access exceptions](iam.md#anonymous-access-exceptions) in the IAM service doc.
 
+### HTTP API JWT authorizers
+
+JWT authorizers verify a signed token before reading its claims. Unsigned tokens, missing `alg`, and `alg=none` are rejected. `HS256` requires `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET`. `RS256` and `ES256` use the issuer's JWKS endpoint, first trying `/.well-known/jwks.json` and then OpenID discovery. Claims validation runs only after signature verification and checks `exp`, configured `iss`, and configured `aud` or `client_id`.
+
+`FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` defaults to `true`. If signature verification is required and no usable key is available, the authorizer denies the request.
+
 ### Examples
 
 ```bash

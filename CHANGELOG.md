@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (CTF fork)
+
+- **sandbox:** constrain ECS host volumes, Lambda hot-reload paths, CodeBuild artifact collection, and S3 on-disk bucket paths to allowed roots
+- **outbound:** reject non-public HTTP destinations for SNS HTTP(S), API Gateway HTTP integrations, and ALB IP or hostname targets (`FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS`)
+- **apigateway:** verify HTTP API JWT authorizer signatures and reject unsigned or `alg=none` tokens
+- **kms:** issue new symmetric ciphertext as authenticated AES-GCM envelopes while keeping legacy envelopes readable
+- **kms:** scope Decrypt IAM to the CiphertextBlob CMK and return IncorrectKeyException when KeyId does not match
+- **sts:** harden SAML assertion XML parsing (no DOCTYPE or external entities)
+- **cognito:** verify inbound access-token RS256 signatures on self-service APIs and userInfo
+- **compose:** enable federated token structural checks, JWT signature verification, EKS token SigV4 checks, and outbound private-address blocking for the CTF profile
+
 ## [1.5.33] - 2026-07-15
 
 ### Added

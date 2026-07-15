@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.ecs;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.ecs.model.ContainerDefinition;
 import io.github.hectorvent.floci.services.ecs.model.TaskDefinition;
 import jakarta.ws.rs.core.Response;
@@ -49,7 +50,12 @@ class EcsJsonHandlerVolumesTest {
                     return td;
                 });
 
-        handler = new EcsJsonHandler(service, objectMapper);
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.ecsAllowHostVolumes()).thenReturn(true);
+        when(ctf.ecsAllowedHostSourcePaths()).thenReturn(java.util.Optional.of(List.of("/host/abs")));
+        handler = new EcsJsonHandler(service, objectMapper, config);
     }
 
     @Test
@@ -141,5 +147,50 @@ class EcsJsonHandlerVolumesTest {
         assertEquals(2999, efs.path("transitEncryptionPort").asInt());
         assertEquals("fsap-0abc", efs.path("authorizationConfig").path("accessPointId").asText());
         assertEquals("ENABLED", efs.path("authorizationConfig").path("iam").asText());
+    }
+
+    @Test
+    void registerTaskDefinitionRejectsHostSourcePathWhenDisabled() throws Exception {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.ecsAllowHostVolumes()).thenReturn(false);
+        EcsJsonHandler disabledHandler = new EcsJsonHandler(service, objectMapper, config);
+
+        JsonNode request = objectMapper.readTree("""
+                {"family":"sandboxed","containerDefinitions":[],"volumes":[
+                  {"name":"data","host":{"sourcePath":"/host/abs/data"}}
+                ]}
+                """);
+
+        io.github.hectorvent.floci.core.common.AwsException exception =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        io.github.hectorvent.floci.core.common.AwsException.class,
+                        () -> disabledHandler.handle("RegisterTaskDefinition", request, "us-east-1"));
+
+        assertEquals("InvalidParameterException", exception.getErrorCode());
+    }
+
+    @Test
+    void registerTaskDefinitionRejectsDockerSocketPath() throws Exception {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.ecsAllowHostVolumes()).thenReturn(true);
+        when(ctf.ecsAllowedHostSourcePaths()).thenReturn(java.util.Optional.of(List.of("/var/run")));
+        EcsJsonHandler enabledHandler = new EcsJsonHandler(service, objectMapper, config);
+
+        JsonNode request = objectMapper.readTree("""
+                {"family":"sandboxed","containerDefinitions":[],"volumes":[
+                  {"name":"runtime","host":{"sourcePath":"/var/run/docker.sock"}}
+                ]}
+                """);
+
+        io.github.hectorvent.floci.core.common.AwsException exception =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        io.github.hectorvent.floci.core.common.AwsException.class,
+                        () -> enabledHandler.handle("RegisterTaskDefinition", request, "us-east-1"));
+
+        assertEquals("InvalidParameterException", exception.getErrorCode());
     }
 }

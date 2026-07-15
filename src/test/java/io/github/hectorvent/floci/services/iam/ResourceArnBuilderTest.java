@@ -420,6 +420,16 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void kmsDecryptPrefersCiphertextBlobOverKeyId() {
+        String blob = java.util.Base64.getEncoder().encodeToString(
+                "kms:v3:550e8400-e29b-41d4-a716-446655440000:bm9uY2U:Y2lwaGVy".getBytes());
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"KeyId\":\"11111111-1111-1111-1111-111111111111\",\"CiphertextBlob\":\"" + blob + "\"}");
+        String arn = builder.build("kms", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:key/550e8400-e29b-41d4-a716-446655440000", arn);
+    }
+
+    @Test
     void kmsDecryptPreservesAliasArnFromKeyId() {
         String aliasArn = "arn:aws:kms:us-east-1:222222222222:alias/lab-key";
         ContainerRequestContext ctx = jsonBodyCtx("{\"KeyId\":\"" + aliasArn + "\"}");

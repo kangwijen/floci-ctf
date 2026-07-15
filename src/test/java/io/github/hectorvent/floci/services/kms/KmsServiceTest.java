@@ -583,9 +583,21 @@ class KmsServiceTest {
         byte[] plaintext = "hello world".getBytes(StandardCharsets.UTF_8);
 
         byte[] ciphertext = kmsService.encrypt(key.getKeyId(), plaintext, REGION);
+        assertTrue(new String(ciphertext, StandardCharsets.UTF_8).startsWith("kms:v3:"));
         byte[] decrypted = kmsService.decrypt(ciphertext, REGION);
 
         assertArrayEquals(plaintext, decrypted);
+    }
+
+    @Test
+    void decryptRejectsMismatchedRequestedKeyId() {
+        KmsKey keyA = kmsService.createKey(null, REGION);
+        KmsKey keyB = kmsService.createKey(null, REGION);
+        byte[] ciphertext = kmsService.encrypt(keyA.getKeyId(), "secret".getBytes(StandardCharsets.UTF_8), REGION);
+
+        AwsException ex = assertThrows(AwsException.class,
+                () -> kmsService.decryptAndResolveKey(ciphertext, Map.of(), REGION, keyB.getKeyId()));
+        assertEquals("IncorrectKeyException", ex.getErrorCode());
     }
 
     @Test
@@ -629,6 +641,18 @@ class KmsServiceTest {
     void decryptInvalidCiphertextThrows() {
         assertThrows(AwsException.class, () ->
                 kmsService.decrypt("not-valid-ciphertext".getBytes(StandardCharsets.UTF_8), REGION));
+    }
+
+    @Test
+    void decryptRejectsTamperedAuthenticatedCiphertext() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        byte[] ciphertext = kmsService.encrypt(key.getKeyId(), "hello".getBytes(StandardCharsets.UTF_8), REGION);
+        byte[] tampered = Arrays.copyOf(ciphertext, ciphertext.length);
+        tampered[tampered.length - 1] ^= 1;
+
+        AwsException exception = assertThrows(AwsException.class, () -> kmsService.decrypt(tampered, REGION));
+
+        assertEquals("InvalidCiphertextException", exception.getErrorCode());
     }
 
     @Test
@@ -815,6 +839,16 @@ class KmsServiceTest {
         assertThrows(AwsException.class, () ->
                 kmsService.decrypt(v1Blob, Map.of("tenant", "1"), REGION));
         assertEquals(key.getArn(), kmsService.decryptToKeyArn(v1Blob, REGION));
+    }
+
+    @Test
+    void legacyV2BlobDecryptsForBackCompat() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        byte[] plaintext = "legacy-v2".getBytes(StandardCharsets.UTF_8);
+        byte[] v2Blob = ("kms:v2:" + key.getKeyId() + ":nonce::"
+                + Base64.getEncoder().encodeToString(plaintext)).getBytes(StandardCharsets.UTF_8);
+
+        assertArrayEquals(plaintext, kmsService.decrypt(v2Blob, REGION));
     }
 
     @ParameterizedTest
