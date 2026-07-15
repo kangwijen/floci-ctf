@@ -84,7 +84,7 @@ Floci supports Application Load Balancers (ALB) and Network Load Balancers (NLB)
 - Load balancers are created in `active` state.
 - HTTP listener sockets are preserved when listener actions change and are restarted only when socket-level settings such as port change.
 - Instance targets are resolved through EC2 instance private addresses so local load balancer traffic can reach containers.
-- Target health starts in `initial` state with reason `Elb.RegistrationInProgress` and is updated by Floci's health checker when monitoring is active.
+- Target health starts in `initial` state with reason `Elb.RegistrationInProgress`. `DescribeTargetHealth` includes the reason reported by Floci's health checker when monitoring is active.
 - Each `CreateListener` automatically creates an immutable default rule (`priority=default`, `isDefault=true`). This rule cannot be deleted; use `ModifyListener` to change its action.
 - Rule priorities are validated for uniqueness. `SetRulePriorities` is atomic: all priority assignments are validated before any change is committed.
 - `DeleteTargetGroup` is rejected with `ResourceInUse` while the target group is referenced by any listener or rule.

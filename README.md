@@ -19,7 +19,7 @@
 
 # Floci CTF
 
-A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.32** plus tip `483cc5b1`, merged 2026-07-12) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
+A security-hardened fork of [Floci](https://github.com/floci-io/floci) (upstream **1.5.33** at tip `fba4d8f5`, merged 2026-07-15) for capture-the-flag and security exercises. Same local AWS emulator on port **4566**, with IAM enforcement, strict policy mode, SigV4 validation, and CTF-specific controls so participants cannot rely on permissive `test`/`test` credentials, unsigned requests, or internal introspection routes.
 
 For service coverage, architecture, SDK examples, and general configuration, use the [upstream Floci README](https://github.com/floci-io/floci/blob/main/README.md) and [docs](https://floci.io/floci/). For operators, agents, and `floci:local` behavior, see [AGENTS.md](./AGENTS.md).
 
@@ -56,6 +56,15 @@ For service coverage, architecture, SDK examples, and general configuration, use
 **Fork-only code (high level):** `IamEnforcementFilter`, `SigV4ValidationFilter`, `AccountResolver`, `AccountContextFilter`, `PreSignedUrlFilter`, `PreSignedUrlGenerator` (SigV4 with operator root AKIA), `PolicyPrincipalMatcher`, `FederatedTokenParser`, `ResourcePolicyResolver`, `ResourceArnBuilder`, `AssumeRoleTrustPolicyEvaluator`, `InProcessIamAuthorizer`, `InProcessTargetAuthorizer`, `CtfInternalEndpointFilter`, `LaunchedContainerAwsEnv`, `OperatorCredentialEnv`, `ContainerEnvHardening`, `LambdaContainerCredentialsServer`, `EcsContainerCredentialsServer`, `CodeBuildContainerCredentialsServer`, `EksTokenValidator`, `SecretsManagerKmsSupport`. Map: [AGENTS.md](./AGENTS.md#ctf-implementation-map).
 
 After each upstream merge, re-verify CTF hardening on conflict-prone files (`SnsService`, `EcsContainerManager`, `docker-compose.yml`, IAM filters). See [AGENTS.md](./AGENTS.md#upstream-sync).
+
+### 1.5.33 parity notes
+
+- EKS supports managed node groups and Fargate profile create, describe, list, and delete operations.
+- Shutdown tears down process-bound containers. Persistent storage paths fail fast when they are not writable.
+- S3 honors ACL headers and supported explicit grant headers. `s3:ListBucket` IAM conditions receive `s3:prefix`, `s3:delimiter`, and `s3:max-keys` from the request.
+- Scheduler forwards `MessageAttributes` to universal SNS publish targets. `ImportKeyPair` rejects duplicate key pair names.
+- ELBv2 reports target health reasons. CloudFormation carries SAM function `PackageType` and `ImageConfig`, and resolves ECS container secrets.
+- RDS returns `DBSubnetGroupNotFoundFault` when a named subnet group does not exist.
 
 ## Quick start (operators)
 
@@ -507,14 +516,17 @@ Init scripts mounted under `/etc/localstack/init/` run unchanged. The `/_localst
 
 ## Upstream highlights
 
-Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (6 commits through **`483cc5b1`**, post **1.5.32**, pom still **1.5.32**, merged 2026-07-12):
+Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (13 commits through **`fba4d8f5`**, release **1.5.33**, merged 2026-07-15):
 
 | Area | Change |
 |---|---|
-| Cognito | `GlobalSignOut` and `RevokeToken`; issued tokens carry `jti` / `origin_jti` for revocation |
-| S3 | `GetBucketEncryption` returns default SSE-S3 when no config is set; `DeleteBucketReplication` no longer deletes the bucket |
-| Step Functions | JSONata workflow variables via ASL `Assign` |
-| API Gateway | Regression coverage for request-header forwarding on `_user_request_` |
+| EKS | Managed node groups and Fargate profiles with create, describe, list, and delete coverage |
+| Lifecycle | Teardown process-bound containers at emulator shutdown |
+| Storage | Reject an unwritable persistent data root before a request becomes an opaque server error |
+| S3 / IAM | Honor ACL headers and supported explicit grants. Enrich `s3:ListBucket` IAM conditions with prefix, delimiter, and max-keys request values |
+| Scheduler / EC2 | Forward SNS `MessageAttributes` from universal schedule targets. Reject duplicate `ImportKeyPair` names |
+| ELBv2 / RDS | Expose target health reasons. Return `DBSubnetGroupNotFoundFault` for a missing named subnet group |
+| CloudFormation | Carry SAM function `PackageType` and `ImageConfig`. Resolve ECS container definition secrets |
 
 Merged from [floci-io/floci](https://github.com/floci-io/floci) **main** (23 commits through **`f93e0290`**, release **1.5.32**, merged 2026-07-11):
 
@@ -692,7 +704,7 @@ Merged from [floci-io/floci](https://github.com/floci-io/floci) **1.5.25** (2026
 
 ## Upstream sync
 
-This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.32 plus tip `483cc5b1`** (merged 2026-07-12, no 1.5.33 tag yet). Preserve CTF behavior on overlapping files; do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `LaunchedContainerAwsEnv` / `OperatorCredentialEnv` (no `test`/`test`), `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, `InProcessTargetAuthorizer` on delivery paths (including Cognito), `AslExecutor` in-process IAM + CloudTrail, or the SNS default-topic-policy gate when IAM enforcement is on.
+This fork periodically merges [floci-io/floci](https://github.com/floci-io/floci) `main`. **Current baseline: upstream 1.5.33 at tip `fba4d8f5`** (merged 2026-07-15). Preserve CTF behavior on overlapping files. Do not revert IAM enforcement, strict mode, SigV4 validation, `PreSignedUrlGenerator` root-AKIA signing, `LaunchedContainerAwsEnv` / `OperatorCredentialEnv` (no `test`/`test`), `ContainerEnvHardening`, federated STS unsigned path, IoT/`iotdata` IAM mapping, `InProcessTargetAuthorizer` on delivery paths (including Cognito), `AslExecutor` in-process IAM + CloudTrail, or the SNS default-topic-policy gate when IAM enforcement is on.
 
 **High-risk merge files:** `PreSignedUrlGenerator.java`, `AccountResolver.java`, `AccountContextFilter.java`, `SnsService.java` (must keep `iamEnforcementEnabled` gate), `LaunchedContainerAwsEnv.java`, `ContainerLauncher.java`, `EcsContainerManager.java` (must keep `ContainerEnvHardening` and container credential servers), `IamEnforcementFilter.java`, `PolicyPrincipalMatcher.java`, `EventBridgeInvoker.java`, `PipesPoller.java`, `EcrRegistryManager.java`, `ApiGatewayExecuteController.java`, `AwsServiceRouter.java`, `CognitoService.java`, `Ec2Service.java`, `docker-compose.yml`, `docker/Dockerfile`.
 

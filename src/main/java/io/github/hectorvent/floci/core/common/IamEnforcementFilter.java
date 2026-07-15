@@ -63,6 +63,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private final KmsService kmsService;
     private final AnonymousAccessGate anonymousAccessGate;
     private final RequestContext requestContext;
+    private final IamConditionContextResolver conditionContextResolver;
 
     @Inject
     public IamEnforcementFilter(EmulatorConfig config,
@@ -75,7 +76,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                 RegionResolver regionResolver,
                                 KmsService kmsService,
                                 AnonymousAccessGate anonymousAccessGate,
-                                RequestContext requestContext) {
+                                RequestContext requestContext,
+                                IamConditionContextResolver conditionContextResolver) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
@@ -87,6 +89,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         this.kmsService = kmsService;
         this.anonymousAccessGate = anonymousAccessGate;
         this.requestContext = requestContext;
+        this.conditionContextResolver = conditionContextResolver;
     }
 
     @Override
@@ -227,7 +230,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String resource = arnBuilder.build("s3", ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", action, ctx);
 
         if (evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx) == Decision.DENY) {
             LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
@@ -316,7 +319,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         String serviceScope = routeScope != null ? routeScope : credentialScope;
         String resource = arnBuilder.build(serviceScope, ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve(serviceScope, resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, action, ctx);
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
         if (decision == Decision.DENY
@@ -382,7 +385,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllDynamoDbExecuteStatementPartiQLResources(ctx, region, accountId);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
 
         for (String resource : resources) {
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
@@ -431,7 +434,6 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
         int count = Math.min(actions.size(), resources.size());
 
         for (int i = 0; i < count; i++) {
@@ -451,6 +453,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
             String resource = resources.get(i);
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
             Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
             if (decision == Decision.DENY
                     && "kms".equals(credentialScope)
@@ -522,7 +525,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllEmrClusterResources(ctx, region, accountId);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
 
         for (String resource : resources) {
             if ("*".equals(resource)) {
@@ -591,7 +594,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllTaggingResources(ctx);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
 
         for (String resource : resources) {
             if ("*".equals(resource)) {
@@ -610,6 +613,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     private Map<String, String> buildConditionContext(String accessKeyId,
                                                       String accountId,
                                                       String credentialScope,
+                                                      String action,
                                                       ContainerRequestContext ctx) {
         Map<String, String> out = new HashMap<>();
         Optional<CallerIdentity> identity = iamService.resolveCallerIdentity(
@@ -636,6 +640,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         out.put("aws:sourceip", sourceIp);
         if ("s3".equals(credentialScope)) {
             enrichS3ConditionKeys(ctx, out);
+        }
+        Map<String, String> actionConditions = conditionContextResolver.resolve(credentialScope, action, ctx);
+        if (actionConditions != null) {
+            out.putAll(actionConditions);
         }
         return out;
     }

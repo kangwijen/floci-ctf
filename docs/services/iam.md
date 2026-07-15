@@ -343,6 +343,8 @@ Unmapped pipe sources (for example Amazon MQ) and unknown target ARNs are denied
 
 **Pre-signed S3 URLs:** After `PreSignedUrlFilter` validates SigV4 query auth, `IamEnforcementFilter` evaluates S3 identity and bucket policies for that credential. When `X-Amz-Credential` matches `FLOCI_AUTH_ROOT_ACCESS_KEY_ID`, the operator root secret from config (not a stale IAM registration with the same access key id) is used for signature verification. Regression: `PreSignedUrlFilterIntegrationTest`, `PreSignedUrlRootSecretPrecedenceIntegrationTest`.
 
+**S3 bucket-list conditions:** `IamConditionContextResolver` adds `s3:prefix`, `s3:delimiter`, and `s3:max-keys` to the condition context for `s3:ListBucket` when the matching query parameters are present. This lets CTF IAM policies restrict S3 listings by requested prefix, delimiter, or page size.
+
 **API Gateway in-process IAM:** JSON-body AWS integrations and path-style integrations (`arn:...:sqs:path/...`, `arn:...:lambda:path/...`) evaluate the integration execution role via `InProcessIamAuthorizer` when enforcement is on. Path-style SQS calls use `AwsServiceRouter.invokeQuery` with `integration.credentials`. Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`.
 
 ### Bypass rules

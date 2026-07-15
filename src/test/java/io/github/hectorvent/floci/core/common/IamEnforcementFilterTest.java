@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -97,7 +98,7 @@ class IamEnforcementFilterTest {
         IamEnforcementFilter filter = new IamEnforcementFilter(
                 config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
                 resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
-                requestContext);
+                requestContext, new IamConditionContextResolver());
 
         filter.filter(containerRequest);
 
@@ -162,7 +163,7 @@ class IamEnforcementFilterTest {
         IamEnforcementFilter filter = new IamEnforcementFilter(
                 config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
                 resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
-                requestContext);
+                requestContext, new IamConditionContextResolver());
 
         filter.filter(containerRequest);
 
@@ -226,11 +227,80 @@ class IamEnforcementFilterTest {
         IamEnforcementFilter filter = new IamEnforcementFilter(
                 config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
                 resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
-                requestContext);
+                requestContext, new IamConditionContextResolver());
 
         filter.filter(containerRequest);
 
         verify(arnBuilder).build("s3", containerRequest, "us-east-1", "555566667777");
+    }
+
+    @Test
+    void filterPassesS3ListBucketConditionContext() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        EmulatorConfig.CtfConfig ctfConfig = mock(EmulatorConfig.CtfConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        IamService iamService = mock(IamService.class);
+        IamPolicyEvaluator evaluator = mock(IamPolicyEvaluator.class);
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        ResourceArnBuilder arnBuilder = mock(ResourceArnBuilder.class);
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("222233334444");
+        ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+        MultivaluedHashMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("prefix", "my_namespace/table/");
+        query.add("delimiter", "/");
+        query.add("max-keys", "10");
+        String auth = "AWS4-HMAC-SHA256 Credential=ASIASESSION/20260629/us-east-1/s3/aws4_request, "
+                + "SignedHeaders=host, Signature=abc";
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(true);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(config.ctf()).thenReturn(ctfConfig);
+        when(ctfConfig.hideInternalEndpointsMode()).thenReturn(CtfHideInternalEndpointsMode.PREFIXED);
+        when(accountResolver.extractAccessKeyId(auth)).thenReturn("ASIASESSION");
+        when(accountResolver.resolve(auth)).thenReturn("000000000000");
+        when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("us-east-1");
+        when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
+        when(containerRequest.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/bucket");
+        when(uriInfo.getQueryParameters()).thenReturn(query);
+        when(actionRegistry.resolveRestRouteScope(containerRequest)).thenReturn(null);
+        when(actionRegistry.resolve("s3", containerRequest)).thenReturn("s3:ListBucket");
+        when(iamService.resolveCallerContext("ASIASESSION"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::bucket"}
+                        ]}""")));
+        when(arnBuilder.build("s3", containerRequest, "us-east-1", "222233334444"))
+                .thenReturn("arn:aws:s3:::bucket");
+        when(resourcePolicyResolver.resolve(eq("s3"), anyString(), eq("us-east-1")))
+                .thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("s3:ListBucket"), eq("arn:aws:s3:::bucket"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        IamEnforcementFilter filter = new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext, new IamConditionContextResolver());
+
+        filter.filter(containerRequest);
+
+        verify(evaluator).evaluate(any(), any(), eq("s3:ListBucket"), eq("arn:aws:s3:::bucket"),
+                argThat(context -> "my_namespace/table/".equals(context.get("s3:prefix"))
+                        && "/".equals(context.get("s3:delimiter"))
+                        && "10".equals(context.get("s3:max-keys"))));
     }
 
     @Test

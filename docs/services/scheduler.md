@@ -35,7 +35,7 @@ background dispatcher fires schedule targets on time. Supported expressions:
 window are skipped. The dispatcher ticks every
 `floci.services.scheduler.tick-interval-seconds` (default `10`).
 
-Supported target types: SQS, Lambda, SNS, EventBridge `PutEvents`.
+Supported target types: SQS, Lambda, SNS, EventBridge `PutEvents`. Universal `sns:publish` targets forward `MessageAttributes` with the message, subject, FIFO message group ID, and deduplication ID.
 
 ## Configuration
 
