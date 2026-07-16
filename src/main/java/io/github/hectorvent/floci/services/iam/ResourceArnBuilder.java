@@ -253,14 +253,11 @@ public class ResourceArnBuilder {
     }
 
     private String buildDynamoDbArnFromJson(JsonNode node, String region, String accountId) {
-        String tableArn = firstArn(jsonText(node, "TableArn"), jsonText(node, "ResourceArn"));
-        if (tableArn != null) {
-            return appendDynamoDbIndexSuffix(jsonText(node, "IndexName"), tableArn);
-        }
         String tableName = firstNonBlank(
                 jsonText(node, "TableName"),
                 jsonText(node, "GlobalTableName"),
                 jsonFirstRequestItemsTableKey(node),
+                firstTransactItemsTableNameFromJson(node),
                 partiQLTableNameFromJson(node));
         if (tableName != null && !tableName.isBlank()) {
             if (jsonText(node, "GlobalTableName") != null) {
@@ -275,6 +272,10 @@ public class ResourceArnBuilder {
                         "table/" + tableName + "/index/" + indexName).toString();
             }
             return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
+        }
+        String tableArn = firstArn(jsonText(node, "ResourceArn"), jsonText(node, "TableArn"));
+        if (tableArn != null) {
+            return appendDynamoDbIndexSuffix(jsonText(node, "IndexName"), tableArn);
         }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
     }
@@ -637,16 +638,13 @@ public class ResourceArnBuilder {
     // ── DynamoDB ─────────────────────────────────────────────────────────────────
 
     private String buildDynamoDbArn(ContainerRequestContext ctx, String region, String accountId) {
-        String tableArn = firstArn(
-                readJsonStringField(ctx, "TableArn"),
-                readJsonStringField(ctx, "ResourceArn"));
-        if (tableArn != null) {
-            return appendDynamoDbIndexSuffix(readJsonStringField(ctx, "IndexName"), tableArn);
-        }
+        // Prefer handler-consumed fields (TableName / RequestItems / TransactItems / PartiQL)
+        // over TableArn/ResourceArn so decoy ARNs cannot smuggle past IAM.
         String tableName = firstNonBlank(
                 readJsonStringField(ctx, "TableName"),
                 readJsonStringField(ctx, "GlobalTableName"),
                 readJsonFirstRequestItemsTableKey(ctx),
+                firstTransactItemsTableName(ctx),
                 partiQLTableNameFromRequest(ctx));
         if (tableName != null && !tableName.isBlank()) {
             if (readJsonStringField(ctx, "GlobalTableName") != null) {
@@ -661,6 +659,13 @@ public class ResourceArnBuilder {
                         "table/" + tableName + "/index/" + indexName).toString();
             }
             return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString();
+        }
+        // TagResource / UntagResource / ListTagsOfResource use ResourceArn without TableName.
+        String tableArn = firstArn(
+                readJsonStringField(ctx, "ResourceArn"),
+                readJsonStringField(ctx, "TableArn"));
+        if (tableArn != null) {
+            return appendDynamoDbIndexSuffix(readJsonStringField(ctx, "IndexName"), tableArn);
         }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
     }
@@ -734,6 +739,89 @@ public class ResourceArnBuilder {
             arns.add(dynamoDbTableArnFromPartiQL(statement, region, accountId));
         }
         return arns;
+    }
+
+    /**
+     * Builds table ARNs for every key in {@code RequestItems} (BatchGetItem / BatchWriteItem).
+     */
+    public List<String> buildAllDynamoDbRequestItemsResources(ContainerRequestContext ctx,
+                                                             String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        JsonNode requestItems = node.get("RequestItems");
+        if (requestItems == null || !requestItems.isObject() || requestItems.isEmpty()) {
+            return List.of();
+        }
+        List<String> arns = new ArrayList<>();
+        var names = requestItems.fieldNames();
+        while (names.hasNext()) {
+            String tableName = names.next();
+            if (tableName == null || tableName.isBlank()) {
+                continue;
+            }
+            if (tableName.startsWith("arn:")) {
+                arns.add(tableName);
+            } else {
+                arns.add(AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString());
+            }
+        }
+        return Collections.unmodifiableList(arns);
+    }
+
+    /**
+     * Builds table ARNs for every nested table in {@code TransactItems}.
+     */
+    public List<String> buildAllDynamoDbTransactResources(ContainerRequestContext ctx,
+                                                         String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        List<String> tableNames = extractTransactItemsTableNames(node);
+        if (tableNames.isEmpty()) {
+            return List.of();
+        }
+        List<String> arns = new ArrayList<>(tableNames.size());
+        for (String tableName : tableNames) {
+            if (tableName.startsWith("arn:")) {
+                arns.add(tableName);
+            } else {
+                arns.add(AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/" + tableName).toString());
+            }
+        }
+        return Collections.unmodifiableList(arns);
+    }
+
+    private String firstTransactItemsTableName(ContainerRequestContext ctx) {
+        List<String> names = extractTransactItemsTableNames(readJsonBodyNode(ctx));
+        return names.isEmpty() ? null : names.getFirst();
+    }
+
+    private static String firstTransactItemsTableNameFromJson(JsonNode node) {
+        List<String> names = extractTransactItemsTableNames(node);
+        return names.isEmpty() ? null : names.getFirst();
+    }
+
+    private static List<String> extractTransactItemsTableNames(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return List.of();
+        }
+        JsonNode items = node.get("TransactItems");
+        if (items == null || !items.isArray()) {
+            return List.of();
+        }
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        for (JsonNode item : items) {
+            if (item == null || !item.isObject()) {
+                continue;
+            }
+            for (String op : List.of("Put", "Update", "Delete", "ConditionCheck", "Get")) {
+                JsonNode opNode = item.get(op);
+                if (opNode != null && opNode.isObject()) {
+                    String tableName = jsonText(opNode, "TableName");
+                    if (tableName != null && !tableName.isBlank()) {
+                        names.add(tableName);
+                    }
+                }
+            }
+        }
+        return List.copyOf(names);
     }
 
     private String partiQLTableNameFromRequest(ContainerRequestContext ctx) {
@@ -908,6 +996,25 @@ public class ResourceArnBuilder {
                 readJsonArnField(ctx, "ARN"),
                 readJsonFirstArrayElement(ctx, "SecretIdList"));
         return secretsManagerArnFromSecretId(secretId, region, accountId);
+    }
+
+    /**
+     * Builds secret ARNs for every entry in {@code SecretIdList} (BatchGetSecretValue).
+     */
+    public List<String> buildAllSecretsManagerBatchResources(ContainerRequestContext ctx,
+                                                            String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        JsonNode list = node.get("SecretIdList");
+        if (list == null || !list.isArray() || list.isEmpty()) {
+            return List.of();
+        }
+        List<String> arns = new ArrayList<>(list.size());
+        for (JsonNode entry : list) {
+            if (entry != null && entry.isTextual() && !entry.asText().isBlank()) {
+                arns.add(secretsManagerArnFromSecretId(entry.asText(), region, accountId));
+            }
+        }
+        return Collections.unmodifiableList(arns);
     }
 
     /**

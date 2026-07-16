@@ -351,6 +351,7 @@ public class PipesPoller implements Resettable {
     }
 
     void pollKafka(Pipe pipe, String region) {
+        targetAuthorizer.authorizePipeSource(pipe.getRoleArn(), pipe.getSource(), region);
         ConsumerRecords<byte[], byte[]> records = kafkaConsumerManager.poll(pipe);
         if (records.isEmpty()) {
             return;

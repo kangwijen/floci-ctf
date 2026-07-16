@@ -245,6 +245,46 @@ class ResourceArnBuilderTest {
     }
 
     @Test
+    void dynamodbPutItemPrefersTableNameOverDecoyTableArn() {
+        String decoy = "arn:aws:dynamodb:us-east-1:222222222222:table/allowed-table";
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"TableArn\":\"" + decoy + "\",\"TableName\":\"secret-table\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/secret-table", arn);
+    }
+
+    @Test
+    void dynamodbBuildAllRequestItemsResourcesIncludesEveryTable() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"RequestItems":{"allowed-table":{"Keys":[]},"secret-table":{"Keys":[]}}}""");
+        List<String> arns = builder.buildAllDynamoDbRequestItemsResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:dynamodb:us-east-1:222222222222:table/allowed-table",
+                "arn:aws:dynamodb:us-east-1:222222222222:table/secret-table"), arns);
+    }
+
+    @Test
+    void dynamodbBuildAllTransactResourcesIncludesNestedTables() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"TransactItems":[
+                  {"Put":{"TableName":"allowed-table","Item":{}}},
+                  {"Delete":{"TableName":"secret-table","Key":{}}}
+                ]}""");
+        List<String> arns = builder.buildAllDynamoDbTransactResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:dynamodb:us-east-1:222222222222:table/allowed-table",
+                "arn:aws:dynamodb:us-east-1:222222222222:table/secret-table"), arns);
+    }
+
+    @Test
+    void dynamodbTransactWriteItemsBuildsArnFromNestedTableName() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"TransactItems":[{"Put":{"TableName":"secret-table","Item":{}}}]}""");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/secret-table", arn);
+    }
+
+    @Test
     void dynamodbTagResourceUsesResourceArnField() {
         String tableArn = "arn:aws:dynamodb:us-east-1:222222222222:table/tagged";
         ContainerRequestContext ctx = jsonBodyCtx("{\"ResourceArn\":\"" + tableArn + "\"}");
@@ -368,6 +408,16 @@ class ResourceArnBuilderTest {
                 "{\"SecretIdList\":[\"allowed/secret\",\"other/secret\"]}");
         String arn = builder.build("secretsmanager", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-??????", arn);
+    }
+
+    @Test
+    void secretsBuildAllBatchResourcesIncludesEverySecretId() {
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"SecretIdList\":[\"allowed/secret\",\"flag-secret\"]}");
+        List<String> arns = builder.buildAllSecretsManagerBatchResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-??????",
+                "arn:aws:secretsmanager:us-east-1:222222222222:secret:flag-secret-??????"), arns);
     }
 
     @Test

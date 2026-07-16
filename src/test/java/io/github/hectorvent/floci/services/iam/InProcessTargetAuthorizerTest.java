@@ -104,6 +104,27 @@ class InProcessTargetAuthorizerTest {
     }
 
     @Test
+    void pipeSourceMapsMskKafkaToDescribeCluster() {
+        String kafkaArn = "arn:aws:kafka:" + REGION + ":" + ACCOUNT + ":cluster/example/uuid";
+        authorizer.authorizePipeSource(ROLE_ARN, kafkaArn, REGION);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("kafka"), eq("DescribeCluster"), eq(kafkaArn), eq(REGION));
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("kafka"), eq("GetBootstrapBrokers"), eq(kafkaArn), eq(REGION));
+    }
+
+    @Test
+    void pipeSourceDeniesSelfManagedKafkaWhenEnforcementEnabled() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+
+        assertThrows(AwsException.class,
+                () -> authorizer.authorizePipeSource(ROLE_ARN, "smk://broker:9092", REGION));
+
+        verifyNoInteractions(iamAuthorizer);
+    }
+
+    @Test
     void pipeSourceDeniesMqWhenEnforcementEnabled() {
         when(config.services().iam().enforcementEnabled()).thenReturn(true);
 

@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.apigateway.AwsServiceRouter;
 import io.github.hectorvent.floci.services.apigateway.VtlTemplateEngine;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
@@ -21,6 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -46,17 +48,28 @@ public class WebSocketIntegrationInvoker {
     private final VtlTemplateEngine vtlEngine;
     private final HttpClient httpClient;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final OutboundUrlGuard outboundUrlGuard;
 
     @Inject
     public WebSocketIntegrationInvoker(LambdaService lambdaService, AwsServiceRouter serviceRouter,
                                        ObjectMapper objectMapper, VtlTemplateEngine vtlEngine,
-                                       InProcessTargetAuthorizer targetAuthorizer) {
+                                       InProcessTargetAuthorizer targetAuthorizer,
+                                       OutboundUrlGuard outboundUrlGuard) {
         this.lambdaService = lambdaService;
         this.serviceRouter = serviceRouter;
         this.objectMapper = objectMapper;
         this.vtlEngine = vtlEngine;
         this.httpClient = HttpClient.newHttpClient();
         this.targetAuthorizer = targetAuthorizer;
+        this.outboundUrlGuard = outboundUrlGuard;
+    }
+
+    /** Test helper when outbound URL guarding is not under test. */
+    public WebSocketIntegrationInvoker(LambdaService lambdaService, AwsServiceRouter serviceRouter,
+                                       ObjectMapper objectMapper, VtlTemplateEngine vtlEngine,
+                                       InProcessTargetAuthorizer targetAuthorizer) {
+        this(lambdaService, serviceRouter, objectMapper, vtlEngine, targetAuthorizer,
+                new OutboundUrlGuard(false, List.of(), false));
     }
 
     @PreDestroy
@@ -247,6 +260,13 @@ public class WebSocketIntegrationInvoker {
             return new IntegrationResult(500, null, "Invalid integration URI");
         }
 
+        try {
+            outboundUrlGuard.validateHttpUrl(uri);
+        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+            LOG.warnv("HTTP_PROXY target rejected: {0}", e.getMessage());
+            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
+        }
+
         LOG.debugv("Forwarding event to HTTP_PROXY endpoint: {0}", uri);
 
         try {
@@ -281,6 +301,13 @@ public class WebSocketIntegrationInvoker {
         if (uri == null || uri.isEmpty()) {
             LOG.warnv("HTTP integration URI is null or empty");
             return new IntegrationResult(500, null, "Invalid integration URI");
+        }
+
+        try {
+            outboundUrlGuard.validateHttpUrl(uri);
+        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+            LOG.warnv("HTTP target rejected: {0}", e.getMessage());
+            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
         }
 
         // Use passed templates, falling back to integration model's templates

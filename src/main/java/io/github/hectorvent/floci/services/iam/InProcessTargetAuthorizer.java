@@ -84,7 +84,12 @@ public class InProcessTargetAuthorizer {
             iamAuthorizer.authorizeWithResource(pipeRoleArn, "dynamodb", "GetShardIterator", sourceArn, region);
             return;
         }
-        if (sourceArn.contains(":mq:")) {
+        if (sourceArn.contains(":kafka:")) {
+            iamAuthorizer.authorizeWithResource(pipeRoleArn, "kafka", "DescribeCluster", sourceArn, region);
+            iamAuthorizer.authorizeWithResource(pipeRoleArn, "kafka", "GetBootstrapBrokers", sourceArn, region);
+            return;
+        }
+        if (sourceArn.startsWith("smk://") || sourceArn.contains(":mq:")) {
             denyUnmappedTarget(pipeRoleArn, sourceArn);
         }
     }

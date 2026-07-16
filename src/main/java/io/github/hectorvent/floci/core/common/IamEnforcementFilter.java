@@ -285,6 +285,18 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             evaluateDynamoDbMultiTableExecuteAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
         }
+        if (isDynamoDbMultiTableRequestItems(credentialScope, ctx)) {
+            evaluateDynamoDbRequestItemsAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
+        if (isDynamoDbTransactRequest(credentialScope, ctx)) {
+            evaluateDynamoDbTransactAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
+        if (isSecretsManagerMultiSecretBatch(credentialScope, ctx)) {
+            evaluateSecretsManagerBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
         if (isEmrMultiClusterRequest(credentialScope, ctx)) {
             evaluateEmrMultiClusterAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
@@ -355,6 +367,148 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return false;
         }
         return arnBuilder.isMultiTablePartiQLExecuteStatement(ctx);
+    }
+
+    private static boolean isDynamoDbMultiTableRequestItems(String credentialScope, ContainerRequestContext ctx) {
+        if (!"dynamodb".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null
+                || (!target.endsWith(".BatchWriteItem") && !target.endsWith(".BatchGetItem"))) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            var items = node.get("RequestItems");
+            return items != null && items.isObject() && items.size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isDynamoDbTransactRequest(String credentialScope, ContainerRequestContext ctx) {
+        if (!"dynamodb".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        return target != null
+                && (target.endsWith(".TransactWriteItems") || target.endsWith(".TransactGetItems"));
+    }
+
+    private static boolean isSecretsManagerMultiSecretBatch(String credentialScope, ContainerRequestContext ctx) {
+        if (!"secretsmanager".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || !target.endsWith(".BatchGetSecretValue")) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            var list = node.get("SecretIdList");
+            return list != null && list.isArray() && list.size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void evaluateDynamoDbRequestItemsAndAbortIfDenied(ContainerRequestContext ctx,
+                                                              String credentialScope,
+                                                              String akid,
+                                                              String region,
+                                                              String accountId,
+                                                              boolean strict) {
+        evaluateMultiResourceAndAbortIfDenied(
+                ctx, credentialScope, akid, region, accountId, strict,
+                arnBuilder.buildAllDynamoDbRequestItemsResources(ctx, region, accountId),
+                "dynamodbRequestItems");
+    }
+
+    private void evaluateDynamoDbTransactAndAbortIfDenied(ContainerRequestContext ctx,
+                                                          String credentialScope,
+                                                          String akid,
+                                                          String region,
+                                                          String accountId,
+                                                          boolean strict) {
+        List<String> resources = arnBuilder.buildAllDynamoDbTransactResources(ctx, region, accountId);
+        if (resources.isEmpty()) {
+            // No extractable tables — deny rather than fall back to table/*.
+            String action = actionRegistry.resolve(credentialScope, ctx);
+            if (action == null) {
+                action = credentialScope + ":*";
+            }
+            LOG.infov("IAM enforcement DENY: akid={0} action={1} empty TransactItems tables", akid, action);
+            ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
+        }
+        evaluateMultiResourceAndAbortIfDenied(
+                ctx, credentialScope, akid, region, accountId, strict, resources, "dynamodbTransact");
+    }
+
+    private void evaluateSecretsManagerBatchAndAbortIfDenied(ContainerRequestContext ctx,
+                                                             String credentialScope,
+                                                             String akid,
+                                                             String region,
+                                                             String accountId,
+                                                             boolean strict) {
+        evaluateMultiResourceAndAbortIfDenied(
+                ctx, credentialScope, akid, region, accountId, strict,
+                arnBuilder.buildAllSecretsManagerBatchResources(ctx, region, accountId),
+                "secretsManagerBatch");
+    }
+
+    private void evaluateMultiResourceAndAbortIfDenied(ContainerRequestContext ctx,
+                                                       String credentialScope,
+                                                       String akid,
+                                                       String region,
+                                                       String accountId,
+                                                       boolean strict,
+                                                       List<String> resources,
+                                                       String reason) {
+        String action = actionRegistry.resolve(credentialScope, ctx);
+        if (action == null) {
+            if (strict) {
+                String unknownAction = credentialScope + ":*";
+                LOG.infov("IAM strict enforcement DENY: unmapped {0} scope={1}", reason, credentialScope);
+                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
+            return;
+        }
+
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+        for (String resource : resources) {
+            if ("*".equals(resource)) {
+                continue;
+            }
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} {3}",
+                        akid, action, resource, reason);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+        }
     }
 
     private void evaluateDynamoDbMultiTableExecuteAndAbortIfDenied(ContainerRequestContext ctx,

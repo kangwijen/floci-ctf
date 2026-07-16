@@ -160,6 +160,7 @@ class PipesPollerTest {
 
         poller.pollKafka(pipe, "us-east-1");
 
+        verify(targetAuthorizer).authorizePipeSource(eq(pipe.getRoleArn()), eq(pipe.getSource()), eq("us-east-1"));
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(targetInvoker).invoke(eq(pipe), payloadCaptor.capture(), eq("us-east-1"));
         verify(kafkaConsumerManager).commit(eq(pipe), anyMap());

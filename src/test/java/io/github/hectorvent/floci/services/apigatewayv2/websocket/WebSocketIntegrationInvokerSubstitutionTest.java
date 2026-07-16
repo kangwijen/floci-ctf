@@ -1,18 +1,22 @@
 package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.apigateway.AwsServiceRouter;
 import io.github.hectorvent.floci.services.apigateway.VtlTemplateEngine;
+import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -114,5 +118,33 @@ class WebSocketIntegrationInvokerSubstitutionTest {
         String result = invoker.substituteStageVariables(uri, vars);
 
         assertEquals("hello--world", result);
+    }
+
+    @Test
+    void httpProxyRejectsPrivateHostAfterStageVariableSubstitution() {
+        WebSocketIntegrationInvoker guarded = new WebSocketIntegrationInvoker(
+                mock(LambdaService.class),
+                mock(AwsServiceRouter.class),
+                new ObjectMapper(),
+                mock(VtlTemplateEngine.class),
+                mock(InProcessTargetAuthorizer.class),
+                new OutboundUrlGuard(true, List.of(), false));
+
+        Integration integration = new Integration();
+        integration.setIntegrationType("HTTP_PROXY");
+        integration.setIntegrationUri("http://${stageVariables.target}/latest/meta-data");
+
+        WebSocketIntegrationInvoker.IntegrationResult result = guarded.invoke(
+                "us-east-1",
+                integration,
+                "{}",
+                Map.of("target", "169.254.169.254"),
+                Map.of(),
+                Map.of(),
+                null);
+
+        assertEquals(502, result.statusCode());
+        assertTrue(result.functionError() != null && result.functionError().contains("Bad Gateway"),
+                result.functionError());
     }
 }
