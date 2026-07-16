@@ -31,6 +31,8 @@ tools/fuzz/
 ./mvnw install -DskipTests
 ```
 
+`tools/fuzz/pom.xml` pins that artifact via `floci.version` (must match the root `pom.xml` version). Bump both when releasing.
+
 ## Unit fuzz
 
 ```bash

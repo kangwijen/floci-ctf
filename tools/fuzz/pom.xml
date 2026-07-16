@@ -6,7 +6,7 @@
 
     <groupId>io.github.hectorvent</groupId>
     <artifactId>floci-fuzz</artifactId>
-    <version>1.5.32</version>
+    <version>1.0.0</version>
     <packaging>jar</packaging>
     <name>floci-fuzz</name>
     <description>CTF fuzz harness for floci-ctf: unit oracles and operator campaigns</description>
@@ -14,6 +14,7 @@
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <floci.version>1.5.33</floci.version>
         <jqwik.version>1.9.3</jqwik.version>
         <jazzer.version>0.24.0</jazzer.version>
         <junit.version>5.13.4</junit.version>
@@ -37,7 +38,7 @@
         <dependency>
             <groupId>io.github.hectorvent</groupId>
             <artifactId>floci</artifactId>
-            <version>${project.version}</version>
+            <version>${floci.version}</version>
         </dependency>
 
         <dependency>
