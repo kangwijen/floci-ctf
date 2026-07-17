@@ -163,15 +163,18 @@ steps:
 
 ## CTF security profile
 
-The repository root `docker-compose.yml` enables a CTF hardening profile by default.
+The repository root `docker-compose.yml` enables Quarkus profile **`ctf`** (`application-ctf.yml`) and mirrors the same AuthPosture knobs as `FLOCI_*` env vars.
 
 **Ports:** Challenge Compose publishes host ports. The Floci image from `docker/Dockerfile` declares **no `EXPOSE`**. Root Compose maps only `4566:4566` (AWS API). Do not map Lambda Runtime API (`9200-9299`). Add `5100`, `6379-6399`, or `7001-7099` only in challenge Compose when host ECR push/pull or Redis/RDS wire access is required. See [Ports Reference](./ports.md).
 
 | Variable | Compose value | Purpose |
 |---|---|---|
-| `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `"true"` | Enforce IAM policies on API calls |
+| `QUARKUS_PROFILE` | `ctf` | Load `application-ctf.yml` (IAM, strict, SigV4, federated, egress) |
+| `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `"true"` | Enforce IAM policies on API calls (mirrors profile) |
 | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `"true"` | Deny unregistered keys and unknown action mappings |
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `"true"` | Verify SigV4 request signatures |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `"true"` | Federated JWT/SAML crypto required |
+| `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `"true"` | Reject non-public outbound HTTP destinations |
 | `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` | `${FLOCI_AUTH_ROOT_ACCESS_KEY_ID}` | Operator access key ID (host passthrough) |
 | `FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY` | `${FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY}` | Operator secret key paired with the root access key ID |
 | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `"true"` | Hide unauthenticated `/_floci/*`, `/_localstack/*`, and `/_aws/*`; use `all` to hide `/health` too |
@@ -180,6 +183,11 @@ The repository root `docker-compose.yml` enables a CTF hardening profile by defa
 | `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED` | `"true"` | Audit profile: record HTTP and in-process API calls to active trails (SFN, EventBridge, Firehose, etc.) |
 
 Export the root credential pair on the host before `docker compose up`. The same values are typically mirrored into `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for operator CLI use and S3 presign signing. See [IAM CTF hardening](../services/iam.md#ctf-hardening) for the full operator workflow.
+
+!!! warning "Unsupported for CTF: plain docker run without profile"
+    `docker run` of the image without `QUARKUS_PROFILE=ctf` (and without the CTF `FLOCI_*` knobs) keeps main `application.yml` lab defaults (permissive). That path is unsupported for CTF challenges. Use Compose or pass the profile/env explicitly.
+
+**Compat / lab escape hatch:** omit `QUARKUS_PROFILE` and leave CTF `FLOCI_*` unset (CI `compat-test` does this). Unit tests use main YAML. Do not flip main `application.yml` to enforce-all.
 
 ## Common Environment Variables
 

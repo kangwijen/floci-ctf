@@ -1,0 +1,19 @@
+# Quarkus profile "ctf" — secure defaults for CTF / Compose.
+# Activate with QUARKUS_PROFILE=ctf (root docker-compose.yml sets this).
+# Main application.yml stays permissive for unit tests and lab/compat escape hatches.
+#
+# AuthPosture under this profile: IAM + strict + SigV4 + federated crypto + egress block.
+# Compose may also set equivalent FLOCI_* env vars; they must not disagree with these values.
+
+floci:
+  auth:
+    validate-signatures: true
+
+  ctf:
+    validate-federated-tokens: true
+    block-private-outbound-urls: true
+
+  services:
+    iam:
+      enforcement-enabled: true
+      strict-enforcement-enabled: true

@@ -8,8 +8,8 @@ import org.jboss.logging.Logger;
 
 /**
  * Logs (does not fail) when strict posture coerces signatures required but
- * {@code floci.auth.validate-signatures} is still off. Compose CTF sets both.
- * Lab unsigned-header profiles intentionally hit this until B.4.
+ * {@code floci.auth.validate-signatures} is still off. Profile {@code ctf} and Compose set both.
+ * Lab unsigned-header profiles ({@code CtfLabIamEnforcementProfile}) intentionally hit this.
  */
 @ApplicationScoped
 public class AuthPostureStartupCheck {
@@ -27,7 +27,8 @@ public class AuthPostureStartupCheck {
         if (authPosture.signaturePostureMismatch()) {
             LOG.warn("AuthPosture: strict mode coerces signaturesRequired=true but "
                     + "floci.auth.validate-signatures is false. SigV4 filter stays off "
-                    + "(lab unsigned Authorization). Compose CTF sets FLOCI_AUTH_VALIDATE_SIGNATURES=true.");
+                    + "(lab unsigned Authorization). Use QUARKUS_PROFILE=ctf or "
+                    + "FLOCI_AUTH_VALIDATE_SIGNATURES=true for Compose CTF.");
         }
     }
 }

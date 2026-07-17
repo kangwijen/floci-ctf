@@ -17,7 +17,11 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       FLOCI_AUTH_ROOT_ACCESS_KEY_ID: ${FLOCI_AUTH_ROOT_ACCESS_KEY_ID}
-      # CTF security: IAM enforcement, strict bypass rules, and SigV4 validation.
+      # Named Quarkus CTF profile (application-ctf.yml): IAM, strict, SigV4, federated, egress.
+      # Plain docker run without QUARKUS_PROFILE=ctf (or the FLOCI_* knobs below) is unsupported for CTF.
+      # Lab/compat escape hatch: omit QUARKUS_PROFILE and leave FLOCI_* unset (main application.yml stays permissive).
+      QUARKUS_PROFILE: ctf
+      # Explicit FLOCI_* mirrors application-ctf.yml so operators can see/override posture without reading YAML.
       # Set FLOCI_AUTH_ROOT_* on the host before `docker compose up` (operator credentials).
       FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: "true"
       FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED: "true"
