@@ -213,16 +213,20 @@ Deleting a GraphQL API (`DeleteGraphqlApi`) automatically deletes all child reso
 
 This matches AWS behavior where deleting an API removes its entire configuration.
 
+## GraphQL data plane (disabled)
+
+There is **no live GraphQL query/mutation serve path** in this CTF fork. Management API and schema tooling exist, but GraphQL execution must not be exposed until an execute-plane auth gate equivalent to API Gateway `ExecuteAuthzGate` is in place. Operators should treat AppSync as control-plane only.
+
 ## Not Implemented
 
 These AWS AppSync operations are not yet implemented and are tracked in future phases:
 
-- **Execution engine** (Phase 5): GraphQL query execution, resolver dispatch, VTL template evaluation
+- **Execution engine** (Phase 5): GraphQL query execution, resolver dispatch, VTL template evaluation (refused until auth-gated)
 - **Data source adapters** (Phase 7): DynamoDB, Lambda, HTTP, EventBridge, OpenSearch, RDS connectors
 - **Pipeline resolvers** (Phase 8): Function chaining with `$prev` and `$stash`
 - **Subscriptions** (Phase 9): WebSocket real-time subscriptions
 - **Caching** (Phase 10): API-level and per-resolver caching
-- **Authentication** (Phase 4): API key validation on the GraphQL endpoint
+- **Authentication** (Phase 4): API key / IAM / Cognito validation on the GraphQL endpoint
 - **Introspection** (Phase 6): `__schema` and `__type` queries
 - **Merged API source management**: `AssociateMergedGraphqlApi`, `AssociateSourceGraphqlApi`, `StartSchemaMerge`, `ListTypesByAssociation`
 - **Data source introspection**: `StartDataSourceIntrospection`, `GetDataSourceIntrospection`

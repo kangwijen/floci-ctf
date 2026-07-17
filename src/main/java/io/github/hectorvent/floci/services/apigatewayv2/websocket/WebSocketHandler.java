@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
+import io.github.hectorvent.floci.services.apigateway.ExecuteAuthzGate;
 import io.github.hectorvent.floci.services.apigatewayv2.ApiGatewayV2Service;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Api;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
@@ -59,6 +60,7 @@ public class WebSocketHandler {
     private final AccountResolver accountResolver;
     private final IamService iamService;
     private final InProcessIamAuthorizer iamAuthorizer;
+    private final ExecuteAuthzGate executeAuthzGate;
 
     @Inject
     public WebSocketHandler(ApiGatewayV2Service apiGatewayV2Service,
@@ -73,7 +75,8 @@ public class WebSocketHandler {
                             EmulatorConfig config,
                             AccountResolver accountResolver,
                             IamService iamService,
-                            InProcessIamAuthorizer iamAuthorizer) {
+                            InProcessIamAuthorizer iamAuthorizer,
+                            ExecuteAuthzGate executeAuthzGate) {
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.connectionManager = connectionManager;
         this.routeSelectionEvaluator = routeSelectionEvaluator;
@@ -87,6 +90,7 @@ public class WebSocketHandler {
         this.accountResolver = accountResolver;
         this.iamService = iamService;
         this.iamAuthorizer = iamAuthorizer;
+        this.executeAuthzGate = executeAuthzGate;
     }
 
     /**
@@ -177,10 +181,30 @@ public class WebSocketHandler {
         Route connectRoute = apiGatewayV2Service.findRouteByKey(region, apiId, "$connect");
 
         if (connectRoute != null && connectRoute.getTarget() != null) {
+            String connectAuthType = connectRoute.getAuthorizationType();
+            boolean strict = config.services().iam().strictEnforcementEnabled();
+            ExecuteAuthzGate.AuthzDecision missing =
+                    executeAuthzGate.checkMissingAuthType(connectAuthType, strict);
+            if (missing.blocks()) {
+                ctx.response().setStatusCode(403).end();
+                return;
+            }
+            ExecuteAuthzGate.AuthzDecision unsupported =
+                    executeAuthzGate.checkUnsupportedMethodAuth(connectAuthType);
+            if (unsupported.blocks()) {
+                ctx.response().setStatusCode(403).end();
+                return;
+            }
+
             // Check if the $connect route has a Lambda REQUEST authorizer configured
-            if ("CUSTOM".equals(connectRoute.getAuthorizationType())
-                    && connectRoute.getAuthorizerId() != null
-                    && !connectRoute.getAuthorizerId().isEmpty()) {
+            // Must match ExecuteAuthzGate.classify (case-insensitive); equals("CUSTOM") silent-allows.
+            if (executeAuthzGate.classify(connectAuthType) == ExecuteAuthzGate.MethodAuthKind.CUSTOM) {
+                ExecuteAuthzGate.AuthzDecision customId =
+                        executeAuthzGate.checkCustomMisconfig(connectRoute.getAuthorizerId(), "pending");
+                if (customId.isDenied()) {
+                    ctx.response().setStatusCode(403).end();
+                    return;
+                }
 
                 // Build headers and query params from the upgrade request (needed for both authorizer and integration)
                 Map<String, List<String>> headers = extractHeaders(ctx);
@@ -212,7 +236,7 @@ public class WebSocketHandler {
                     ctx.response().setStatusCode(500).end();
                 });
             } else {
-                // No authorizer configured — proceed directly with $connect integration
+                // No CUSTOM authorizer — proceed directly with $connect integration
                 Map<String, List<String>> headers = extractHeaders(ctx);
                 Map<String, List<String>> queryParams = extractQueryParams(ctx);
                 proceedWithConnectIntegration(ctx, connectRoute, region, apiId, stageName,

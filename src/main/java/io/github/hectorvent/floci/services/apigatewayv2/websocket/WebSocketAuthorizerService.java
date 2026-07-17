@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.services.apigateway.ExecuteAuthzGate;
 import io.github.hectorvent.floci.services.apigatewayv2.ApiGatewayV2Service;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Authorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
@@ -35,18 +36,21 @@ public class WebSocketAuthorizerService {
     private final WebSocketProxyEventBuilder proxyEventBuilder;
     private final ObjectMapper objectMapper;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final ExecuteAuthzGate executeAuthzGate;
 
     @Inject
     public WebSocketAuthorizerService(ApiGatewayV2Service apiGatewayV2Service,
                                       LambdaService lambdaService,
                                       WebSocketProxyEventBuilder proxyEventBuilder,
                                       ObjectMapper objectMapper,
-                                      InProcessTargetAuthorizer targetAuthorizer) {
+                                      InProcessTargetAuthorizer targetAuthorizer,
+                                      ExecuteAuthzGate executeAuthzGate) {
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.lambdaService = lambdaService;
         this.proxyEventBuilder = proxyEventBuilder;
         this.objectMapper = objectMapper;
         this.targetAuthorizer = targetAuthorizer;
+        this.executeAuthzGate = executeAuthzGate;
     }
 
     /**
@@ -88,14 +92,20 @@ public class WebSocketAuthorizerService {
                                               Map<String, List<String>> queryParams,
                                               String sourceIp, String userAgent,
                                               Map<String, String> stageVariables) {
+        ExecuteAuthzGate.AuthzDecision idCheck = executeAuthzGate.checkCustomMisconfig(authorizerId, "pending");
+        if (idCheck.isDenied()) {
+            return AuthorizerResult.deny();
+        }
+
         // Fetch the authorizer model
         Authorizer authorizer = apiGatewayV2Service.getAuthorizer(region, apiId, authorizerId);
 
-        if (!"REQUEST".equals(authorizer.getAuthorizerType())) {
-            // Only REQUEST type authorizers are supported for WebSocket APIs
-            LOG.debugv("Authorizer {0} is not REQUEST type (is {1}), allowing by default",
+        ExecuteAuthzGate.AuthzDecision typeCheck =
+                executeAuthzGate.checkRequestAuthorizerType(authorizer.getAuthorizerType());
+        if (typeCheck.blocks()) {
+            LOG.warnv("Authorizer {0} is not REQUEST type (is {1}), failing closed",
                     authorizerId, authorizer.getAuthorizerType());
-            return AuthorizerResult.allow(null);
+            return AuthorizerResult.error();
         }
 
         // Validate identity source expressions
@@ -125,7 +135,9 @@ public class WebSocketAuthorizerService {
 
         // Extract the Lambda function name from the authorizer URI
         String functionName = extractFunctionNameFromUri(authorizer.getAuthorizerUri());
-        if (functionName == null) {
+        ExecuteAuthzGate.AuthzDecision uriCheck =
+                executeAuthzGate.checkCustomMisconfig(authorizerId, functionName);
+        if (uriCheck.blocks()) {
             LOG.warnv("Cannot extract function name from authorizer URI: {0}",
                     authorizer.getAuthorizerUri());
             return AuthorizerResult.error();
@@ -144,13 +156,14 @@ public class WebSocketAuthorizerService {
         }
 
         // Parse the policy document
-        return parseAuthorizerResponse(invokeResult, apiId);
+        String routeArn = proxyEventBuilder.buildRouteArn(region, apiId, stageName, "$connect");
+        return parseAuthorizerResponse(invokeResult, apiId, routeArn);
     }
 
     /**
      * Parse the authorizer Lambda response and extract the policy decision.
      */
-    private AuthorizerResult parseAuthorizerResponse(InvokeResult invokeResult, String apiId) {
+    private AuthorizerResult parseAuthorizerResponse(InvokeResult invokeResult, String apiId, String routeArn) {
         // Check for function error
         if (invokeResult.getFunctionError() != null) {
             LOG.warnv("Lambda authorizer returned function error for API {0}: {1}",
@@ -179,15 +192,8 @@ public class WebSocketAuthorizerService {
                 return AuthorizerResult.error();
             }
 
-            String effect = statements.get(0).path("Effect").asText("Deny");
-            if ("Deny".equalsIgnoreCase(effect)) {
+            if (!executeAuthzGate.evaluatePolicyStatements(statements, routeArn)) {
                 return AuthorizerResult.deny();
-            }
-
-            if (!"Allow".equalsIgnoreCase(effect)) {
-                LOG.warnv("Authorizer response has unrecognized Effect '{0}' for API {1}",
-                        effect, apiId);
-                return AuthorizerResult.error();
             }
 
             // Extract context map if present

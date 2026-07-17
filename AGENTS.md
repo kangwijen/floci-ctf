@@ -286,7 +286,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | TagResources non-ARN entries treated as `*` | Closed | Tagging path skips non-ARN `ResourceARNList` entries instead of falling back to `*` (`TaggingIamScopedIntegrationTest`, `IamEnforcementFilterTest`) |
 | Scheduler universal target ARN under-scope | Closed | `ScheduleInvoker` authorizes the concrete target ARN; missing TopicArn/QueueUrl is deny with no pseudo-ARN fallback (`ScheduleInvokerTest`) |
 | Lambda Function URL IAM resource `function:*` | Closed | `/lambda-url/{urlId}` resolves via store (`LambdaUrlArnNotWildcardTest`); `AuthType=AWS_IAM` requires Authorization even when non-strict (`LambdaUrlAwsIamAuthTypeTest`) |
-| REST CUSTOM authorizer Statement under-eval | Closed | `ApiGatewayExecuteController` evaluates all policy Statements (`IamEnforcementFilterTest` / APIGW execute path) |
+| API Gateway execute-plane authorizer fail-open (null authType, CUSTOM misconfig, Cognito silent allow, Statement[0]-only on HTTP/WS) | Closed | Shared `ExecuteAuthzGate` on REST, HTTP API REQUEST, and WebSocket `$connect` (`ExecuteAuthzGateTest`, `ApiGatewayExecuteControllerTest`). Residual: `COGNITO_USER_POOLS` rejected (not implemented); AppSync GraphQL serve remains disabled |
 | Cognito userInfo ignores revoked tokens | Closed | `CognitoUserInfoController` rejects revoked access tokens (`CognitoUserInfoIntegrationTest`) |
 | Inactive IAM access keys still authenticate | Closed | `IamService.findSecretKey` ignores inactive keys (`IamServiceTest`) |
 | Cognito unknown `AuthFlow` issues tokens | Closed | `CognitoAuthFlowHandler` rejects unrecognized flows (`CognitoAuthFlowHandlerTest`) |

@@ -117,7 +117,7 @@ Notable CTF deltas on core services (full map in [AGENTS.md](../../AGENTS.md)):
 | [SNS](sns.md#ctf-fork) | No default open topic policy; `:root` in topic policy does not authorize IAM users; regression: `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SnsSubscribeReceiveIamIntegrationTest` |
 | [Secrets Manager](secrets-manager.md#ctf-fork) | Path-prefix IAM uses `secret:path/*`; single-layer KMS `SecretBinary` envelopes; rotation `PutSecretValue` does not double-wrap; `BatchGetSecretValue` multi-secret; regression: `SecretsManagerRotationKmsIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest` |
 | [EventBridge](eventbridge.md#ctf-fork) | Bus resource policies; `PutEvents` per-entry bus ARNs |
-| [API Gateway](api-gateway.md) | JWT JWKS/OIDC `OutboundUrlGuard`; WebSocket `$connect` SigV4/IAM; CUSTOM authorizer all Statements |
+| [API Gateway](api-gateway.md) | JWT JWKS/OIDC `OutboundUrlGuard`; WebSocket `$connect` SigV4/IAM; shared `ExecuteAuthzGate` (null≠NONE under strict, CUSTOM fail-closed, Deny-wins Statements on REST/HTTP/WS) |
 | [IoT](iot.md#ctf-fork) | MQTT CONNECT auth and topic IAM when enforcement is on |
 | Cognito OAuth | `/oauth2/*` uses client credentials; Bearer tokens do not bypass SigV4 on data plane; unknown AuthFlow rejected; userInfo honors revocation |
 

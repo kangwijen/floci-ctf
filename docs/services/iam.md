@@ -385,7 +385,7 @@ Under strict enforcement:
 | Surface | Gate condition | Regression |
 |---|---|---|
 | S3 object read | Public bucket policy allows `s3:GetObject` or `s3:HeadObject` for `Principal *` | `S3PublicBucketPolicyAnonymousGetIntegrationTest` |
-| API Gateway data plane | REST method `authorizationType=NONE` on `execute-api` or `_user_request_` paths; `AWS_IAM` and other non-`NONE` types require SigV4 | `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest` |
+| API Gateway data plane | REST method explicit `authorizationType=NONE` on `execute-api` or `_user_request_` paths; null auth type is not `NONE` under strict; `AWS_IAM` and other non-`NONE` types require SigV4 | `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`, `ExecuteAuthzGateTest` |
 | Lambda function URL | `AuthType=NONE` on `/lambda-url/{urlId}` **and** function resource policy allows `lambda:InvokeFunctionUrl` for anonymous principal. `AuthType=AWS_IAM` requires Authorization even when non-strict. IAM resource ARN is the concrete function from the urlId store | `LambdaFunctionUrlNoneAuthIntegrationTest`, `LambdaUrlAwsIamAuthTypeTest`, `LambdaUrlArnNotWildcardTest` |
 | Bypass regressions (negative) | Unsigned requests denied when gate conditions are not met (private bucket, `AWS_IAM` method, `AuthType=AWS_IAM`, `AuthType=NONE` without public resource policy, unsigned `PutObject` despite public `GetObject`) | `AnonymousAccessGateBypassIntegrationTest` |
 

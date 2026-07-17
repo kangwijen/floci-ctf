@@ -1,7 +1,9 @@
 package io.github.hectorvent.floci.core.common;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.apigateway.ApiGatewayResourceMatcher;
 import io.github.hectorvent.floci.services.apigateway.ApiGatewayService;
+import io.github.hectorvent.floci.services.apigateway.ExecuteAuthzGate;
 import io.github.hectorvent.floci.services.apigateway.model.ApiGatewayResource;
 import io.github.hectorvent.floci.services.apigateway.model.MethodConfig;
 import io.github.hectorvent.floci.services.iam.IamActionRegistry;
@@ -45,6 +47,8 @@ public class AnonymousAccessGate {
     private final IamPolicyEvaluator evaluator;
     private final RegionResolver regionResolver;
     private final AccountResolver accountResolver;
+    private final ExecuteAuthzGate executeAuthzGate;
+    private final EmulatorConfig config;
 
     @Inject
     public AnonymousAccessGate(ApiGatewayService apiGatewayService,
@@ -54,7 +58,9 @@ public class AnonymousAccessGate {
                                ResourcePolicyResolver resourcePolicyResolver,
                                IamPolicyEvaluator evaluator,
                                RegionResolver regionResolver,
-                               AccountResolver accountResolver) {
+                               AccountResolver accountResolver,
+                               ExecuteAuthzGate executeAuthzGate,
+                               EmulatorConfig config) {
         this.apiGatewayService = apiGatewayService;
         this.lambdaService = lambdaService;
         this.actionRegistry = actionRegistry;
@@ -63,6 +69,8 @@ public class AnonymousAccessGate {
         this.evaluator = evaluator;
         this.regionResolver = regionResolver;
         this.accountResolver = accountResolver;
+        this.executeAuthzGate = executeAuthzGate;
+        this.config = config;
     }
 
     public boolean allowsUnsignedRequest(ContainerRequestContext ctx) {
@@ -121,7 +129,8 @@ public class AnonymousAccessGate {
             return false;
         }
         String authType = methodConfig.getAuthorizationType();
-        return authType == null || "NONE".equalsIgnoreCase(authType);
+        boolean strict = config.services().iam().strictEnforcementEnabled();
+        return executeAuthzGate.allowsAnonymous(authType, strict);
     }
 
     private static ExecuteApiPath parseExecuteApiPath(String rawPath) {

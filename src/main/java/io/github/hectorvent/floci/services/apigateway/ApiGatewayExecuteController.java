@@ -21,7 +21,6 @@ import io.github.hectorvent.floci.services.apigatewayv2.websocket.ConnectionInfo
 import io.github.hectorvent.floci.services.apigatewayv2.websocket.WebSocketConnectionManager;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.Listener;
-import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.elbv2.model.LoadBalancer;
 import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
@@ -81,6 +80,7 @@ public class ApiGatewayExecuteController {
     private final InProcessTargetAuthorizer targetAuthorizer;
     private final EmulatorConfig config;
     private final JwtAuthorizerVerifier jwtAuthorizerVerifier;
+    private final ExecuteAuthzGate executeAuthzGate;
 
     @Inject
     public ApiGatewayExecuteController(ApiGatewayService apiGatewayService, ApiGatewayV2Service apiGatewayV2Service,
@@ -91,7 +91,8 @@ public class ApiGatewayExecuteController {
                                        ElbV2Service elbV2Service,
                                        InProcessTargetAuthorizer targetAuthorizer,
                                        EmulatorConfig config,
-                                       JwtAuthorizerVerifier jwtAuthorizerVerifier) {
+                                       JwtAuthorizerVerifier jwtAuthorizerVerifier,
+                                       ExecuteAuthzGate executeAuthzGate) {
         this.apiGatewayService = apiGatewayService;
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.lambdaService = lambdaService;
@@ -104,6 +105,7 @@ public class ApiGatewayExecuteController {
         this.targetAuthorizer = targetAuthorizer;
         this.config = config;
         this.jwtAuthorizerVerifier = jwtAuthorizerVerifier;
+        this.executeAuthzGate = executeAuthzGate;
     }
 
     /** Matches an ELBv2 listener ARN (ALB {@code app/} or NLB {@code net/}); group 1 = region. */
@@ -366,16 +368,33 @@ public class ApiGatewayExecuteController {
                                               Stage stage,
                                               MethodConfig method,
                                               HttpHeaders headers, UriInfo uriInfo, String resolvedApiKey) {
-        if ("CUSTOM".equals(method.getAuthorizationType())) {
+        boolean strict = config.services().iam().strictEnforcementEnabled();
+        String authType = method.getAuthorizationType();
+
+        ExecuteAuthzGate.AuthzDecision missing = executeAuthzGate.checkMissingAuthType(authType, strict);
+        if (missing.blocks()) {
+            return forbiddenAuthorizerResult();
+        }
+
+        ExecuteAuthzGate.AuthzDecision unsupported = executeAuthzGate.checkUnsupportedMethodAuth(authType);
+        if (unsupported.blocks()) {
+            return forbiddenAuthorizerResult();
+        }
+
+        if (executeAuthzGate.classify(method.getAuthorizationType())
+                == ExecuteAuthzGate.MethodAuthKind.CUSTOM) {
             String authorizerId = method.getAuthorizerId();
-            if (authorizerId == null) {
-                return new AuthorizerResult(null, null, null);
+            ExecuteAuthzGate.AuthzDecision idCheck = executeAuthzGate.checkCustomMisconfig(authorizerId, "pending");
+            if (idCheck.isDenied()) {
+                return forbiddenAuthorizerResult();
             }
 
-            io.github.hectorvent.floci.services.apigateway.model.Authorizer auth = apiGatewayService.getAuthorizer(region, apiId, authorizerId);
+            io.github.hectorvent.floci.services.apigateway.model.Authorizer auth =
+                    apiGatewayService.getAuthorizer(region, apiId, authorizerId);
             String lambdaName = functionNameFromUri(auth.getAuthorizerUri());
-            if (lambdaName == null) {
-                return new AuthorizerResult(null, null, null);
+            ExecuteAuthzGate.AuthzDecision uriCheck = executeAuthzGate.checkCustomMisconfig(authorizerId, lambdaName);
+            if (uriCheck.isError()) {
+                return new AuthorizerResult(Response.status(500).build(), null, null);
             }
 
             String event = toAuthorizerEvent(auth, headers, region, apiId, stageName, httpMethod, requestPath, resourcePath, resourceId, stage, uriInfo, resolvedApiKey);
@@ -389,7 +408,8 @@ public class ApiGatewayExecuteController {
 
                 JsonNode policy = objectMapper.readTree(result.getPayload());
                 String methodArn = buildMethodArn(region, apiId, stageName, httpMethod, requestPath);
-                boolean allowed = evaluateCustomAuthorizerPolicy(policy.path("policyDocument").path("Statement"), methodArn);
+                boolean allowed = executeAuthzGate.evaluatePolicyStatements(
+                        policy.path("policyDocument").path("Statement"), methodArn);
                 if (!allowed) {
                     return new AuthorizerResult(
                             Response.status(403).entity(jsonMessage("User is not authorized to access this resource")).build(),
@@ -405,6 +425,13 @@ public class ApiGatewayExecuteController {
             }
         }
         return new AuthorizerResult(null, null, null);
+    }
+
+    private AuthorizerResult forbiddenAuthorizerResult() {
+        return new AuthorizerResult(
+                Response.status(403).entity(jsonMessage("User is not authorized to access this resource")).build(),
+                null,
+                null);
     }
 
     private Response validateRequest(String region, String apiId, MethodConfig method,
@@ -599,50 +626,11 @@ public class ApiGatewayExecuteController {
     }
 
     /**
-     * Evaluates a CUSTOM Lambda authorizer policy document against the requested method ARN.
-     * All Statement entries are checked rather than only the first one. An explicit Deny on
-     * any matching statement wins over an Allow on another matching statement, matching AWS
-     * IAM evaluation semantics for API Gateway Lambda authorizers. Absent a matching Allow,
-     * the request is denied by default.
+     * Delegates to {@link ExecuteAuthzGate#evaluatePolicyStatements(JsonNode, String)}.
+     * Retained for unit tests that target the controller entry point.
      */
     static boolean evaluateCustomAuthorizerPolicy(JsonNode statements, String methodArn) {
-        if (statements == null || !statements.isArray() || statements.isEmpty()) {
-            return false;
-        }
-        boolean allowed = false;
-        for (JsonNode statement : statements) {
-            if (!authorizerStatementApplies(statement, methodArn)) {
-                continue;
-            }
-            String effect = statement.path("Effect").asText("Deny");
-            if ("Deny".equalsIgnoreCase(effect)) {
-                return false;
-            }
-            if ("Allow".equalsIgnoreCase(effect)) {
-                allowed = true;
-            }
-        }
-        return allowed;
-    }
-
-    private static boolean authorizerStatementApplies(JsonNode statement, String methodArn) {
-        return authorizerFieldMatches(statement.path("Action"), "execute-api:Invoke")
-                && authorizerFieldMatches(statement.path("Resource"), methodArn);
-    }
-
-    private static boolean authorizerFieldMatches(JsonNode field, String value) {
-        if (field == null || field.isMissingNode() || field.isNull()) {
-            return true;
-        }
-        if (field.isArray()) {
-            for (JsonNode entry : field) {
-                if (entry.isTextual() && IamPolicyEvaluator.globMatches(entry.asText(), value)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        return field.isTextual() && IamPolicyEvaluator.globMatches(field.asText(), value);
+        return new ExecuteAuthzGate().evaluatePolicyStatements(statements, methodArn);
     }
 
     /**
@@ -1436,12 +1424,34 @@ public class ApiGatewayExecuteController {
                     .type(MediaType.APPLICATION_JSON).build();
         }
 
-        if ("JWT".equalsIgnoreCase(route.getAuthorizationType()) && route.getAuthorizerId() != null) {
+        String routeAuthType = route.getAuthorizationType();
+        boolean strict = config.services().iam().strictEnforcementEnabled();
+        ExecuteAuthzGate.AuthzDecision missing = executeAuthzGate.checkMissingAuthType(routeAuthType, strict);
+        if (missing.blocks()) {
+            return Response.status(403)
+                    .entity(jsonMessage("User is not authorized to access this resource"))
+                    .type(MediaType.APPLICATION_JSON).build();
+        }
+        ExecuteAuthzGate.AuthzDecision unsupported = executeAuthzGate.checkUnsupportedMethodAuth(routeAuthType);
+        if (unsupported.blocks()) {
+            return Response.status(403)
+                    .entity(jsonMessage("User is not authorized to access this resource"))
+                    .type(MediaType.APPLICATION_JSON).build();
+        }
+
+        if ("JWT".equalsIgnoreCase(routeAuthType) && route.getAuthorizerId() != null) {
             Response authError = enforceJwtAuthorizer(region, apiId, route, headers);
             if (authError != null) return authError;
         }
 
-        if ("CUSTOM".equalsIgnoreCase(route.getAuthorizationType()) && route.getAuthorizerId() != null) {
+        if ("CUSTOM".equalsIgnoreCase(routeAuthType)) {
+            ExecuteAuthzGate.AuthzDecision customId =
+                    executeAuthzGate.checkCustomMisconfig(route.getAuthorizerId(), "pending");
+            if (customId.isDenied()) {
+                return Response.status(403)
+                        .entity(jsonMessage("User is not authorized to access this resource"))
+                        .type(MediaType.APPLICATION_JSON).build();
+            }
             Response authError = enforceRequestAuthorizerV2(region, apiId, stageName, route, httpMethod, path, headers, uriInfo);
             if (authError != null) return authError;
         }
@@ -1756,8 +1766,12 @@ public class ApiGatewayExecuteController {
                     .type(MediaType.APPLICATION_JSON).build();
         }
 
-        if (!"REQUEST".equalsIgnoreCase(authorizer.getAuthorizerType())) {
-            return null; // Not a REQUEST authorizer — skip
+        ExecuteAuthzGate.AuthzDecision typeCheck =
+                executeAuthzGate.checkRequestAuthorizerType(authorizer.getAuthorizerType());
+        if (typeCheck.blocks()) {
+            return Response.status(500)
+                    .entity(jsonMessage("Internal Server Error"))
+                    .type(MediaType.APPLICATION_JSON).build();
         }
 
         // Validate identity sources — if any configured source is missing, return 401 without invoking Lambda
@@ -1799,7 +1813,9 @@ public class ApiGatewayExecuteController {
 
         // Extract the Lambda function name from the authorizer URI
         String functionName = functionNameFromUri(authorizer.getAuthorizerUri());
-        if (functionName == null) {
+        ExecuteAuthzGate.AuthzDecision uriCheck =
+                executeAuthzGate.checkCustomMisconfig(route.getAuthorizerId(), functionName);
+        if (uriCheck.blocks()) {
             LOG.warnv("Cannot extract function name from authorizer URI: {0}", authorizer.getAuthorizerUri());
             return Response.status(500)
                     .entity(jsonMessage("Internal Server Error"))
@@ -1878,17 +1894,10 @@ public class ApiGatewayExecuteController {
                         .type(MediaType.APPLICATION_JSON).build();
             }
 
-            String effect = statements.get(0).path("Effect").asText("Deny");
-            if ("Deny".equalsIgnoreCase(effect)) {
+            String methodArn = buildMethodArn(region, apiId, stageName, httpMethod, path);
+            if (!executeAuthzGate.evaluatePolicyStatements(statements, methodArn)) {
                 return Response.status(403)
                         .entity(jsonMessage("User is not authorized to access this resource"))
-                        .type(MediaType.APPLICATION_JSON).build();
-            }
-
-            if (!"Allow".equalsIgnoreCase(effect)) {
-                LOG.warnv("Authorizer response has unrecognized Effect '{0}' for API {1}", effect, apiId);
-                return Response.status(500)
-                        .entity(jsonMessage("Internal Server Error"))
                         .type(MediaType.APPLICATION_JSON).build();
             }
 
