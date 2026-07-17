@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
+import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.services.ecs.EcsService;
 import io.github.hectorvent.floci.services.ecs.model.LaunchType;
 import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
@@ -84,8 +85,14 @@ public class ScheduleInvoker {
             String serviceAction = arn.substring(sdkIdx + ":aws-sdk:".length());
             // Authorize against the real delivery resource extracted from Input, not the
             // scheduler pseudo-ARN — otherwise a Deny scoped to a specific SNS topic or SQS
-            // queue never matches and is silently bypassed.
+            // queue never matches and is silently bypassed. Missing TopicArn/QueueUrl is deny
+            // (no pseudo-ARN authorize-as-allow).
             String universalResourceArn = universalTargetResourceArn(serviceAction, payload, region);
+            if (requiresConcreteUniversalResource(serviceAction) && universalResourceArn == null) {
+                throw new AwsException("AccessDeniedException",
+                        "Scheduler universal target requires TopicArn or QueueUrl in Input for "
+                                + serviceAction, 403);
+            }
             targetAuthorizer.authorizeSchedulerTarget(
                     target.getRoleArn(), universalResourceArn != null ? universalResourceArn : arn, region);
             invokeUniversalTarget(serviceAction, payload, region);
@@ -162,12 +169,15 @@ public class ScheduleInvoker {
         return target;
     }
 
+    private static boolean requiresConcreteUniversalResource(String serviceAction) {
+        return "sns:publish".equals(serviceAction) || "sqs:sendMessage".equals(serviceAction);
+    }
+
     /**
      * Extracts the real delivery resource ARN from a universal target's {@code Input} payload
      * so IAM can be evaluated against the actual resource instead of the scheduler pseudo-ARN
      * ({@code arn:aws:scheduler:::aws-sdk:<service>:<action>}). Returns {@code null} when the
-     * action is unsupported or the resource identifier is missing/unparseable, in which case
-     * the caller falls back to the pseudo-ARN.
+     * action is unsupported or the resource identifier is missing/unparseable.
      */
     private String universalTargetResourceArn(String serviceAction, String input, String region) {
         JsonNode params;

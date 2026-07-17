@@ -365,6 +365,62 @@ public class InProcessTargetAuthorizer {
         }
     }
 
+    /** CodePipeline S3 Source action: pipeline role needs {@code s3:GetObject}. */
+    public void authorizeCodePipelineS3Get(String roleArn, String bucket, String key, String region) {
+        if (bucket == null || bucket.isBlank() || key == null || key.isBlank()) {
+            return;
+        }
+        String objectArn = AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+        iamAuthorizer.authorizeWithResource(roleArn, "s3", "GetObject", objectArn, region);
+    }
+
+    /** CodePipeline S3 Deploy action: pipeline role needs {@code s3:PutObject}. */
+    public void authorizeCodePipelineS3Put(String roleArn, String bucket, String key, String region) {
+        if (bucket == null || bucket.isBlank() || key == null || key.isBlank()) {
+            return;
+        }
+        String objectArn = AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+        iamAuthorizer.authorizeWithResource(roleArn, "s3", "PutObject", objectArn, region);
+    }
+
+    /** CodePipeline CodeBuild action: pipeline role needs {@code codebuild:StartBuild}. */
+    public void authorizeCodePipelineCodeBuild(String roleArn, String projectName, String region,
+                                               String accountId) {
+        if (projectName == null || projectName.isBlank()) {
+            return;
+        }
+        String account = accountId != null && !accountId.isBlank() ? accountId : defaultAccountId();
+        String projectArn = "arn:aws:codebuild:" + region + ":" + account + ":project/" + projectName;
+        iamAuthorizer.authorizeWithResource(roleArn, "codebuild", "StartBuild", projectArn, region);
+    }
+
+    /** CodePipeline CodeDeploy action: pipeline role needs {@code codedeploy:CreateDeployment}. */
+    public void authorizeCodePipelineCodeDeploy(String roleArn, String applicationName,
+                                                String deploymentGroupName, String region,
+                                                String accountId) {
+        if (applicationName == null || applicationName.isBlank()) {
+            return;
+        }
+        String account = accountId != null && !accountId.isBlank() ? accountId : defaultAccountId();
+        String resource = deploymentGroupName != null && !deploymentGroupName.isBlank()
+                ? "arn:aws:codedeploy:" + region + ":" + account + ":deploymentgroup:"
+                + applicationName + "/" + deploymentGroupName
+                : "arn:aws:codedeploy:" + region + ":" + account + ":application:" + applicationName;
+        iamAuthorizer.authorizeWithResource(roleArn, "codedeploy", "CreateDeployment", resource, region);
+    }
+
+    /** Nested CodePipeline invoke: pipeline role needs {@code codepipeline:StartPipelineExecution}. */
+    public void authorizeCodePipelineStartNested(String roleArn, String pipelineName, String region,
+                                                 String accountId) {
+        if (pipelineName == null || pipelineName.isBlank()) {
+            return;
+        }
+        String account = accountId != null && !accountId.isBlank() ? accountId : defaultAccountId();
+        String pipelineArn = "arn:aws:codepipeline:" + region + ":" + account + ":" + pipelineName;
+        iamAuthorizer.authorizeWithResource(
+                roleArn, "codepipeline", "StartPipelineExecution", pipelineArn, region);
+    }
+
     public void authorizeCloudFormationLambdaInvoke(String functionArnOrName, String region) {
         iamAuthorizer.authorizeServicePrincipal(
                 CLOUDFORMATION_SERVICE, "lambda", "InvokeFunction",

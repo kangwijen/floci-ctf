@@ -784,21 +784,26 @@ public class CodePipelineService {
             return;
         }
         switch (provider) {
-            case "S3" -> executeS3(execution, action, state);
-            case "CodeBuild" -> executeCodeBuild(execution, action, state);
-            case "CodeDeploy" -> executeCodeDeploy(execution, action, state);
+            case "S3" -> executeS3(pipeline, execution, action, state);
+            case "CodeBuild" -> executeCodeBuild(pipeline, execution, action, state);
+            case "CodeDeploy" -> executeCodeDeploy(pipeline, execution, action, state);
             case "Lambda" -> executeLambda(pipeline, execution, action, state);
-            case "CodePipeline" -> executeNestedPipeline(execution, action, state);
+            case "CodePipeline" -> executeNestedPipeline(pipeline, execution, action, state);
             default -> throw new AwsException("InvalidActionDeclarationException",
                     "Provider " + provider + " is not available in Floci CodePipeline", 400);
         }
     }
 
-    private void executeS3(CodePipelineExecution execution, JsonNode action, ActionExecution state) {
+    private void executeS3(CodePipelinePipeline pipeline, CodePipelineExecution execution,
+                           JsonNode action, ActionExecution state) {
         JsonNode config = action.path("configuration");
+        String roleArn = pipelineRoleArn(pipeline, action);
         if ("Source".equals(state.getCategory())) {
             String bucket = config.path("S3Bucket").asText(config.path("BucketName").asText(null));
             String key = config.path("S3ObjectKey").asText(config.path("ObjectKey").asText(null));
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeCodePipelineS3Get(roleArn, bucket, key, execution.getRegion());
+            }
             S3Object object = s3Service.getObject(bucket, key);
             for (JsonNode artifact : action.path("outputArtifacts")) {
                 runtimeArtifacts.put(artifactKey(execution, artifact.path("name").asText()), object.getData());
@@ -816,6 +821,9 @@ public class CodePipelineService {
         }
         String bucket = config.path("BucketName").asText(config.path("S3Bucket").asText(null));
         String objectKey = config.path("ObjectKey").asText(state.getActionName() + ".zip");
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeCodePipelineS3Put(roleArn, bucket, objectKey, execution.getRegion());
+        }
         JsonNode input = action.path("inputArtifacts").path(0);
         byte[] data = runtimeArtifacts.get(artifactKey(execution, input.path("name").asText()));
         if (data == null) {
@@ -825,9 +833,14 @@ public class CodePipelineService {
         state.setExternalExecutionId("s3://" + bucket + "/" + objectKey);
     }
 
-    private void executeCodeBuild(CodePipelineExecution execution, JsonNode action,
-                                  ActionExecution state) throws InterruptedException {
+    private void executeCodeBuild(CodePipelinePipeline pipeline, CodePipelineExecution execution,
+                                  JsonNode action, ActionExecution state) throws InterruptedException {
         String projectName = action.path("configuration").path("ProjectName").asText(null);
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeCodePipelineCodeBuild(
+                    pipelineRoleArn(pipeline, action), projectName,
+                    execution.getRegion(), execution.getAccountId());
+        }
         Build build = codeBuildService.startBuild(execution.getRegion(), execution.getAccountId(), projectName,
                 null, null, null, null, null, null, null);
         state.setExternalExecutionId(build.getId());
@@ -845,9 +858,16 @@ public class CodePipelineService {
         }
     }
 
-    private void executeCodeDeploy(CodePipelineExecution execution, JsonNode action,
-                                   ActionExecution state) throws InterruptedException {
+    private void executeCodeDeploy(CodePipelinePipeline pipeline, CodePipelineExecution execution,
+                                   JsonNode action, ActionExecution state) throws InterruptedException {
         JsonNode config = action.path("configuration");
+        String applicationName = config.path("ApplicationName").asText(null);
+        String deploymentGroupName = config.path("DeploymentGroupName").asText(null);
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeCodePipelineCodeDeploy(
+                    pipelineRoleArn(pipeline, action), applicationName, deploymentGroupName,
+                    execution.getRegion(), execution.getAccountId());
+        }
         Map<String, Object> revision = null;
         JsonNode input = action.path("inputArtifacts").path(0);
         if (!input.isMissingNode()) {
@@ -855,8 +875,8 @@ public class CodePipelineService {
                     "s3Location", Map.of("bucket", artifactBucket(action), "key", input.path("name").asText()));
         }
         String deploymentId = codeDeployService.createDeployment(
-                execution.getRegion(), config.path("ApplicationName").asText(),
-                config.path("DeploymentGroupName").asText(), null, revision, "CodePipeline execution");
+                execution.getRegion(), applicationName,
+                deploymentGroupName, null, revision, "CodePipeline execution");
         state.setExternalExecutionId(deploymentId);
         Deployment deployment = codeDeployService.getDeployment(execution.getRegion(), deploymentId);
         while (!List.of("Succeeded", "Failed", "Stopped").contains(deployment.getStatus())) {
@@ -875,11 +895,7 @@ public class CodePipelineService {
     private void executeLambda(CodePipelinePipeline pipeline, CodePipelineExecution execution,
                                JsonNode action, ActionExecution state) {
         String functionName = action.path("configuration").path("FunctionName").asText(null);
-        String roleArn = textOrNull(action.path("roleArn"));
-        if (roleArn == null && pipeline != null && pipeline.getDeclaration() != null) {
-            // Pipeline service role is the AWS default identity for Invoke; action roleArn wins when set.
-            roleArn = textOrNull(pipeline.getDeclaration().path("roleArn"));
-        }
+        String roleArn = pipelineRoleArn(pipeline, action);
         if (targetAuthorizer != null) {
             targetAuthorizer.authorizeCodePipelineLambdaInvoke(
                     functionName, execution.getRegion(), roleArn);
@@ -905,8 +921,23 @@ public class CodePipelineService {
         return value == null || value.isBlank() ? null : value;
     }
 
-    private void executeNestedPipeline(CodePipelineExecution execution, JsonNode action, ActionExecution state) {
+    /** Action roleArn wins when set; otherwise the pipeline service role. */
+    private static String pipelineRoleArn(CodePipelinePipeline pipeline, JsonNode action) {
+        String roleArn = textOrNull(action.path("roleArn"));
+        if (roleArn == null && pipeline != null && pipeline.getDeclaration() != null) {
+            roleArn = textOrNull(pipeline.getDeclaration().path("roleArn"));
+        }
+        return roleArn;
+    }
+
+    private void executeNestedPipeline(CodePipelinePipeline pipeline, CodePipelineExecution execution,
+                                       JsonNode action, ActionExecution state) {
         String pipelineName = action.path("configuration").path("PipelineName").asText(null);
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeCodePipelineStartNested(
+                    pipelineRoleArn(pipeline, action), pipelineName,
+                    execution.getRegion(), execution.getAccountId());
+        }
         ObjectNode request = mapper.createObjectNode().put("name", pipelineName);
         ObjectNode result = startPipelineExecution(request, execution.getRegion(), execution.getAccountId());
         state.setExternalExecutionId(result.path("pipelineExecutionId").asText());

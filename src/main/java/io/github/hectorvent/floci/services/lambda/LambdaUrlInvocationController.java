@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
 import io.github.hectorvent.floci.services.lambda.model.LambdaAlias;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
+import io.github.hectorvent.floci.services.lambda.model.LambdaUrlConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -97,15 +98,26 @@ public class LambdaUrlInvocationController {
         Object target = lambdaService.getTargetByUrlId(urlId);
         String functionName;
         String region;
+        LambdaUrlConfig urlConfig;
 
         if (target instanceof LambdaAlias alias) {
             functionName = alias.getFunctionName();
             region = AwsArnUtils.parse(alias.getAliasArn()).region();
+            urlConfig = alias.getUrlConfig();
         } else if (target instanceof LambdaFunction fn) {
             functionName = fn.getFunctionName();
             region = AwsArnUtils.parse(fn.getFunctionArn()).region();
+            urlConfig = fn.getUrlConfig();
         } else {
             return Response.status(404).entity(jsonMessage("Function URL not found")).type(MediaType.APPLICATION_JSON).build();
+        }
+
+        // AuthType=AWS_IAM requires SigV4 even when IAM strict enforcement is off (non-strict).
+        if (requiresAwsIamAuth(urlConfig) && !hasAuthorization(headers)) {
+            return Response.status(403)
+                    .entity(jsonMessage("MissingAuthentication"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         }
 
         String requestId = UUID.randomUUID().toString();
@@ -119,6 +131,21 @@ public class LambdaUrlInvocationController {
         } catch (AwsException e) {
             return Response.status(e.getHttpStatus()).entity(e.getMessage()).build();
         }
+    }
+
+    private static boolean requiresAwsIamAuth(LambdaUrlConfig urlConfig) {
+        if (urlConfig == null || urlConfig.getAuthType() == null) {
+            return false;
+        }
+        return "AWS_IAM".equalsIgnoreCase(urlConfig.getAuthType());
+    }
+
+    private static boolean hasAuthorization(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        String auth = headers.getHeaderString("Authorization");
+        return auth != null && !auth.isBlank();
     }
 
     private String buildEvent(String method, String urlId, String proxy, HttpHeaders headers, UriInfo uriInfo, byte[] body, String requestId, String region) {

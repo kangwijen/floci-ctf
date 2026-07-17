@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import io.github.hectorvent.floci.core.common.SecurityBypassPaths;
+import io.github.hectorvent.floci.services.lambda.LambdaAliasStore;
+import io.github.hectorvent.floci.services.lambda.LambdaFunctionStore;
+import io.github.hectorvent.floci.services.lambda.model.LambdaAlias;
+import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -72,16 +76,28 @@ public class ResourceArnBuilder {
 
     private final ObjectMapper objectMapper;
     private final SecretsManagerService secretsManagerService;
+    private final LambdaFunctionStore lambdaFunctionStore;
+    private final LambdaAliasStore lambdaAliasStore;
 
     @Inject
-    public ResourceArnBuilder(ObjectMapper objectMapper, SecretsManagerService secretsManagerService) {
+    public ResourceArnBuilder(ObjectMapper objectMapper,
+                              SecretsManagerService secretsManagerService,
+                              LambdaFunctionStore lambdaFunctionStore,
+                              LambdaAliasStore lambdaAliasStore) {
         this.objectMapper = objectMapper;
         this.secretsManagerService = secretsManagerService;
+        this.lambdaFunctionStore = lambdaFunctionStore;
+        this.lambdaAliasStore = lambdaAliasStore;
     }
 
-    /** Unit tests without a backing secret store. */
-    ResourceArnBuilder(ObjectMapper objectMapper) {
-        this(objectMapper, null);
+    /** Unit tests without backing stores. */
+    public ResourceArnBuilder(ObjectMapper objectMapper) {
+        this(objectMapper, null, null, null);
+    }
+
+    /** Unit / filter tests with Secrets Manager only. */
+    public ResourceArnBuilder(ObjectMapper objectMapper, SecretsManagerService secretsManagerService) {
+        this(objectMapper, secretsManagerService, null, null);
     }
 
     public String build(String credentialScope, ContainerRequestContext ctx,
@@ -520,6 +536,10 @@ public class ResourceArnBuilder {
             String layerName = version > 0 ? layer.substring(0, version) : layer;
             return AwsArnUtils.Arn.of("lambda", region, accountId, "layer:" + layerName).toString();
         }
+        String functionUrlArn = functionUrlArnFromPath(path, region, accountId);
+        if (functionUrlArn != null) {
+            return functionUrlArn;
+        }
         String name = extractSegmentAfter(path, "functions");
         if (name == null) {
             // The event-source-mappings endpoints carry no /functions/{name} path segment; the
@@ -535,6 +555,81 @@ public class ResourceArnBuilder {
             name = name.substring(0, colon);
         }
         return AwsArnUtils.Arn.of("lambda", region, accountId, "function:" + name).toString();
+    }
+
+    /**
+     * Resolves {@code /lambda-url/{urlId}} to the concrete function (or alias) ARN via the Lambda
+     * store. Returns {@code null} when the path is not a Function URL invoke or the urlId is unknown
+     * (caller keeps the historical {@code function:*} fallback until Phase B UNRESOLVED).
+     */
+    private String functionUrlArnFromPath(String path, String region, String accountId) {
+        String urlId = extractLambdaUrlId(path);
+        if (urlId == null) {
+            return null;
+        }
+        if (lambdaFunctionStore != null) {
+            Optional<LambdaFunction> fn = lambdaFunctionStore.getByUrlId(urlId);
+            if (fn.isPresent()) {
+                return concreteLambdaArn(fn.get().getFunctionArn(), fn.get().getFunctionName(), region, accountId);
+            }
+        }
+        if (lambdaAliasStore != null) {
+            Optional<LambdaAlias> alias = lambdaAliasStore.getByUrlId(urlId);
+            if (alias.isPresent()) {
+                LambdaAlias a = alias.get();
+                if (a.getUrlConfig() != null && a.getUrlConfig().getFunctionArn() != null
+                        && !a.getUrlConfig().getFunctionArn().isBlank()) {
+                    return stripLambdaQualifier(a.getUrlConfig().getFunctionArn());
+                }
+                if (a.getAliasArn() != null && !a.getAliasArn().isBlank()) {
+                    return stripLambdaQualifier(a.getAliasArn());
+                }
+                return concreteLambdaArn(null, a.getFunctionName(), region, accountId);
+            }
+        }
+        return null;
+    }
+
+    private static String extractLambdaUrlId(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String normalized = path.startsWith("/") ? path.substring(1) : path;
+        if (!normalized.startsWith("lambda-url/")) {
+            return null;
+        }
+        String rest = normalized.substring("lambda-url/".length());
+        if (rest.isEmpty()) {
+            return null;
+        }
+        int slash = rest.indexOf('/');
+        String urlId = slash >= 0 ? rest.substring(0, slash) : rest;
+        return urlId.isBlank() ? null : urlId;
+    }
+
+    private static String concreteLambdaArn(String storedArn, String functionName,
+                                            String region, String accountId) {
+        if (storedArn != null && !storedArn.isBlank()) {
+            return stripLambdaQualifier(storedArn);
+        }
+        if (functionName == null || functionName.isBlank()) {
+            return null;
+        }
+        return AwsArnUtils.Arn.of("lambda", region, accountId, "function:" + functionName).toString();
+    }
+
+    /** Strips {@code :alias} / {@code :version} qualifier from a function or alias ARN for IAM. */
+    private static String stripLambdaQualifier(String arn) {
+        int functionIdx = arn.indexOf(":function:");
+        if (functionIdx < 0) {
+            return arn;
+        }
+        String after = arn.substring(functionIdx + ":function:".length());
+        int colon = after.indexOf(':');
+        if (colon < 0) {
+            return arn;
+        }
+        return arn.substring(0, functionIdx + ":function:".length() + colon);
     }
 
     private String eventSourceMappingFunctionArn(ContainerRequestContext ctx, String path,

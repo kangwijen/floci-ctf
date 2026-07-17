@@ -17,7 +17,9 @@ import io.github.hectorvent.floci.services.sns.SnsService;
 import io.github.hectorvent.floci.services.sqs.SqsService;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.sqs.model.MessageAttributeValue;
+import io.github.hectorvent.floci.core.common.AwsException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -319,18 +322,31 @@ class ScheduleInvokerTest {
     }
 
     @Test
-    void universalTargetFallsBackToPseudoArnWhenResourceIdentifierMissing() {
+    @Tag("security-regression")
+    void universalTargetDeniesWhenTopicArnMissing() {
         Target target = new Target();
         target.setArn("arn:aws:scheduler:::aws-sdk:sns:publish");
         target.setRoleArn("arn:aws:iam::000000000000:role/x");
         target.setInput("{\"Message\":\"hello\"}");
 
-        invoker.invoke(target, "us-east-1");
+        assertThrows(AwsException.class, () -> invoker.invoke(target, "us-east-1"));
 
-        verify(targetAuthorizer).authorizeSchedulerTarget(
-                eq("arn:aws:iam::000000000000:role/x"),
-                eq("arn:aws:scheduler:::aws-sdk:sns:publish"),
-                eq("us-east-1"));
+        verify(targetAuthorizer, never()).authorizeSchedulerTarget(anyString(), anyString(), anyString());
+        verify(snsService, never()).publish(anyString(), any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void universalTargetDeniesWhenQueueUrlMissing() {
+        Target target = new Target();
+        target.setArn("arn:aws:scheduler:::aws-sdk:sqs:sendMessage");
+        target.setRoleArn("arn:aws:iam::000000000000:role/x");
+        target.setInput("{\"MessageBody\":\"hi\"}");
+
+        assertThrows(AwsException.class, () -> invoker.invoke(target, "us-east-1"));
+
+        verify(targetAuthorizer, never()).authorizeSchedulerTarget(anyString(), anyString(), anyString());
+        verify(sqsService, never()).sendMessage(anyString(), anyString(), anyInt(), any(), any(), anyString());
     }
 
     @Test

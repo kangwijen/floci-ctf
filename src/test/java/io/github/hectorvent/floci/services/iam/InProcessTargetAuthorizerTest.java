@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.iam;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -463,6 +464,38 @@ class InProcessTargetAuthorizerTest {
         verify(iamAuthorizer, never()).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.CODEPIPELINE_SERVICE), eq("lambda"), eq("InvokeFunction"),
                 any(), any());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void codePipelineCodeBuildUsesPipelineRole() {
+        authorizer.authorizeCodePipelineCodeBuild(ROLE_ARN, "secret-project", REGION, ACCOUNT);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("codebuild"), eq("StartBuild"),
+                eq("arn:aws:codebuild:" + REGION + ":" + ACCOUNT + ":project/secret-project"),
+                eq(REGION));
+    }
+
+    @Test
+    @Tag("security-regression")
+    void codePipelineS3GetUsesPipelineRole() {
+        authorizer.authorizeCodePipelineS3Get(ROLE_ARN, "src-bucket", "src.zip", REGION);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("s3"), eq("GetObject"),
+                eq("arn:aws:s3:::src-bucket/src.zip"), eq(REGION));
+    }
+
+    @Test
+    @Tag("security-regression")
+    void codePipelineNestedStartUsesPipelineRole() {
+        authorizer.authorizeCodePipelineStartNested(ROLE_ARN, "child-pipe", REGION, ACCOUNT);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("codepipeline"), eq("StartPipelineExecution"),
+                eq("arn:aws:codepipeline:" + REGION + ":" + ACCOUNT + ":child-pipe"),
+                eq(REGION));
     }
 
     @Test
