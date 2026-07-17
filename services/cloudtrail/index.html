@@ -1,0 +1,4111 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Fast, free, open-source local AWS emulator">
+      
+      
+      
+        <link rel="canonical" href="https://floci.io/floci/services/cloudtrail/">
+      
+      
+        <link rel="prev" href="../config/">
+      
+      
+        <link rel="next" href="../emr/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/floci.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>CloudTrail - Floci</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="b2ab8ccd-4619-4b94-bfa6-e8870961d6eb" integrity="sha384-DCWdwYp9BA8848i6w0Y5RQh8ANWh1jp1+NjJ/a+jqFZi1nvw6st1t+bFQ9+hhNXe" crossorigin="anonymous"></script>
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cloudtrail" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Floci" class="md-header__button md-logo" aria-label="Floci" data-md-component="logo">
+      
+  <img src="../../assets/floci-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Floci
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CloudTrail
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/floci-io/floci" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    floci-io/floci
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/quick-start/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/environment-variables/" class="md-tabs__link">
+          
+  
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Services
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../testcontainers/" class="md-tabs__link">
+          
+  
+  
+  Testcontainers
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Floci" class="md-nav__button md-logo" aria-label="Floci" data-md-component="logo">
+      
+  <img src="../../assets/floci-header.svg" alt="logo">
+
+    </a>
+    Floci
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/floci-io/floci" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    floci-io/floci
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/aws-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS CLI & SDK Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/migrate-from-localstack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrate from LocalStack
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/environment-variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/docker-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/docker-compose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/ports/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ports Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/multi-account/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Account Isolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/tls/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS / HTTPS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/initialization-hooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initialization Hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_9" id="__nav_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/advanced/application-yml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    application.yml Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Services
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ssm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SSM Parameter Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sqs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SNS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SES
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../s3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    S3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dynamodb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DynamoDB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lambda/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lambda
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-gateway/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cognito/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cognito
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KMS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kinesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kinesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../secrets-manager/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secrets Manager
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloudformation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CloudFormation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../step-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Step Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../iam/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IAM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../elasticache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElastiCache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memorydb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MemoryDB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RDS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rds-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RDS Data API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../msk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MSK (Kafka)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neptune/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neptune
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docdb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DocumentDB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../athena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Athena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../firehose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Firehose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eventbridge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EventBridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EventBridge Pipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scheduler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EventBridge Scheduler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloudwatch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CloudWatch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../resource-groups-tagging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Groups Tagging API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EKS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../opensearch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSearch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ec2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EC2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lightsail/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lightsail
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AppConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bedrock-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bedrock Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../elb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ELB v2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto Scaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../elastic-beanstalk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elastic Beanstalk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../codebuild/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeBuild
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../codedeploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeDeploy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../codepipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodePipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Backup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloudfront/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CloudFront
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../route53/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Route53
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloudmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Cloud Map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../iot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS IoT Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appsync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AppSync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transfer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Family
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CloudTrail
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CloudTrail
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#supported-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trail-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trail lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit recording
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inter-service-events-in-process-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inter-service events (in-process audit)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-delivery-and-s3-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event delivery and S3 layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event delivery and S3 layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-plane-requestparameters-http-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-plane requestParameters (HTTP audit)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lookupevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LookupEvents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-audit-authoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live audit authoring
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Live audit authoring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sourceipaddress-for-graded-ip-outliers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sourceIPAddress for graded IP outliers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instance-keyed-grading-answersjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Instance-keyed grading (answers.json)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloudtraileventstore-lifecycle-and-teardown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CloudTrailEventStore lifecycle and teardown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operator-event-injection-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator event injection API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-plane-audit-probe-running-flocilocal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-plane audit probe (running floci:local)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#investigator-iam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investigator IAM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ctf-fork-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CTF fork notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../emr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    EMR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wafv2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WAF v2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../textract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Textract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transcribe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transcribe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pricing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ce/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Explorer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cur/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost and Usage Reports
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bcm-data-exports/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BCM Data Exports
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testcontainers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Testcontainers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testcontainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testcontainers/java/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Java
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testcontainers/nodejs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node.js / TypeScript
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testcontainers/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testcontainers/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#supported-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trail-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trail lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit recording
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inter-service-events-in-process-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inter-service events (in-process audit)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-delivery-and-s3-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event delivery and S3 layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event delivery and S3 layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-plane-requestparameters-http-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-plane requestParameters (HTTP audit)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lookupevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LookupEvents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-audit-authoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live audit authoring
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Live audit authoring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sourceipaddress-for-graded-ip-outliers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sourceIPAddress for graded IP outliers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instance-keyed-grading-answersjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Instance-keyed grading (answers.json)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloudtraileventstore-lifecycle-and-teardown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CloudTrailEventStore lifecycle and teardown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operator-event-injection-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator event injection API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-plane-audit-probe-running-flocilocal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-plane audit probe (running floci:local)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#investigator-iam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investigator IAM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ctf-fork-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CTF fork notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cloudtrail">CloudTrail</h1>
+<p><strong>Protocol:</strong> JSON 1.1 (<code>X-Amz-Target: com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.*</code>)
+<strong>Endpoint:</strong> <code>POST http://localhost:4566/</code></p>
+<p>Floci implements CloudTrail trail lifecycle, <code>LookupEvents</code>, and optional HTTP audit recording when <code>FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true</code>. Trails and their event selectors persist in Floci storage. For the canonical supported-operation count across all services, see <a href="../">Services Overview</a>.</p>
+<h2 id="supported-actions">Supported Actions</h2>
+<!-- floci:actions:start -->
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CreateTrail</code></td>
+<td>Create a trail with an S3 bucket name and optional tags</td>
+</tr>
+<tr>
+<td><code>UpdateTrail</code></td>
+<td>Update bucket name and global/multi-region flags</td>
+</tr>
+<tr>
+<td><code>DescribeTrails</code></td>
+<td>List trails, optionally filtered by name</td>
+</tr>
+<tr>
+<td><code>StartLogging</code></td>
+<td>Mark a trail as logging</td>
+</tr>
+<tr>
+<td><code>StopLogging</code></td>
+<td>Stop logging on a trail</td>
+</tr>
+<tr>
+<td><code>DeleteTrail</code></td>
+<td>Delete a trail</td>
+</tr>
+<tr>
+<td><code>GetTrailStatus</code></td>
+<td>Return <code>IsLogging</code> and <code>LatestDeliveryTime</code></td>
+</tr>
+<tr>
+<td><code>PutEventSelectors</code></td>
+<td>Accept event selector configuration</td>
+</tr>
+<tr>
+<td><code>GetEventSelectors</code></td>
+<td>Return event selectors; sensible defaults when none were configured</td>
+</tr>
+<tr>
+<td><code>LookupEvents</code></td>
+<td>Query indexed management events (time range, attributes, pagination)</td>
+</tr>
+</tbody>
+</table>
+<!-- floci:actions:end -->
+
+<h2 id="trail-lifecycle">Trail lifecycle</h2>
+<p>Typical operator flow for an audit exercise:</p>
+<ol>
+<li>Create an S3 bucket (and optional SQS queue for near-real-time fan-out via bucket notifications).</li>
+<li>Attach a bucket policy allowing <code>cloudtrail.amazonaws.com</code> to <code>s3:PutObject</code> under <code>AWSLogs/</code>. Optional <code>Condition</code> keys such as <code>StringEquals.aws:SourceArn</code> (trail ARN) are evaluated on delivery; mismatched trail ARNs are denied.</li>
+<li><code>CreateTrail</code> with <code>S3BucketName</code>, then <code>PutEventSelectors</code> (optional), then <code>StartLogging</code>.</li>
+<li><code>GetEventSelectors</code> returns configured selectors or defaults (<code>ReadWriteType=All</code>, <code>IncludeManagementEvents=true</code>, no data-resource selectors).</li>
+<li><code>GetTrailStatus</code> reports <code>IsLogging=true</code> and a <code>LatestDeliveryTime</code> after deliveries occur.</li>
+</ol>
+<p>Trails persist in Floci storage (<code>cloudtrail-trails.json</code>) using the global or per-service storage mode. With <code>FLOCI_STORAGE_MODE=hybrid</code> (Compose audit default), trail metadata survives restarts under <code>./data</code> on the mounted volume.</p>
+<h2 id="audit-recording">Audit recording</h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default (dev YAML)</th>
+<th>Compose audit default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FLOCI_SERVICES_CLOUDTRAIL_ENABLED</code></td>
+<td><code>true</code></td>
+<td><code>true</code></td>
+<td>Enable the CloudTrail JSON API</td>
+</tr>
+<tr>
+<td><code>FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED</code></td>
+<td><code>false</code></td>
+<td><code>true</code></td>
+<td><code>CloudTrailAuditFilter</code> records signed management API calls when at least one trail is logging</td>
+</tr>
+<tr>
+<td><code>FLOCI_SERVICES_CLOUDTRAIL_EXCLUDE_INTERNAL_PATHS</code></td>
+<td><code>/_floci,/_localstack,/_aws,/health</code></td>
+<td>same</td>
+<td>Path prefixes skipped by the audit recorder</td>
+</tr>
+<tr>
+<td><code>FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER</code></td>
+<td><code>false</code></td>
+<td><code>false</code></td>
+<td>When <code>true</code>, honor <code>X-Floci-CloudTrail-Source-Ip</code> for audit <code>sourceIPAddress</code></td>
+</tr>
+<tr>
+<td><code>FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED</code></td>
+<td><code>false</code></td>
+<td><code>false</code></td>
+<td>Operator-only <code>POST /_floci/cloudtrail/events*</code> (requires root AKID; still 404 when internal paths hidden)</td>
+</tr>
+</tbody>
+</table>
+<p>When <code>audit-enabled</code> is <code>true</code>, Floci emits CloudTrail-shaped management events for API traffic on port <code>4566</code> that is not matched by <code>exclude-internal-paths</code>. Events are indexed for <code>LookupEvents</code> and buffered to active trails (<code>IsLogging=true</code>) for S3 delivery.</p>
+<p><code>CloudTrailAuditFilter</code> records mutating CloudTrail control-plane calls (<code>CreateTrail</code>, <code>UpdateTrail</code>, <code>DeleteTrail</code>, <code>StartLogging</code>, <code>StopLogging</code>, <code>PutEventSelectors</code>) so tampering is visible in <code>LookupEvents</code> and S3 delivery. Read-only CloudTrail APIs (<code>LookupEvents</code>, <code>DescribeTrails</code>, <code>GetTrailStatus</code>) are skipped to avoid noise. Mutating CloudTrail calls bypass the active-trail gate so <code>StopLogging</code> is still indexed after the handler disables logging.</p>
+<p>GuardDuty raises findings for <code>StopLogging</code> and <code>DeleteTrail</code> audit events when a detector is enabled (<code>DefenseEvasion:CloudTrail/*</code>).</p>
+<p>Global services (IAM, STS, CloudFront, Route53, WAF) deliver to trails with <code>IncludeGlobalServiceEvents=true</code> even when the request region differs from the trail home region.</p>
+<h2 id="inter-service-events-in-process-audit">Inter-service events (in-process audit)</h2>
+<p>When <code>audit-enabled</code> is <code>true</code> and at least one trail is logging, <code>InProcessCloudTrailRecorder</code> emits CloudTrail-shaped events for selected service-to-service calls that never hit the HTTP <code>:4566</code> filter. Events use <code>userIdentity.type=AWSService</code> with <code>invokedBy</code> set to the calling service.</p>
+<table>
+<thead>
+<tr>
+<th>Caller</th>
+<th>Target action</th>
+<th><code>eventSource</code></th>
+<th><code>invokedBy</code></th>
+<th>Identity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Step Functions</td>
+<td>aws-sdk / Lambda task</td>
+<td>target service (e.g. <code>s3.amazonaws.com</code>)</td>
+<td><code>states.amazonaws.com</code></td>
+<td>AssumedRole (state machine role)</td>
+</tr>
+<tr>
+<td>API Gateway integration</td>
+<td>AWS proxy integration</td>
+<td>target service</td>
+<td><code>apigateway.amazonaws.com</code></td>
+<td>AssumedRole (integration credentials)</td>
+</tr>
+<tr>
+<td>Config snapshot delivery</td>
+<td>S3 <code>PutObject</code></td>
+<td><code>s3.amazonaws.com</code></td>
+<td><code>config.amazonaws.com</code></td>
+<td>AWSService</td>
+</tr>
+<tr>
+<td>EC2 VPC Flow Logs</td>
+<td>S3 <code>PutObject</code> or CloudWatch Logs</td>
+<td><code>s3.amazonaws.com</code> / <code>logs.amazonaws.com</code></td>
+<td><code>ec2.amazonaws.com</code></td>
+<td>AWSService</td>
+</tr>
+<tr>
+<td>EventBridge</td>
+<td>Lambda invoke</td>
+<td><code>lambda.amazonaws.com</code></td>
+<td><code>events.amazonaws.com</code></td>
+<td>AWSService</td>
+</tr>
+<tr>
+<td>EventBridge</td>
+<td>SQS <code>SendMessage</code></td>
+<td><code>sqs.amazonaws.com</code></td>
+<td><code>events.amazonaws.com</code></td>
+<td></td>
+</tr>
+<tr>
+<td>EventBridge</td>
+<td>SNS <code>Publish</code></td>
+<td><code>sns.amazonaws.com</code></td>
+<td><code>events.amazonaws.com</code></td>
+<td></td>
+</tr>
+<tr>
+<td>CloudWatch Logs subscription</td>
+<td>Lambda / Firehose / Kinesis delivery</td>
+<td><code>lambda.amazonaws.com</code>, <code>firehose.amazonaws.com</code>, or <code>kinesis.amazonaws.com</code></td>
+<td><code>logs.amazonaws.com</code></td>
+<td></td>
+</tr>
+<tr>
+<td>SNS topic delivery</td>
+<td>SQS / Lambda fan-out</td>
+<td><code>sqs.amazonaws.com</code> or <code>lambda.amazonaws.com</code></td>
+<td><code>sns.amazonaws.com</code></td>
+<td></td>
+</tr>
+<tr>
+<td>S3 access logging</td>
+<td>Access log <code>PutObject</code></td>
+<td><code>s3.amazonaws.com</code></td>
+<td><code>s3.amazonaws.com</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Firehose S3 flush</td>
+<td>Destination <code>PutObject</code></td>
+<td><code>s3.amazonaws.com</code></td>
+<td><code>firehose.amazonaws.com</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>These events are indexed for <code>LookupEvents</code> and delivered to active trails like HTTP audit records. Firehose destination <code>PutObject</code> events are recorded as data events (<code>eventCategory=Data</code>). For AWSService identities, <code>sourceIPAddress</code> and <code>userAgent</code> echo the <code>invokedBy</code> service endpoint.</p>
+<p>In-process SQS targets (EventBridge <code>SendMessage</code>, API Gateway integrations, Step Functions aws-sdk tasks) record <code>requestParameters.queueUrl</code> even when callers pass PascalCase <code>QueueUrl</code> in JSON bodies; <code>CloudTrailEventRecorder.normalizeSqsAuditParameters</code> maps to the same lowercase keys as HTTP audit. Regression: <code>InProcessCloudTrailIntegrationTest</code> (<code>apigwRouterRecordsSqsSendMessageQueueUrl</code>, <code>eventBridgeInvokerRecordsSqsSendMessageQueueUrl</code>, <code>sfnStyleRecorderRecordsSqsSendMessageQueueUrl</code>).</p>
+<h2 id="event-delivery-and-s3-layout">Event delivery and S3 layout</h2>
+<p>Delivered log objects use the AWS key layout:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>s3://{bucket}/AWSLogs/{account-id}/CloudTrail/{region}/{yyyy}/{MM}/{dd}/{account-id}_CloudTrail_{region}_{yyyyMMddTHHmmssZ}.json.gz
+</code></pre></div>
+<p>Each object is a gzip-compressed JSON array of management events. Fields include <code>eventVersion</code>, <code>eventTime</code>, <code>eventSource</code>, <code>eventName</code>, <code>awsRegion</code>, <code>sourceIPAddress</code>, <code>userIdentity</code>, <code>requestParameters</code>, <code>responseElements</code>, <code>resources</code>, <code>eventCategory</code>, <code>managementEvent</code>, <code>readOnly</code>, and <code>eventID</code>.</p>
+<p>HTTP audit events follow AWS CloudTrail record semantics where practical:</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data vs management</td>
+<td>S3 object APIs (<code>PutObject</code>, <code>GetObject</code>, <code>DeleteObject</code>, ...) and SQS data plane (<code>SendMessage</code>, <code>ReceiveMessage</code>, ...) set <code>eventCategory: Data</code> and <code>managementEvent: false</code>. <code>PurgeQueue</code> and control-plane APIs stay <code>Management</code>.</td>
+</tr>
+<tr>
+<td><code>resources</code></td>
+<td>Populated from <code>ResourceArnBuilder</code> with CloudFormation-style <code>type</code> (<code>AWS::S3::Object</code>, <code>AWS::SQS::Queue</code>, <code>AWS::IAM::Role</code>, <code>AWS::SecretsManager::Secret</code>, <code>AWS::CloudTrail::Trail</code>, ...). S3 object events also include the parent bucket ARN.</td>
+</tr>
+<tr>
+<td><code>requestParameters</code></td>
+<td>SQS data-plane calls (<code>ReceiveMessage</code>, <code>SendMessage</code>, <code>PurgeQueue</code>) include <code>queueUrl</code> on Query (<code>application/x-www-form-urlencoded</code>) and JSON 1.0 (<code>application/x-amz-json-1.0</code>) wire protocols. JSON 1.0 <code>PurgeQueue</code> (<code>X-Amz-Target: AmazonSQS.PurgeQueue</code>, body <code>QueueUrl</code>) records <code>requestParameters.queueUrl</code> and stays <code>eventCategory: Management</code>. <code>SendMessage</code> also records <code>messageBody</code> with the submitted payload. In-process SQS audit (<code>InProcessCloudTrailRecorder</code>) normalizes PascalCase <code>QueueUrl</code> / <code>MessageBody</code> to lowercase <code>queueUrl</code> / <code>messageBody</code> for HTTP parity. S3 <code>ListObjectsV2</code> (<code>?list-type=2</code>) records <code>eventName: ListObjectsV2</code> (v1 list APIs remain <code>ListBucket</code>).</td>
+</tr>
+<tr>
+<td><code>responseElements</code></td>
+<td>S3 versioned writes/deletes expose <code>x-amz-version-id</code> / <code>x-amz-delete-marker</code> from response headers. STS <code>AssumeRole</code> includes <code>credentials.accessKeyId</code> and <code>assumedRoleUser</code> (no secret key). IAM <code>CreateAccessKey</code> includes <code>accessKey</code> metadata. SQS <code>SendMessage</code> includes <code>messageId</code>.</td>
+</tr>
+<tr>
+<td><code>userIdentity</code></td>
+<td>IAM users include <code>sessionContext.attributes</code> (<code>mfaAuthenticated</code>, <code>creationDate</code>). Assumed-role sessions include <code>sessionContext.sessionIssuer</code>.</td>
+</tr>
+<tr>
+<td><code>additionalEventData</code></td>
+<td>SigV4 HTTP calls include <code>SignatureVersion</code> (<code>AWS4-HMAC-SHA256</code>) and <code>AuthenticationMethod</code> (<code>AuthHeader</code> or <code>QueryString</code>) when applicable.</td>
+</tr>
+<tr>
+<td><code>tlsDetails</code></td>
+<td>When <code>FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true</code> and <code>X-Forwarded-Proto: https</code>, includes synthetic <code>tlsVersion</code>, <code>cipherSuite</code>, and <code>clientProvidedHostHeader</code> (same pattern as S3 access logs).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-plane-requestparameters-http-audit">Data-plane <code>requestParameters</code> (HTTP audit)</h3>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Event</th>
+<th>Recorded fields</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SQS</td>
+<td><code>SendMessage</code>, <code>ReceiveMessage</code>, ...</td>
+<td><code>queueUrl</code>, <code>messageBody</code> (SendMessage)</td>
+<td>Data events when applicable</td>
+</tr>
+<tr>
+<td>KMS</td>
+<td><code>Decrypt</code>, <code>Encrypt</code>, ...</td>
+<td><code>keyId</code>, <code>encryptionAlgorithm</code>, <code>encryptionContext</code></td>
+<td><code>CiphertextBlob</code> / <code>Plaintext</code> omitted; <code>keyId</code> resolved from explicit <code>KeyId</code>, response <code>KeyId</code>, or Floci <code>kms:v2:</code> envelope; <code>encryptionContext</code> copied from request body when set</td>
+</tr>
+<tr>
+<td>SNS</td>
+<td><code>Publish</code></td>
+<td><code>topicArn</code></td>
+<td>Query and JSON bodies</td>
+</tr>
+<tr>
+<td>DynamoDB</td>
+<td><code>PutItem</code>, <code>GetItem</code>, ...</td>
+<td><code>tableName</code></td>
+<td>JSON <code>TableName</code> normalized to lowercase AWS shape; Floci HTTP audit uses <code>eventCategory: Management</code> (AWS records data events only when trail data selectors include DynamoDB)</td>
+</tr>
+<tr>
+<td>S3</td>
+<td>object APIs</td>
+<td><code>bucketName</code>, <code>key</code></td>
+<td>REST path derived</td>
+</tr>
+</tbody>
+</table>
+<p><code>resources[]</code> includes <code>AWS::KMS::Key</code>, <code>AWS::SNS::Topic</code>, and <code>AWS::DynamoDB::Table</code> when the scoped ARN resolves.</p>
+<p>Regression: <code>CloudTrailFieldFidelityIntegrationTest</code>, <code>CloudTrailSqsAuditIntegrationTest</code>, <code>CloudTrailKmsDecryptAuditIntegrationTest</code>, <code>CloudTrailSnsPublishAuditIntegrationTest</code>, <code>CloudTrailDynamoDbPutItemAuditIntegrationTest</code>, <code>CloudTrailS3DeliveryIntegrationTest</code>, <code>CloudTrailLookupEventsIntegrationTest</code>, <code>CloudTrailEventRecorderTest</code>.</p>
+<p><code>LatestDeliveryTime</code> on <code>GetTrailStatus</code> updates when events flush to the trail bucket (default buffer size: 10 events per trail).</p>
+<h2 id="lookupevents">LookupEvents</h2>
+<p><code>LookupEvents</code> searches the in-memory or persisted event index populated by the audit filter and test helpers. Supported <code>LookupAttributes</code> keys: <code>EventName</code>, <code>Username</code>, <code>ResourceName</code>, <code>EventSource</code>, <code>ReadOnly</code>. Results sort most recent first (<code>eventTime</code> descending). Events sharing the same second keep insertion order (most recently recorded first within that second). Before scanning, <code>LookupEvents</code> waits for in-flight HTTP audit recordings to finish so the last event in a concurrent burst is visible on the first poll.</p>
+<p><strong>Pagination:</strong> <code>MaxResults</code> defaults to 50 and is capped at 50 (values outside 1-50 return <code>InvalidMaxResultsException</code>). When more events match than fit in one page, the response includes an opaque <code>NextToken</code> cursor; pass it on the next <code>LookupEvents</code> call to continue. Each stored event appears at most once across all pages for a given query. Invalid or expired tokens return <code>InvalidNextTokenException</code>.</p>
+<p><strong><code>eventTime</code>:</strong> Indexed and delivered events use UTC with millisecond precision (<code>YYYY-MM-DDTHH:MM:SS.sssZ</code>). HTTP audit events stamp <code>eventTime</code> at request arrival (not response-filter completion). The index enforces monotonic timestamps so <code>ListAllMyBuckets</code> and later bucket-scoped calls preserve caller order in <code>lookup-events</code> even when responses complete out of order.</p>
+<p>For buckets without active trails, use <code>LookupEvents</code> or list <code>AWSLogs/...</code> objects after logging starts.</p>
+<h2 id="configuration">Configuration</h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">floci</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">services</span><span class="p">:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">cloudtrail</span><span class="p">:</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="nt">audit-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">exclude-internal-paths</span><span class="p">:</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/_floci</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/_localstack</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/_aws</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/health</span>
+</code></pre></div>
+<h2 id="examples">Examples</h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AWS_ENDPOINT_URL</span><span class="o">=</span>http://localhost:4566
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>aws<span class="w"> </span>cloudtrail<span class="w"> </span>create-trail<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--name<span class="w"> </span>audit-trail<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--s3-bucket-name<span class="w"> </span>my-cloudtrail-bucket<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span>--is-multi-region-trail
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>aws<span class="w"> </span>cloudtrail<span class="w"> </span>start-logging<span class="w"> </span>--name<span class="w"> </span>audit-trail
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>aws<span class="w"> </span>cloudtrail<span class="w"> </span>lookup-events<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span>--lookup-attributes<span class="w"> </span><span class="nv">AttributeKey</span><span class="o">=</span>EventName,AttributeValue<span class="o">=</span>PutObject<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>--max-results<span class="w"> </span><span class="m">10</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>aws<span class="w"> </span>cloudtrail<span class="w"> </span>get-trail-status<span class="w"> </span>--name<span class="w"> </span>audit-trail
+</code></pre></div>
+<h2 id="live-audit-authoring">Live audit authoring</h2>
+<p>Exercises that grade investigators with <strong>live</strong> <code>aws cloudtrail lookup-events</code> should follow this section when provisioning trails, activity sequences, and investigator policies.</p>
+<h3 id="sourceipaddress-for-graded-ip-outliers"><code>sourceIPAddress</code> for graded IP outliers</h3>
+<p><code>CloudTrailEventRecorder</code> sets <code>sourceIPAddress</code> on HTTP audit events:</p>
+<table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Mechanism</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary</td>
+<td><code>FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true</code> and client <code>X-Forwarded-For</code> (first hop)</td>
+<td>Trusted reverse proxy or provision script that sets distinct forwarded IPs per principal; <strong>same IP used for S3 access log Remote IP</strong></td>
+</tr>
+<tr>
+<td>Alternate</td>
+<td><code>FLOCI_CTF_CLOUDTRAIL_ALLOW_SOURCE_IP_HEADER=true</code> and <code>X-Floci-CloudTrail-Source-Ip</code> per request</td>
+<td>Single-host Docker deployments without a proxy; does not affect IAM <code>aws:sourceip</code></td>
+</tr>
+<tr>
+<td>Default</td>
+<td>Socket peer, then <code>127.0.0.1</code></td>
+<td>When neither header option is enabled; S3 access logs and CloudTrail share <code>ClientSourceIpResolver</code></td>
+</tr>
+</tbody>
+</table>
+<p>When both alternate and primary are enabled, <code>X-Floci-CloudTrail-Source-Ip</code> wins if present. Regression profile: <code>CloudTrailForwardedHeadersAuditProfile</code>.</p>
+<h3 id="instance-keyed-grading-answersjson">Instance-keyed grading (<code>answers.json</code>)</h3>
+<p>Operators should not hard-code absolute timestamps or credential IDs in static verifier docs. At <strong>provision</strong> time, capture instance-specific values from <code>lookup-events</code> or S3 delivery and write them to <code>answers.json</code> (or equivalent verifier input), keyed by question id. Typical fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Source</th>
+<th>Example use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eventTime</code></td>
+<td><code>StopLogging</code>, SQS write, or S3 mutating event</td>
+<td>Time-order questions</td>
+</tr>
+<tr>
+<td><code>accessKeyId</code></td>
+<td><code>userIdentity.accessKeyId</code> on an <code>AssumedRole</code> session</td>
+<td>Actor attribution</td>
+</tr>
+<tr>
+<td><code>VersionId</code></td>
+<td>S3 <code>DeleteObject</code> / <code>PutObject</code> response or <code>ListObjectVersions</code></td>
+<td>Non-current version recovery</td>
+</tr>
+</tbody>
+</table>
+<p>Other IAM-scoped exercises use the same pattern where verifiers compare participant output to provision-time snapshots, not static CSV exports.</p>
+<h3 id="cloudtraileventstore-lifecycle-and-teardown"><code>CloudTrailEventStore</code> lifecycle and teardown</h3>
+<p>The lookup index (<code>CloudTrailEventStore</code>, file <code>cloudtrail-events.json</code> under hybrid storage) is <strong>global per emulator region</strong>, not per trail. <code>StopLogging</code> does not wipe prior events; <code>StartLogging</code> does not reset history. Events from one exercise instance remain visible to the next unless operators isolate state.</p>
+<p><strong>Teardown guidance for multi-instance hosts:</strong></p>
+<ol>
+<li>Stop the emulator or remove the <code>./data</code> volume (or delete <code>cloudtrail/cloudtrail-events.json</code>) before provisioning the next exercise instance.</li>
+<li><code>DeleteTrail</code> removes trail metadata but does not purge the event index.</li>
+<li>Prefer one emulator container or fresh data directory per team when running audit exercises back-to-back on the same host.</li>
+</ol>
+<h3 id="operator-event-injection-api">Operator event injection API</h3>
+<p>When <code>FLOCI_CTF_CLOUDTRAIL_INJECTION_ENABLED=true</code> and <code>FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=false</code>, operators may inject synthetic CloudTrail events during provisioning without replaying full API sequences. Supports multi-day timelines with <code>preserveEventTime=true</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Auth</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /_floci/cloudtrail/events</code></td>
+<td>Operator root AKID (<code>FLOCI_AUTH_ROOT_ACCESS_KEY_ID</code>) + SigV4 when <code>FLOCI_AUTH_VALIDATE_SIGNATURES=true</code></td>
+<td>Inject one event</td>
+</tr>
+<tr>
+<td><code>POST /_floci/cloudtrail/events/batch</code></td>
+<td>Same</td>
+<td>Inject multiple events in order</td>
+</tr>
+</tbody>
+</table>
+<p>Returns <strong>404</strong> when injection is disabled or when <code>FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS</code> hides <code>/_floci/*</code>. Returns <strong>403</strong> for missing auth, invalid SigV4, or non-root credentials.</p>
+<p>Request body (single):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;region&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;us-east-1&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;preserveEventTime&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;deliverToTrails&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">&quot;eventName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ConsoleLogin&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">&quot;eventSource&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;signin.amazonaws.com&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">&quot;eventTime&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-03-15T14:30:00.000Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">&quot;sourceIPAddress&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;203.0.113.50&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">&quot;userIdentity&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;IAMUser&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;userName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;example-user&quot;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">}</span>
+</code></pre></div>
+<p>Batch requests use an <code>events</code> array instead of <code>event</code>. Required event fields: <code>eventName</code>, <code>eventSource</code>, and <code>eventTime</code> when <code>preserveEventTime=true</code>. <code>eventID</code> is generated when omitted.</p>
+<p><code>preserveEventTime=true</code> (default) keeps operator-supplied timestamps for graded <code>lookup-events</code> and S3 day paths. <code>deliverToTrails=false</code> indexes only (no S3 flush). Regression: <code>CloudTrailEventInjectionIntegrationTest</code>.</p>
+<p>Compose defaults keep injection <strong>off</strong>; enable explicitly for provisioning hosts that expose <code>/_floci/*</code> to operators.</p>
+<h3 id="data-plane-audit-probe-running-flocilocal">Data-plane audit probe (running <code>floci:local</code>)</h3>
+<p>After <code>StartLogging</code>, exercise live APIs and confirm <code>lookup-events</code> <code>requestParameters</code> before authoring graded questions:</p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>Graded field candidate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kms:Decrypt</code></td>
+<td><code>requestParameters.keyId</code> (from response <code>KeyId</code>, or Floci <code>kms:v3:</code> / <code>kms:v2:</code> / legacy <code>kms:</code> envelope in <code>CiphertextBlob</code>. Explicit request <code>KeyId</code> must match the blob CMK or Decrypt fails with <code>IncorrectKeyException</code>)</td>
+</tr>
+<tr>
+<td><code>sns:Publish</code></td>
+<td><code>requestParameters.topicArn</code></td>
+</tr>
+<tr>
+<td><code>dynamodb:PutItem</code></td>
+<td><code>requestParameters.tableName</code></td>
+</tr>
+<tr>
+<td>S3 <code>GetObject</code> + bucket logging</td>
+<td>Access log <code>REST.GET.OBJECT</code>; Remote IP vs CloudTrail <code>sourceIPAddress</code> when <code>FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true</code></td>
+</tr>
+</tbody>
+</table>
+<p>Maven regression (no running instance):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./mvnw<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-Dtest<span class="o">=</span>S3AccessLoggingIntegrationTest,S3AccessLogDeliveryIamIntegrationTest,CloudForensicsIntegrationTest,KmsDecryptScopedKeyIntegrationTest,DynamoDbGetItemQueryScopedIntegrationTest,DynamoDbPutItemScopedIntegrationTest,SnsSubscribeReceiveIamIntegrationTest,SnsPublishScopedIamIntegrationTest,CloudTrailAuditIntegrationTest,CloudTrailKmsDecryptAuditIntegrationTest,CloudTrailSnsPublishAuditIntegrationTest,CloudTrailDynamoDbPutItemAuditIntegrationTest,S3AccessLogSourceIpParityIntegrationTest,ClientSourceIpResolverTest
+</code></pre></div>
+<h3 id="investigator-iam">Investigator IAM</h3>
+<p>Grant <code>cloudtrail:LookupEvents</code> on <code>arn:aws:cloudtrail:REGION:ACCOUNT:trail/*</code> unless an investigator policy narrows to one trail. Regression: <code>CloudTrailLookupEventsScopedIamIntegrationTest</code>, <code>CloudTrailTamperingAuditIntegrationTest</code>, <code>CloudTrailSqsAuditIntegrationTest</code>.</p>
+<h2 id="ctf-fork-notes">CTF fork notes</h2>
+<ul>
+<li>Trail and lookup APIs honor IAM enforcement and SigV4 when Compose hardening is on.</li>
+<li><code>cloudtrail:StopLogging</code> scopes to <code>arn:aws:cloudtrail:REGION:ACCOUNT:trail/NAME</code> from the JSON <code>Name</code> field.</li>
+<li><code>cloudtrail:LookupEvents</code> scopes to <code>arn:aws:cloudtrail:REGION:ACCOUNT:trail/*</code> when the request body has no trail name (typical investigator <code>lookup-events</code> calls). Use <code>trail/NAME</code> only when policies must deny lookup on other trails.</li>
+<li>Investigator policies should allow <code>cloudtrail:LookupEvents</code> on <code>arn:aws:cloudtrail:REGION:ACCOUNT:trail/*</code> unless an exercise policy narrows access to one trail.</li>
+<li><code>StopLogging</code> is always audited (mutating CloudTrail API bypasses the active-trail gate). Prior events remain in the index after logging stops; <code>StartLogging</code> does not wipe history.</li>
+<li>See <a href="#live-audit-authoring">Live audit authoring</a> for <code>sourceIPAddress</code>, <code>answers.json</code> grading, event-store teardown, injection API, and pagination detail.</li>
+<li>SQS audit events include <code>requestParameters.queueUrl</code> for <code>ReceiveMessage</code>, <code>SendMessage</code>, and <code>PurgeQueue</code> on Query and JSON 1.0 wire protocols (<code>AmazonSQS.PurgeQueue</code> with JSON <code>QueueUrl</code> is Management, not Data). <code>SendMessage</code> records <code>requestParameters.messageBody</code> with the actual payload. In-process SQS delivery normalizes <code>QueueUrl</code> / <code>MessageBody</code> to <code>queueUrl</code> / <code>messageBody</code>. HTTP <code>AssumedRole</code> callers include <code>userIdentity.sessionContext.sessionIssuer</code>. Regression: <code>CloudTrailSqsAuditIntegrationTest</code> (including <code>sqsJson10PurgeQueueRecordsQueueUrl</code>), <code>InProcessCloudTrailIntegrationTest</code>.</li>
+<li>Trail S3 delivery honors bucket policy <code>aws:SourceArn</code> and <code>s3:x-amz-acl</code> conditions for the <code>cloudtrail.amazonaws.com</code> service principal. Delivery sets <code>bucket-owner-full-control</code> on log objects.</li>
+<li><code>GetEventSelectors</code> is supported; trails without explicit selectors return sensible defaults.</li>
+<li>Audit Compose sets <code>FLOCI_STORAGE_MODE=hybrid</code> and <code>FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true</code>. See <a href="../../README.md#audit-and-forensics-profile">README audit profile</a> and <a href="../../AGENTS.md#audit-services-map">AGENTS.md</a>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.instant", "search.highlight", "search.suggest", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
