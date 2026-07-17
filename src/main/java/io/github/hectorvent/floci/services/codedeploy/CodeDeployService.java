@@ -1642,9 +1642,35 @@ public class CodeDeployService {
         }
     }
 
-    private boolean invokeHook(String region, Deployment deployment, String hookFunctionName,
-                                String lifecycleEventName, Map<String, Object> lambdaTargetMap,
-                                AtomicBoolean stopFlag) throws InterruptedException {
+    /**
+     * Maps a lifecycle-hook invoke failure to a hook status. AccessDenied must fail closed
+     * (not complete as Succeeded). Other invoke failures keep the prior lab-friendly Succeeded
+     * default (for example missing hook function).
+     */
+    static String resolveHookStatusAfterInvokeFailure(Throwable error) {
+        if (isAccessDenied(error)) {
+            return "Failed";
+        }
+        return "Succeeded";
+    }
+
+    private static boolean isAccessDenied(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof AwsException aws) {
+                String code = aws.getErrorCode();
+                if ("AccessDeniedException".equals(code) || "AccessDenied".equals(code)) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    boolean invokeHook(String region, Deployment deployment, String hookFunctionName,
+                       String lifecycleEventName, Map<String, Object> lambdaTargetMap,
+                       AtomicBoolean stopFlag) throws InterruptedException {
         String executionId = UUID.randomUUID().toString();
         CompletableFuture<String> future = new CompletableFuture<>();
         hookFutures.put(executionId, future);
@@ -1667,7 +1693,7 @@ public class CodeDeployService {
                 }
             } catch (Exception e) {
                 LOG.debugv("Hook Lambda {0} not invokable: {1}", hookFunctionName, e.getMessage());
-                future.complete("Succeeded");
+                future.complete(resolveHookStatusAfterInvokeFailure(e));
             }
 
             String status = "Succeeded";

@@ -28,6 +28,8 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -175,30 +177,49 @@ public class IotMqttBrokerService {
      * Resolves the CONNECT principal from the username/password fields.
      *
      * <p>CTF-safe simplification: full per-packet SigV4 signature verification (as real AWS IoT
-     * device SDKs perform over MQTT) is not implemented. Two credential shapes are accepted
-     * instead, and anything else — including a made-up but non-blank username — is rejected:
+     * device SDKs perform over MQTT) is not implemented. Credential shapes accepted:
      * <ul>
-     *   <li>the configured root access key, granted unrestricted access</li>
-     *   <li>username = a known IAM access key ID (with a non-blank password), authorized against
-     *       that identity's IAM policies exactly like the {@code iotdata} HTTP data plane</li>
+     *   <li>the configured root access key with a password matching the root secret</li>
+     *   <li>username = a known IAM access key ID with a password matching the stored secret
+     *       access key, authorized against that identity's IAM policies</li>
      *   <li>username = a known, ACTIVE IoT certificate ID or ARN, authorized against the IoT
      *       policies attached to that certificate</li>
      * </ul>
+     * AKID paths fail closed when the stored secret is missing or the password does not match.
+     * Full MQTT SigV4 / {@code iot:Connect} parity remains out of scope.
      */
     ConnectPrincipal resolvePrincipal(String username, String password) {
         if (username == null || username.isBlank()) {
             return null;
         }
         if (config.auth().rootAccessKeyId().filter(username::equals).isPresent()) {
+            Optional<String> rootSecret = config.auth().resolveRootSecretAccessKey();
+            if (rootSecret.isEmpty() || !secretsMatch(password, rootSecret.get())) {
+                return null;
+            }
             return ConnectPrincipal.unrestricted("root:" + username);
         }
         if (password != null && !password.isBlank()) {
             CallerContext caller = iamService.resolveCallerContext(username);
             if (caller != null) {
+                Optional<String> storedSecret = iamService.findSecretKey(username);
+                if (storedSecret.isEmpty() || !secretsMatch(password, storedSecret.get())) {
+                    return null;
+                }
                 return ConnectPrincipal.scoped("iam:" + username, caller.identityPolicies());
             }
         }
         return resolveCertificatePrincipal(username);
+    }
+
+    /** Constant-time compare of MQTT password to a stored secret access key. */
+    static boolean secretsMatch(String provided, String stored) {
+        if (provided == null || stored == null) {
+            return false;
+        }
+        byte[] a = provided.getBytes(StandardCharsets.UTF_8);
+        byte[] b = stored.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(a, b);
     }
 
     private ConnectPrincipal resolveCertificatePrincipal(String certificateIdentifier) {

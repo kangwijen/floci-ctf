@@ -298,6 +298,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | CloudWatch Logs `StartQuery` multi-group under-scope | Closed | Each `logGroupNames` entry is evaluated (`ResourceArnBuilderTest`, Logs handler tests) |
 | DynamoDB Streams `StreamArn` under-scope | Closed | Streams APIs use `StreamArn` (TableName still preferred when both present) (`ResourceArnBuilderTest`) |
 | IoT MQTT CONNECT / topic IAM | Closed | Real CONNECT auth plus topic IAM when enforcement is on (`IotMqttBrokerServiceTest`, `IotMqttConnectAuthPolicyTest`) |
+| IoT MQTT AKID password not bound to secret | Closed | Password must match stored secret access key (or root secret); mismatch/missing secret fails closed (`MqttPasswordMustMatchSecretTest`). Residual: full MQTT SigV4 / `iot:Connect` parity out of scope |
+| CodeDeploy lifecycle AccessDenied completed as Succeeded | Closed | Hook invoke AccessDenied fails the lifecycle event (`CodeDeployHookDenyFailsDeploymentTest`) |
 | Pipes Lambda enrichment IAM | Closed | Enrichment invoke uses `InProcessTargetAuthorizer` (`PipesTargetInvokerTest`) |
 | Pipes Kafka source IAM | Closed | Kafka poll path authorizes via `InProcessTargetAuthorizer` (`PipesPollerTest`) |
 | DynamoDB BatchWrite/Get and Transact wildcard fallback | Closed | Multi-table / nested table ARNs evaluated (`ResourceArnBuilderTest`, DynamoDB handler tests) |
@@ -472,7 +474,7 @@ Re-apply CTF behavior on conflicts (high risk after post-1.5.26 merges):
 - Secrets Manager: `SecretsManagerService`, `SecretsManagerJsonHandler`, `SecretsManagerKmsSupport` (single-layer envelopes; rotation must not re-wrap KMS ciphertext)
 - CodePipeline: `CodePipelineService`, `CodePipelineJsonHandler` (storage-backed pipelines; in-process actions inherit IAM on integrated services)
 - S3 Vectors: `S3VectorsService`, `S3VectorsController` (new REST host prefix; standard HTTP IAM/SigV4 path)
-- IoT: `IotService`, `IotController`, `IotDataController`, `IotMqttBrokerService` (REST JSON + MQTT; HTTP IAM/SigV4 on control/data REST. When IAM enforcement is on, MQTT CONNECT requires real auth and topic publish/subscribe is IAM-gated)
+- IoT: `IotService`, `IotController`, `IotDataController`, `IotMqttBrokerService` (REST JSON + MQTT; HTTP IAM/SigV4 on control/data REST. When IAM enforcement is on, MQTT CONNECT requires real auth with AKID password bound to the stored secret, and topic publish/subscribe is IAM-gated)
 - Elastic Beanstalk: `ElasticBeanstalkService`, `ElasticBeanstalkQueryHandler`
 - MemoryDB ACLs: `MemoryDbService`, `MemoryDbHandler`, `services/memorydb/model/Acl`, `User`
 - AppSync `$util`: `services/appsync/graphql/util/*`
