@@ -101,6 +101,7 @@ Operator smoke: `GET http://localhost:4566/health` (not `/_floci/health` unless 
 - Presigned URLs signed with unknown access keys (only registered IAM keys or operator root verify)
 - Giving operator root creds to players
 - Expecting `GetCallerIdentity` to return `:root` for IAM user keys
+- Expecting Redis/RDS/ECR host ports from root Compose or image `EXPOSE` (challenge Compose must publish them)
 - Expecting player `AWS_*` in Lambda/ECS/CodeBuild env (stripped)
 
 ---

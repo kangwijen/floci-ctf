@@ -57,14 +57,14 @@
 
 Behavior depends on whether the IAM registry auth proxy is active (`FLOCI_SERVICES_ECR_REGISTRY_AUTH_ENABLED=true` with IAM enforcement, the CTF Compose default):
 
-**Auth proxy on (CTF Compose):** Floci listens on the public registry port (default **5100**) inside the Floci container and forwards to the internal `registry:2` sidecar. Publish that port on the Floci service so host `docker push` / `docker pull` reach the proxy:
+**Auth proxy on (CTF):** Floci listens on the public registry port (default **5100**) inside the Floci container and forwards to the internal `registry:2` sidecar. The Floci image has no `EXPOSE`. Root CTF Compose publishes only `4566`. When a challenge needs host `docker push` / `docker pull`, add `5100:5100` in **challenge** Compose:
 
 ```yaml
 services:
   floci:
     ports:
       - "4566:4566"
-      - "5100:5100"   # ECR auth proxy (required in Compose when registry-auth + IAM enforcement)
+      - "5100:5100"   # challenge override: ECR auth proxy for host docker push/pull
     environment:
       FLOCI_SERVICES_ECR_REGISTRY_BASE_PORT: "5100"
       FLOCI_SERVICES_ECR_REGISTRY_MAX_PORT: "5100"
@@ -72,7 +72,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-Pin `REGISTRY_BASE_PORT` and `REGISTRY_MAX_PORT` to the same value in Compose so the proxy port stays stable across restarts.
+Pin `REGISTRY_BASE_PORT` and `REGISTRY_MAX_PORT` to the same value in Compose so the proxy port stays stable across restarts. See [Ports Reference](../configuration/ports.md#ctf-fork-this-repository).
 
 **Auth proxy off:** The `registry:2` sidecar binds its host port directly. Do **not** add `5100-5199` to the Floci service `ports` list (that pre-allocates ports on the Floci container and prevents the sidecar from binding). `docker login localhost:5100` works once Floci starts the sidecar with no extra mapping.
 
@@ -201,4 +201,4 @@ The following ECR features are **not** implemented or only partially implemented
 
 **`*.localhost` does not resolve to loopback on this platform.** Set `floci.services.ecr.uri-style: path` to fall back to `localhost:<port>/<account>/<region>/<repo>` URIs.
 
-**`list-images` / `BatchGetImage` empty after a successful host `docker push` (Compose / bridge).** With the IAM auth proxy, publish port **5100** on the Floci Compose service and pin `FLOCI_SERVICES_ECR_REGISTRY_BASE_PORT` / `MAX_PORT` to that value. Floci must reach the backing `registry:2` container on the same Docker network (`FLOCI_SERVICES_DOCKER_NETWORK`). Ensure `/var/run/docker.sock` is mounted and rebuild `floci:local` after ECR fixes. Re-run `./mvnw test -Dtest=EcrDockerPushIntegrationTest` on the build you ship.
+**`list-images` / `BatchGetImage` empty after a successful host `docker push` (Compose / bridge).** With the IAM auth proxy, publish port **5100** from **challenge** Compose (not via image `EXPOSE`) and pin `FLOCI_SERVICES_ECR_REGISTRY_BASE_PORT` / `MAX_PORT` to that value. Floci must reach the backing `registry:2` container on the same Docker network (`FLOCI_SERVICES_DOCKER_NETWORK`). Ensure `/var/run/docker.sock` is mounted and rebuild `floci:local` after ECR fixes. Re-run `./mvnw test -Dtest=EcrDockerPushIntegrationTest` on the build you ship.

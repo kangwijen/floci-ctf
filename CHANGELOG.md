@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **sts:** harden SAML assertion XML parsing (no DOCTYPE or external entities)
 - **cognito:** verify inbound access-token RS256 signatures on self-service APIs and userInfo
 - **compose:** enable federated token structural checks, JWT signature verification, EKS token SigV4 checks, and outbound private-address blocking for the CTF profile
+- **ports:** remove `EXPOSE` from `docker/Dockerfile` and publish only `4566` from root Compose (challenge Compose owns extra host ports)
 
 ## [1.5.33] - 2026-07-15
 

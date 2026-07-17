@@ -167,7 +167,7 @@ aws elbv2 delete-target-group \
 
 ## Listener Ports
 
-Listener sockets bind on the Floci host. Expose any listener ports you need in Docker Compose when Floci itself runs in a container, similar to RDS and ElastiCache proxy ports.
+Listener sockets bind on the Floci host. Publish any listener ports you need from **challenge** Compose when Floci itself runs in a container, similar to RDS and ElastiCache proxy ports. Root CTF Compose publishes only `4566`. The Floci image has no `EXPOSE`.
 
 ## CTF fork {#ctf-fork}
 

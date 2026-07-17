@@ -46,15 +46,15 @@ The proxy is a transparent byte relay, so the host-facing proxy port range is un
 
 ### Docker Compose
 
-Neptune requires the Docker socket and the Gremlin proxy port range to be exposed. The first cluster claims `PROXY_BASE_PORT`; each additional cluster increments the port.
+Neptune requires the Docker socket. Host Gremlin wire access also needs the proxy port range in **challenge** Compose. Root CTF Compose publishes only `4566` and the Floci image has no `EXPOSE`. The first cluster claims `PROXY_BASE_PORT`; each additional cluster increments the port.
 
 ```yaml
 services:
   floci:
-    image: floci/floci:latest
+    image: floci:local
     ports:
       - "4566:4566"
-      - "8182-8282:8182-8282"   # Neptune Gremlin proxy ports
+      - "8182-8282:8182-8282"   # challenge override: Neptune Gremlin proxy ports
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

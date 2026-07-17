@@ -42,15 +42,15 @@ Set `FLOCI_SERVICES_MEMORYDB_MOCK=true` to manage clusters as control-plane-only
 
 ### Docker Compose
 
-MemoryDB requires the Docker socket and port range exposure. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
+MemoryDB requires the Docker socket. Host MemoryDB wire access also needs the proxy port range in **challenge** Compose. Root CTF Compose publishes only `4566` and the Floci image has no `EXPOSE`. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
 
 ```yaml
 services:
   floci:
-    image: floci/floci:latest
+    image: floci:local
     ports:
       - "4566:4566"
-      - "6400-6419:6400-6419"   # MemoryDB proxy ports
+      - "6400-6419:6400-6419"   # challenge override: MemoryDB proxy ports
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
