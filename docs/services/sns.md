@@ -226,4 +226,4 @@ silently if the resource does not exist, matching real SNS behavior.
 
 ## CTF fork {#ctf-fork}
 
-When `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true` (Compose CTF default; YAML default is `false`), HTTP(S) subscription deliveries reject destinations that resolve to non-public addresses unless the hostname is on `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` or `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES=true`.
+When `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true` (Compose CTF default; YAML default is `false`, via `AuthPosture.egressBlock`), HTTP(S) subscription deliveries pin-connect: resolve once, reject non-public addresses, then connect to that IP with Host/SNI (no redirects), unless the hostname is on `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` or `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES=true`. Regression: `SafeEgressRebindDeniedTest`.

@@ -6,12 +6,14 @@ import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -31,6 +33,11 @@ class HttpProxyInvokerTest {
     private HttpServer backend;
     private int backendPort;
     private final AtomicReference<RecordedRequest> received = new AtomicReference<>();
+
+    /** Lab-style permissive guard for localhost backend fixtures (not a production default). */
+    private static HttpProxyInvoker labInvoker() {
+        return new HttpProxyInvoker(new OutboundUrlGuard(false, List.of(), false));
+    }
 
     private record RecordedRequest(String method, String path, String query, Headers headers, byte[] body) {}
 
@@ -90,7 +97,7 @@ class HttpProxyInvokerTest {
                 "{\"a\":1}".getBytes(StandardCharsets.UTF_8),
                 Map.of());
 
-        ProxyResult result = new HttpProxyInvoker().invoke(integration, ctx);
+        ProxyResult result = labInvoker().invoke(integration, ctx);
 
         assertEquals(200, result.statusCode());
         RecordedRequest r = received.get();
@@ -109,7 +116,7 @@ class HttpProxyInvokerTest {
                 Map.of(), Map.of(), null,
                 Map.of("userId", "u-42"));
 
-        new HttpProxyInvoker().invoke(integration, ctx);
+        labInvoker().invoke(integration, ctx);
 
         assertEquals("u-42", received.get().headers().getFirst("X-User-Id"));
     }
@@ -122,7 +129,7 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/balance", "balance",
                 Map.of("Host", "client.example.test"), Map.of(), null, Map.of());
 
-        new HttpProxyInvoker().invoke(integration, ctx);
+        labInvoker().invoke(integration, ctx);
 
         assertEquals("lb.localhost.test", received.get().headers().getFirst("Host"));
     }
@@ -142,7 +149,7 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/balance", "balance",
                 Map.of("Host", "client.example.test"), Map.of(), null, Map.of());
 
-        ProxyResult result = new HttpProxyInvoker().invoke(integration, ctx);
+        ProxyResult result = labInvoker().invoke(integration, ctx);
 
         assertEquals(200, result.statusCode());
         assertEquals("chunked-body", new String(result.body(), StandardCharsets.UTF_8));
@@ -157,7 +164,7 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/balance", "balance",
                 Map.of(), Map.of(), null, Map.of());
 
-        new HttpProxyInvoker().invoke(integration, ctx);
+        labInvoker().invoke(integration, ctx);
 
         assertEquals("/public/balance", received.get().path());
     }
@@ -174,18 +181,11 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/foo", "foo",
                 headers, Map.of(), null, Map.of());
 
-        new HttpProxyInvoker().invoke(integration, ctx);
+        labInvoker().invoke(integration, ctx);
 
         Headers received = this.received.get().headers();
-        // We sent "Connection: close" inbound. The JDK HttpClient may set its own
-        // Connection header (e.g. "Upgrade, HTTP2-Settings" for HTTP/2 negotiation),
-        // but our inbound "close" must NOT pass through.
-        String conn = received.getFirst("Connection");
-        if (conn != null) {
-            assertFalse(conn.toLowerCase().contains("close"),
-                    "inbound Connection: close must not be forwarded; got: " + conn);
-        }
-        // Also, Transfer-Encoding from inbound must not be forwarded
+        // Inbound hop-by-hop Transfer-Encoding must not be forwarded. Pin-connect may set
+        // its own Connection: close for HTTP/1.1 transport (not a pass-through of inbound TE).
         assertNull(received.getFirst("Transfer-encoding"),
                 "Transfer-Encoding should be stripped (hop-by-hop)");
         assertEquals("kept", received.getFirst("X-Custom"));
@@ -206,7 +206,7 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/foo", "foo",
                 Map.of(), Map.of(), null, Map.of());
 
-        ProxyResult result = new HttpProxyInvoker().invoke(integration, ctx);
+        ProxyResult result = labInvoker().invoke(integration, ctx);
         assertEquals(404, result.statusCode());
         assertEquals("{\"err\":\"not found\"}", new String(result.body(), StandardCharsets.UTF_8));
     }
@@ -221,7 +221,7 @@ class HttpProxyInvokerTest {
         RequestContext ctx = ctxFor("GET", "/wallet/foo", "foo",
                 Map.of(), Map.of(), null, Map.of());
 
-        ProxyResult result = new HttpProxyInvoker().invoke(integration, ctx);
+        ProxyResult result = labInvoker().invoke(integration, ctx);
         assertEquals(502, result.statusCode());
         assertTrue(new String(result.body(), StandardCharsets.UTF_8).contains("Bad Gateway"));
 
@@ -230,13 +230,14 @@ class HttpProxyInvokerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void rejectsNonPublicBackendAddress() {
         Integration integration = httpProxyIntegration(
                 "http://127.0.0.1:" + backendPort + "/foo", null);
         RequestContext ctx = ctxFor("GET", "/wallet/foo", "foo",
                 Map.of(), Map.of(), null, Map.of());
 
-        ProxyResult result = new HttpProxyInvoker(new OutboundUrlGuard(true, java.util.List.of(), false))
+        ProxyResult result = new HttpProxyInvoker(new OutboundUrlGuard(true, List.of(), false))
                 .invoke(integration, ctx);
 
         assertEquals(502, result.statusCode());
@@ -256,7 +257,7 @@ class HttpProxyInvokerTest {
                 null,
                 Map.of("userId", "u-42"));
 
-        new HttpProxyInvoker().invoke(integration, ctx);
+        labInvoker().invoke(integration, ctx);
 
         String q = received.get().query();
         assertNotNull(q);

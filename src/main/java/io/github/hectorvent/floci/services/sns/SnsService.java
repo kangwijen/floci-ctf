@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
+import io.github.hectorvent.floci.core.common.PinnedHttpResponse;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.common.Resettable;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
@@ -30,11 +31,9 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -45,6 +44,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -84,7 +84,7 @@ public class SnsService implements Resettable {
     private final HttpClient httpClient;
     private final InProcessCloudTrailRecorder cloudTrailRecorder;
     private final InProcessTargetAuthorizer targetAuthorizer;
-    private OutboundUrlGuard outboundUrlGuard = new OutboundUrlGuard(false, List.of(), false);
+    private OutboundUrlGuard outboundUrlGuard;
     private final Map<String, Instant> fifoDeduplicationCache = new ConcurrentHashMap<>();
     private static final HexFormat HEX = HexFormat.of();
     
@@ -202,7 +202,7 @@ public class SnsService implements Resettable {
         this.objectMapper = objectMapper;
         this.cloudTrailRecorder = cloudTrailRecorder;
         this.targetAuthorizer = targetAuthorizer;
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        this.httpClient = OutboundUrlGuard.newEgressHttpClient(Duration.ofSeconds(5));
     }
 
     public void clear() {
@@ -1335,30 +1335,32 @@ public class SnsService implements Resettable {
                     LOG.debugv("Delivered SNS message to Lambda: {0}", sub.getEndpoint());
                 }
                 case "http", "https" -> {
-                    if (httpClient == null) break;
-                    outboundUrlGuard.validateHttpUrl(sub.getEndpoint());
+                    if (httpClient == null || outboundUrlGuard == null) break;
                     boolean rawDelivery = "true".equalsIgnoreCase(sub.getAttributes().get("RawMessageDelivery"));
                     String body = rawDelivery
                             ? message
                             : buildSnsHttpNotification(message, subject, messageAttributes, topicArn, messageId, sub.getSubscriptionArn());
-                    var requestBuilder = HttpRequest.newBuilder()
-                            .uri(URI.create(sub.getEndpoint()))
-                            .timeout(Duration.ofSeconds(5))
-                            .header("Content-Type", "text/plain; charset=UTF-8")
-                            .header("x-amz-sns-message-type", "Notification")
-                            .header("x-amz-sns-message-id", messageId)
-                            .header("x-amz-sns-topic-arn", topicArn)
-                            .header("x-amz-sns-subscription-arn", sub.getSubscriptionArn());
+                    Map<String, String> headers = new LinkedHashMap<>();
+                    headers.put("Content-Type", "text/plain; charset=UTF-8");
+                    headers.put("x-amz-sns-message-type", "Notification");
+                    headers.put("x-amz-sns-message-id", messageId);
+                    headers.put("x-amz-sns-topic-arn", topicArn);
+                    headers.put("x-amz-sns-subscription-arn", sub.getSubscriptionArn());
                     if (rawDelivery) {
-                        requestBuilder.header("x-amz-sns-rawdelivery", "true");
+                        headers.put("x-amz-sns-rawdelivery", "true");
                     }
-                    HttpRequest request = requestBuilder
-                            .POST(HttpRequest.BodyPublishers.ofString(body))
-                            .build();
                     String endpoint = sub.getEndpoint();
-                    httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-                            .thenAccept(response -> logHttpResult("Delivered SNS notification", endpoint, response.statusCode()))
-                            .exceptionally(ex -> { LOG.warnv("Failed to deliver SNS message to {0}: {1}", endpoint, ex.getMessage()); return null; });
+                    Duration timeout = Duration.ofSeconds(5);
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            PinnedHttpResponse response = outboundUrlGuard.sendPinned(
+                                    endpoint, "POST", body.getBytes(StandardCharsets.UTF_8),
+                                    headers, timeout, timeout);
+                            logHttpResult("Delivered SNS notification", endpoint, response.statusCode());
+                        } catch (Exception ex) {
+                            LOG.warnv("Failed to deliver SNS message to {0}: {1}", endpoint, ex.getMessage());
+                        }
+                    });
                 }
                 case "email", "email-json" -> LOG.infov("SNS email delivery (stub): to={0}, subject={1}, message={2}",
                         sub.getEndpoint(), subject, message);
@@ -1527,7 +1529,9 @@ public class SnsService implements Resettable {
     }
 
     private void sendSubscriptionConfirmation(Subscription subscription, String topicArn, String region) {
-        if (httpClient == null) return;
+        if (httpClient == null || outboundUrlGuard == null) {
+            return;
+        }
         try {
             String token = subscription.getAttributes().get("ConfirmationToken");
             String subscribeUrl = baseUrl + "/?Action=ConfirmSubscription&TopicArn=" + topicArn + "&Token=" + token;
@@ -1545,19 +1549,23 @@ public class SnsService implements Resettable {
             node.put("SigningCertURL", "EXAMPLE");
             String body = objectMapper.writeValueAsString(node);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(subscription.getEndpoint()))
-                    .timeout(Duration.ofSeconds(5))
-                    .header("Content-Type", "text/plain; charset=UTF-8")
-                    .header("x-amz-sns-message-type", "SubscriptionConfirmation")
-                    .header("x-amz-sns-topic-arn", topicArn)
-                    .header("x-amz-sns-subscription-arn", "PendingConfirmation")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
             String endpoint = subscription.getEndpoint();
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-                    .thenAccept(response -> logHttpResult("Sent SubscriptionConfirmation", endpoint, response.statusCode()))
-                    .exceptionally(ex -> { LOG.warnv("Failed to send SubscriptionConfirmation to {0}: {1}", endpoint, ex.getMessage()); return null; });
+            Map<String, String> headers = Map.of(
+                    "Content-Type", "text/plain; charset=UTF-8",
+                    "x-amz-sns-message-type", "SubscriptionConfirmation",
+                    "x-amz-sns-topic-arn", topicArn,
+                    "x-amz-sns-subscription-arn", "PendingConfirmation");
+            Duration timeout = Duration.ofSeconds(5);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    PinnedHttpResponse response = outboundUrlGuard.sendPinned(
+                            endpoint, "POST", body.getBytes(StandardCharsets.UTF_8),
+                            headers, timeout, timeout);
+                    logHttpResult("Sent SubscriptionConfirmation", endpoint, response.statusCode());
+                } catch (Exception ex) {
+                    LOG.warnv("Failed to send SubscriptionConfirmation to {0}: {1}", endpoint, ex.getMessage());
+                }
+            });
         } catch (Exception e) {
             LOG.warnv("Failed to send SubscriptionConfirmation to {0}: {1}", subscription.getEndpoint(), e.getMessage());
         }

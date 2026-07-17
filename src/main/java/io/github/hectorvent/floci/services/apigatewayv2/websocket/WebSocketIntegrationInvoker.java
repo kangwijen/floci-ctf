@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
+import io.github.hectorvent.floci.core.common.PinnedHttpResponse;
 import io.github.hectorvent.floci.services.apigateway.AwsServiceRouter;
 import io.github.hectorvent.floci.services.apigateway.VtlTemplateEngine;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
@@ -11,16 +12,12 @@ import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
 import io.github.hectorvent.floci.services.lambda.model.InvokeResult;
-import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,11 +39,12 @@ public class WebSocketIntegrationInvoker {
     private static final Pattern STAGE_VAR_PATTERN =
             Pattern.compile("\\$\\{stageVariables\\.([^}]+)}");
 
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
+
     private final LambdaService lambdaService;
     private final AwsServiceRouter serviceRouter;
     private final ObjectMapper objectMapper;
     private final VtlTemplateEngine vtlEngine;
-    private final HttpClient httpClient;
     private final InProcessTargetAuthorizer targetAuthorizer;
     private final OutboundUrlGuard outboundUrlGuard;
 
@@ -59,29 +57,8 @@ public class WebSocketIntegrationInvoker {
         this.serviceRouter = serviceRouter;
         this.objectMapper = objectMapper;
         this.vtlEngine = vtlEngine;
-        this.httpClient = HttpClient.newHttpClient();
         this.targetAuthorizer = targetAuthorizer;
         this.outboundUrlGuard = outboundUrlGuard;
-    }
-
-    /** Test helper when outbound URL guarding is not under test. */
-    public WebSocketIntegrationInvoker(LambdaService lambdaService, AwsServiceRouter serviceRouter,
-                                       ObjectMapper objectMapper, VtlTemplateEngine vtlEngine,
-                                       InProcessTargetAuthorizer targetAuthorizer) {
-        this(lambdaService, serviceRouter, objectMapper, vtlEngine, targetAuthorizer,
-                new OutboundUrlGuard(false, List.of(), false));
-    }
-
-    @PreDestroy
-    void shutdown() {
-        // HttpClient does not have an explicit close in Java 11-20.
-        // In Java 21+ HttpClient implements AutoCloseable. For forward compatibility,
-        // we attempt to close if the method is available.
-        try {
-            httpClient.close();
-        } catch (UnsupportedOperationException | NoSuchMethodError e) {
-            // Pre-Java 21 — no-op, GC will handle cleanup
-        }
     }
 
     /**
@@ -260,25 +237,21 @@ public class WebSocketIntegrationInvoker {
             return new IntegrationResult(500, null, "Invalid integration URI");
         }
 
-        try {
-            outboundUrlGuard.validateHttpUrl(uri);
-        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
-            LOG.warnv("HTTP_PROXY target rejected: {0}", e.getMessage());
-            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
-        }
-
         LOG.debugv("Forwarding event to HTTP_PROXY endpoint: {0}", uri);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(uri))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(eventJson, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            return new IntegrationResult(response.statusCode(), response.body(), null);
+            PinnedHttpResponse response = outboundUrlGuard.sendPinned(
+                    uri,
+                    "POST",
+                    eventJson.getBytes(StandardCharsets.UTF_8),
+                    Map.of("Content-Type", "application/json"),
+                    HTTP_TIMEOUT,
+                    HTTP_TIMEOUT);
+            String body = response.body() == null ? null : new String(response.body(), StandardCharsets.UTF_8);
+            return new IntegrationResult(response.statusCode(), body, null);
+        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+            LOG.warnv("HTTP_PROXY target rejected: {0}", e.getMessage());
+            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
         } catch (Exception e) {
             LOG.warnv("HTTP_PROXY integration call failed: {0}", e.getMessage());
             return new IntegrationResult(500, null, "HTTP_PROXY integration error: " + e.getMessage());
@@ -303,13 +276,6 @@ public class WebSocketIntegrationInvoker {
             return new IntegrationResult(500, null, "Invalid integration URI");
         }
 
-        try {
-            outboundUrlGuard.validateHttpUrl(uri);
-        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
-            LOG.warnv("HTTP target rejected: {0}", e.getMessage());
-            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
-        }
-
         // Use passed templates, falling back to integration model's templates
         Map<String, String> effectiveRequestTemplates = (requestTemplates != null && !requestTemplates.isEmpty())
                 ? requestTemplates
@@ -325,16 +291,16 @@ public class WebSocketIntegrationInvoker {
         LOG.debugv("Forwarding transformed event to HTTP endpoint: {0}", uri);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(uri))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(transformedPayload, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            PinnedHttpResponse response = outboundUrlGuard.sendPinned(
+                    uri,
+                    "POST",
+                    transformedPayload.getBytes(StandardCharsets.UTF_8),
+                    Map.of("Content-Type", "application/json"),
+                    HTTP_TIMEOUT,
+                    HTTP_TIMEOUT);
 
             int statusCode = response.statusCode();
-            String body = response.body();
+            String body = response.body() == null ? null : new String(response.body(), StandardCharsets.UTF_8);
 
             // Apply response template transformation (Requirement 3.2)
             if (body != null) {
@@ -343,6 +309,9 @@ public class WebSocketIntegrationInvoker {
             }
 
             return new IntegrationResult(statusCode, body, null);
+        } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
+            LOG.warnv("HTTP target rejected: {0}", e.getMessage());
+            return new IntegrationResult(502, null, "Bad Gateway: " + e.getMessage());
         } catch (Exception e) {
             LOG.warnv("HTTP integration call failed: {0}", e.getMessage());
             return new IntegrationResult(500, null, "HTTP integration error: " + e.getMessage());

@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -33,7 +34,8 @@ class WebSocketIntegrationInvokerSubstitutionTest {
                 mock(AwsServiceRouter.class),
                 new ObjectMapper(),
                 mock(VtlTemplateEngine.class),
-                mock(InProcessTargetAuthorizer.class));
+                mock(InProcessTargetAuthorizer.class),
+                new OutboundUrlGuard(false, List.of(), false));
     }
 
     @Test
@@ -121,6 +123,7 @@ class WebSocketIntegrationInvokerSubstitutionTest {
     }
 
     @Test
+    @Tag("security-regression")
     void httpProxyRejectsPrivateHostAfterStageVariableSubstitution() {
         WebSocketIntegrationInvoker guarded = new WebSocketIntegrationInvoker(
                 mock(LambdaService.class),
