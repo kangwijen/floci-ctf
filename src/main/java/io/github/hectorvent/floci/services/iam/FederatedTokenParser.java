@@ -146,17 +146,22 @@ public final class FederatedTokenParser {
         if (validateFederatedTokens && !isStructurallyValidSamlAssertion(xml)) {
             return null;
         }
-        if (validateFederatedTokens && !validateSamlSignatureStructure(xml)) {
-            return null;
+        String claimsXml = xml;
+        if (validateFederatedTokens) {
+            if (!validateSamlSignatureStructure(xml)) {
+                return null;
+            }
+            Optional<String> signedAssertionXml = bindVerifiedSamlAssertionXml(
+                    xml, principalArn, validationConfig);
+            if (signedAssertionXml.isEmpty()) {
+                return null;
+            }
+            claimsXml = signedAssertionXml.get();
+            if (!isSamlAssertionTimeValid(claimsXml)) {
+                return null;
+            }
         }
-        if (validateFederatedTokens && !isSamlAssertionTimeValid(xml)) {
-            return null;
-        }
-        if (validateFederatedTokens
-                && !verifySamlCrypto(xml, principalArn, validationConfig)) {
-            return null;
-        }
-        Map<String, String> samlClaims = extractSamlClaims(xml, principalArn);
+        Map<String, String> samlClaims = extractSamlClaims(claimsXml, principalArn);
         if (samlClaims.isEmpty()) {
             return null;
         }
@@ -323,8 +328,22 @@ public final class FederatedTokenParser {
         if (config == null || !config.validateFederatedTokens()) {
             return true;
         }
+        return bindVerifiedSamlAssertionXml(xml, principalArn, config).isPresent();
+    }
+
+    /**
+     * Verifies XML-DSig against pinned trust anchors and returns the Assertion XML
+     * covered by the verified Signature. Rejects XSW documents with extra Assertions.
+     */
+    static Optional<String> bindVerifiedSamlAssertionXml(
+            String xml, String principalArn, FederatedTokenValidationConfig config) {
+        if (config == null || !config.validateFederatedTokens()) {
+            return Optional.empty();
+        }
         String providerName = samlProviderName(principalArn);
-        return SamlAssertionSignatureVerifier.verify(xml, config.resolveSamlSigningCertPems(providerName));
+        return SamlAssertionSignatureVerifier
+                .verifyAndBindSignedAssertion(xml, config.resolveSamlSigningCertPems(providerName))
+                .flatMap(SamlAssertionSignatureVerifier::serializeElement);
     }
 
     static String samlProviderName(String principalArn) {

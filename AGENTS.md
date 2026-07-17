@@ -260,7 +260,10 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | EKS `k8s-aws-v1.*` token SigV4 verify on presigned STS GetCallerIdentity | Closed | `EksTokenSigV4IntegrationTest`, `EksTokenValidatorTest` |
 | STS federated `InvalidIdentityToken`, SAML response fidelity, trust Deny, SAML expiry | Closed | `StsWebIdentityTrustIntegrationTest`, `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest` |
 | IoT / iotdata IAM action mapping (strict mode unmapped-action deny) | Closed | `IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`, `IamActionRegistryTest`, `ResourceArnBuilderTest` |
-| STS `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` unsigned under strict IAM | Closed | `StsWebIdentityStrictUnsignedIntegrationTest`, `SecurityBypassPathsTest` |
+| STS `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` form post without SigV4 under strict IAM (filter bypass) | Closed | `SecurityBypassPathsTest` |
+| STS federated crypto required under IAM strict / Compose CTF (unsigned deny) | Closed | `StsWebIdentityStrictUnsignedIntegrationTest` |
+| SAML XSW: unsigned forged Assertion before signed Assertion | Closed | `SamlWrappedAssertionRejectedTest`, `SamlAssertionSignatureVerifierTest` |
+| STS `AssumeRole` missing role ASIA mint under IAM strict | Closed | `StsAssumeRoleMissingRoleStrictIntegrationTest` |
 | ECR repository policy on control-plane IAM (`DescribeRepositories` scoped ARN) | Closed | `EcrRepositoryPolicyControlPlaneIntegrationTest`, `ResourcePolicyResolverTest`, `ResourceArnBuilderTest` |
 | Multi-table PartiQL `ExecuteStatement` IAM (JOIN / multiple FROM targets) | Closed | `DynamoDbExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest` |
 | `BatchExecuteStatement` per-statement table ARN scoping | Closed | `DynamoDbBatchExecuteStatementScopedIntegrationTest` |

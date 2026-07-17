@@ -44,7 +44,7 @@ Maps to `FLOCI_CTF_*` environment variables.
 | `floci.ctf.container-credentials-bind-localhost` | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind credential servers to `127.0.0.1` when link-local URI mode is off |
 | `floci.ctf.container-credentials-use-link-local-uri` | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | AWS link-local credential URIs; servers bind `0.0.0.0` |
 | `floci.ctf.container-credentials-link-local-host` | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Host in link-local credential URIs |
-| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML `Signature` required; crypto when keys configured |
+| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML Signature required with claims bound to the verified Assertion; crypto when keys configured. Compose sets `true`. IAM enforcement plus strict also requires federated crypto without flipping this YAML default (Phase B AuthPosture) |
 | `floci.ctf.federated-jwt-hmac-secret` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 HMAC secret for web identity JWT verification |
 | `floci.ctf.federated-jwt-hmac-secrets` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*` | _(none)_ | Per OIDC provider host HS256 secrets |
 | `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |

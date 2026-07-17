@@ -178,7 +178,7 @@ public class StsQueryHandler {
                 webIdentityToken,
                 providerId,
                 roleAccountId,
-                FederatedTokenValidationConfig.from(config.ctf()));
+                FederatedTokenValidationConfig.from(config));
 
         String accessKeyId = "ASIA" + randomId(16);
         String secretKey = randomSecret(40);
@@ -234,7 +234,7 @@ public class StsQueryHandler {
         FederatedTrustContext federatedContext = FederatedTokenParser.parseSamlAssertion(
                 getParam(params, "SAMLAssertion"),
                 principalArn,
-                FederatedTokenValidationConfig.from(config.ctf()));
+                FederatedTokenValidationConfig.from(config));
         String sessionName = FederatedTokenParser.sanitizeSessionName(
                 getParam(params, "RoleSessionName"),
                 federatedContext == null ? null : federatedContext.conditionClaims().get("saml:sub"));
@@ -329,6 +329,12 @@ public class StsQueryHandler {
         String roleName = roleArn.contains("/") ? roleArn.substring(roleArn.lastIndexOf('/') + 1) : "";
         String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
         if (roleName.isBlank() || iamService.findRole(roleAccountId, roleName).isEmpty()) {
+            if (denyMissingAssumeRoleTargets()) {
+                return AwsQueryResponse.error("AccessDenied",
+                        "User is not authorized to perform: " + stsAction
+                                + " on resource: " + roleArn,
+                        AwsNamespaces.STS, 403);
+            }
             return null;
         }
         FederatedTrustContext federatedContext = buildFederatedTrustContext(params, stsAction, roleArn);
@@ -361,11 +367,19 @@ public class StsQueryHandler {
         return null;
     }
 
+    /**
+     * Under Compose CTF / IAM strict posture, do not mint ASIA sessions for unknown roles.
+     */
+    private boolean denyMissingAssumeRoleTargets() {
+        return config.services().iam().enforcementEnabled()
+                && config.services().iam().strictEnforcementEnabled();
+    }
+
     private FederatedTrustContext buildFederatedTrustContext(MultivaluedMap<String, String> params,
                                                              String stsAction,
                                                              String roleArn) {
         String roleAccountId = AwsArnUtils.accountOrDefault(roleArn, regionResolver.getAccountId());
-        FederatedTokenValidationConfig validationConfig = FederatedTokenValidationConfig.from(config.ctf());
+        FederatedTokenValidationConfig validationConfig = FederatedTokenValidationConfig.from(config);
         if ("sts:AssumeRoleWithWebIdentity".equals(stsAction)) {
             return FederatedTokenParser.parseWebIdentityToken(
                     getParam(params, "WebIdentityToken"),

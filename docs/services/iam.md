@@ -467,7 +467,7 @@ Optional CTF controls (see [environment variables](../configuration/environment-
 |---|---|---|
 | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` | `true` | Hide `/_floci/*`, `/_localstack/*`, `/_aws/*`; `all` also hides `/health` |
 | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | Trust `X-Forwarded-For` for `aws:sourceip` (enable only behind a trusted proxy) |
-| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` (Compose `true`) | When `true`, require structurally valid JWT/SAML assertions and validate expiry, issuer, and configured verification keys |
+| `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` (Compose `true`) | When `true`, require structurally valid JWT/SAML assertions and validate expiry, issuer, and configured verification keys. SAML claims bind to the verified Signature Assertion (XSW rejected). IAM enforcement plus strict also requires federated crypto without changing this YAML default |
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 secret for web identity JWT verification when validation is enabled |
 | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__<provider_host>` | _(none)_ | Per-provider HS256 secrets (for example `accounts_google.com`) |
 | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
@@ -492,7 +492,7 @@ export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 docker compose up
 ```
 
-Compose enables federated token validation. Configure an HMAC secret or RSA public key for each lab issuer when you need cryptographic verification. A lab that intentionally needs unsigned web identity tokens must set `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=false` explicitly. When validation is on, unsigned JWTs and `alg=none` are rejected.
+Compose enables federated token validation. Configure an HMAC secret or RSA public key for each lab issuer when you need cryptographic verification. A lab that intentionally needs unsigned web identity tokens must turn off IAM strict enforcement (or both enforcement and `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS`) explicitly. Setting only `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=false` while Compose keeps strict IAM on still requires federated crypto. When validation is on, unsigned JWTs and `alg=none` are rejected.
 
 S3 presigned URLs use the same SigV4 query-string model as AWS. Sign with `aws s3 presign` using participant or operator IAM credentials, or use Floci's `PreSignedUrlGenerator` (requires `FLOCI_AUTH_ROOT_*` for built-in URL generation).
 
