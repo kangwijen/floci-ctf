@@ -42,6 +42,25 @@ public record FederatedTokenValidationConfig(
                 ctf.federatedSamlSigningCerts() == null ? Map.of() : ctf.federatedSamlSigningCerts());
     }
 
+    /**
+     * Compose CTF sets {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true}. Under IAM enforcement
+     * plus strict mode, federated crypto is also required even when the YAML default stays false.
+     * Does not flip {@code application.yml} global defaults (Phase B AuthPosture).
+     */
+    public static FederatedTokenValidationConfig from(EmulatorConfig config) {
+        EmulatorConfig.CtfConfig ctf = config.ctf();
+        boolean strictIam = config.services().iam().enforcementEnabled()
+                && config.services().iam().strictEnforcementEnabled();
+        boolean validate = ctf.validateFederatedTokens() || strictIam;
+        return new FederatedTokenValidationConfig(
+                validate,
+                ctf.federatedJwtHmacSecret(),
+                ctf.federatedJwtHmacSecrets() == null ? Map.of() : ctf.federatedJwtHmacSecrets(),
+                ctf.federatedJwtRs256PublicKeyPem(),
+                ctf.federatedSamlSigningCertPem(),
+                ctf.federatedSamlSigningCerts() == null ? Map.of() : ctf.federatedSamlSigningCerts());
+    }
+
     public Optional<String> resolveHmacSecret(String providerHost) {
         if (providerHost != null && !providerHost.isBlank()) {
             String perProvider = federatedJwtHmacSecrets.get(providerHost);

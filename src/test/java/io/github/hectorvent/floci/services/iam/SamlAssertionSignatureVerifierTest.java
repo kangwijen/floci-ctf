@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.iam;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("security-regression")
 class SamlAssertionSignatureVerifierTest {
 
     private static SamlAssertionTestSupport.SigningMaterial signingMaterial;

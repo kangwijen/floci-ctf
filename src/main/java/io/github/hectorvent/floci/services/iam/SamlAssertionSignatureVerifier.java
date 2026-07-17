@@ -2,17 +2,25 @@ package io.github.hectorvent.floci.services.iam;
 
 import org.apache.xml.security.Init;
 import org.apache.xml.security.keys.KeyInfo;
+import org.apache.xml.security.signature.Reference;
 import org.apache.xml.security.signature.XMLSignature;
 import org.jboss.logging.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayInputStream;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -21,54 +29,211 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Validates SAML assertion XML signatures using Apache Santuario and pinned trust anchors.
+ * Claims must be taken only from the DOM node covered by a verified Signature.
  */
 public final class SamlAssertionSignatureVerifier {
 
     private static final Logger LOG = Logger.getLogger(SamlAssertionSignatureVerifier.class);
     private static final String XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#";
+    private static final String SAML_ASSERTION_NS = "urn:oasis:names:tc:SAML:2.0:assertion";
     private static volatile boolean initialized;
 
     private SamlAssertionSignatureVerifier() {
     }
 
     public static boolean verify(String xml, List<String> trustedCertPems) {
+        return verifyAndBindSignedAssertion(xml, trustedCertPems).isPresent();
+    }
+
+    /**
+     * Verifies an enveloped (or ID-referenced) XML signature against pinned trust anchors
+     * and returns the Assertion element covered by that signature.
+     * Rejects documents that also contain an Assertion outside the signed subtree (XSW).
+     */
+    public static Optional<Element> verifyAndBindSignedAssertion(String xml, List<String> trustedCertPems) {
         if (xml == null || xml.isBlank()) {
-            return false;
+            return Optional.empty();
         }
         if (trustedCertPems == null || trustedCertPems.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
         List<X509Certificate> trustedCerts = parseTrustedCertificates(trustedCertPems);
         if (trustedCerts.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
         List<PublicKey> trustedKeys = trustedCerts.stream().map(X509Certificate::getPublicKey).toList();
         ensureInit();
         try {
             Document document = parseDocument(xml);
-            Element signatureElement = findSignatureElement(document);
-            if (signatureElement == null) {
-                return false;
+            NodeList signatures = document.getElementsByTagNameNS(XMLDSIG_NS, "Signature");
+            if (signatures.getLength() == 0) {
+                signatures = document.getElementsByTagName("Signature");
             }
+            for (int i = 0; i < signatures.getLength(); i++) {
+                Element signatureElement = (Element) signatures.item(i);
+                Optional<Element> bound = verifySignatureAndBind(document, signatureElement, trustedCerts, trustedKeys);
+                if (bound.isPresent()) {
+                    return bound;
+                }
+            }
+            return Optional.empty();
+        } catch (Exception e) {
+            LOG.debugv("SAML XML signature verification failed: {0}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<String> serializeElement(Element element) {
+        if (element == null) {
+            return Optional.empty();
+        }
+        try {
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+            Transformer transformer = transformerFactory.newTransformer();
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+            StringWriter writer = new StringWriter();
+            transformer.transform(new DOMSource(element), new StreamResult(writer));
+            return Optional.of(writer.toString().replace("\r\n", "\n"));
+        } catch (Exception e) {
+            LOG.debugv("Failed to serialize signed SAML element: {0}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<Element> verifySignatureAndBind(
+            Document document,
+            Element signatureElement,
+            List<X509Certificate> trustedCerts,
+            List<PublicKey> trustedKeys) {
+        try {
             XMLSignature signature = new XMLSignature(signatureElement, "");
             X509Certificate signingCert = extractSigningCertificate(signature);
             PublicKey signingKey = signingCert != null
                     ? signingCert.getPublicKey()
                     : extractSigningPublicKey(signature);
             if (signingKey == null) {
-                return false;
+                return Optional.empty();
             }
             if (!matchesTrustedCertificate(signingCert, signingKey, trustedCerts, trustedKeys)) {
-                return false;
+                return Optional.empty();
             }
-            return signature.checkSignatureValue(signingKey);
+            if (!signature.checkSignatureValue(signingKey)) {
+                return Optional.empty();
+            }
+            Element signedElement = resolveSignedElement(document, signature);
+            if (signedElement == null) {
+                return Optional.empty();
+            }
+            Element signedAssertion = resolveAssertionElement(signedElement);
+            if (signedAssertion == null) {
+                return Optional.empty();
+            }
+            if (hasUnsignedSiblingAssertion(document, signedAssertion)) {
+                LOG.debug("Rejecting SAML document with Assertion outside verified Signature coverage");
+                return Optional.empty();
+            }
+            return Optional.of(signedAssertion);
         } catch (Exception e) {
-            LOG.debugv("SAML XML signature verification failed: {0}", e.getMessage());
+            LOG.debugv("SAML signature candidate rejected: {0}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static Element resolveSignedElement(Document document, XMLSignature signature) throws Exception {
+        if (signature.getSignedInfo() == null || signature.getSignedInfo().getLength() == 0) {
+            return null;
+        }
+        Reference reference = signature.getSignedInfo().item(0);
+        String uri = reference.getURI();
+        if (uri == null || uri.isBlank()) {
+            Element signatureElement = signature.getElement();
+            Node parent = signatureElement.getParentNode();
+            return parent instanceof Element element ? element : null;
+        }
+        if (uri.startsWith("#")) {
+            String id = uri.substring(1);
+            if (id.startsWith("xpointer(id('") && id.endsWith("'))")) {
+                id = id.substring("xpointer(id('".length(), id.length() - "'))".length());
+            }
+            Element byId = document.getElementById(id);
+            if (byId != null) {
+                return byId;
+            }
+        }
+        Element signatureElement = signature.getElement();
+        Node parent = signatureElement.getParentNode();
+        return parent instanceof Element element ? element : null;
+    }
+
+    private static Element resolveAssertionElement(Element signedElement) {
+        if (isAssertionElement(signedElement)) {
+            return signedElement;
+        }
+        NodeList nested = signedElement.getElementsByTagNameNS(SAML_ASSERTION_NS, "Assertion");
+        if (nested.getLength() == 0) {
+            nested = signedElement.getElementsByTagName("Assertion");
+        }
+        if (nested.getLength() != 1) {
+            return null;
+        }
+        return (Element) nested.item(0);
+    }
+
+    private static boolean hasUnsignedSiblingAssertion(Document document, Element signedAssertion) {
+        List<Element> assertions = collectAssertionElements(document);
+        for (Element assertion : assertions) {
+            if (assertion == signedAssertion) {
+                continue;
+            }
+            if (!isDescendantOrSelf(signedAssertion, assertion)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<Element> collectAssertionElements(Document document) {
+        List<Element> assertions = new ArrayList<>();
+        NodeList nested = document.getElementsByTagNameNS(SAML_ASSERTION_NS, "Assertion");
+        for (int i = 0; i < nested.getLength(); i++) {
+            assertions.add((Element) nested.item(i));
+        }
+        if (assertions.isEmpty()) {
+            NodeList unprefixed = document.getElementsByTagName("Assertion");
+            for (int i = 0; i < unprefixed.getLength(); i++) {
+                assertions.add((Element) unprefixed.item(i));
+            }
+        }
+        return assertions;
+    }
+
+    private static boolean isAssertionElement(Element element) {
+        if (element == null) {
             return false;
         }
+        String localName = element.getLocalName() != null ? element.getLocalName() : element.getTagName();
+        if (!"Assertion".equals(localName) && !localName.endsWith(":Assertion")) {
+            return false;
+        }
+        String ns = element.getNamespaceURI();
+        return ns == null || ns.isBlank() || SAML_ASSERTION_NS.equals(ns);
+    }
+
+    private static boolean isDescendantOrSelf(Element ancestor, Element node) {
+        Node current = node;
+        while (current != null) {
+            if (current == ancestor) {
+                return true;
+            }
+            current = current.getParentNode();
+        }
+        return false;
     }
 
     private static void ensureInit() {
@@ -114,17 +279,6 @@ public final class SamlAssertionSignatureVerifier {
                 registerIdAttributes(child);
             }
         }
-    }
-
-    private static Element findSignatureElement(Document document) {
-        NodeList signatures = document.getElementsByTagNameNS(XMLDSIG_NS, "Signature");
-        if (signatures.getLength() == 0) {
-            signatures = document.getElementsByTagName("Signature");
-        }
-        if (signatures.getLength() == 0) {
-            return null;
-        }
-        return (Element) signatures.item(0);
     }
 
     private static X509Certificate extractSigningCertificate(XMLSignature signature) {

@@ -7,6 +7,7 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -16,14 +17,16 @@ import java.util.Base64;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.startsWith;
+import static org.hamcrest.Matchers.equalTo;
 
 /**
- * Strict IAM enforcement allows unsigned {@code AssumeRoleWithWebIdentity} when trust matches.
+ * Under IAM enforcement plus strict mode, unsigned {@code AssumeRoleWithWebIdentity}
+ * tokens are denied (federated crypto required). Filter still allows the form post without SigV4.
  */
 @QuarkusTest
 @TestProfile(CtfLabIamEnforcementProfile.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("security-regression")
 class StsWebIdentityStrictUnsignedIntegrationTest {
 
     private static final String ACCOUNT = CtfLabIamEnforcementProfile.ACCOUNT;
@@ -59,7 +62,7 @@ class StsWebIdentityStrictUnsignedIntegrationTest {
     }
 
     @Test
-    void assumeRoleWithWebIdentityWithoutSigV4UnderStrictMode() {
+    void assumeRoleWithWebIdentityWithoutSigV4UnderStrictModeDeniesUnsignedToken() {
         String token = jwt(Map.of("aud", "strict-audience", "sub", "strict-subject"));
 
         given()
@@ -70,9 +73,8 @@ class StsWebIdentityStrictUnsignedIntegrationTest {
                 .formParam("WebIdentityToken", token)
                 .when().post("/")
                 .then()
-                .statusCode(200)
-                .body("AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult.Credentials.AccessKeyId",
-                        startsWith("ASIA"));
+                .statusCode(400)
+                .body("ErrorResponse.Error.Code", equalTo("InvalidIdentityToken"));
     }
 
     private static String jwt(Map<String, Object> claims) {
