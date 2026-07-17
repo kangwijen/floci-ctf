@@ -78,6 +78,7 @@ import io.github.hectorvent.floci.services.ec2.model.VpcEndpoint;
 import jakarta.annotation.PostConstruct;
 import io.github.hectorvent.floci.services.ec2.model.LaunchSpecification;
 import io.github.hectorvent.floci.services.ec2.model.SpotInstanceRequest;
+import io.github.hectorvent.floci.services.iam.ComputePassRoleGate;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
@@ -97,6 +98,7 @@ public class Ec2Service implements ContainerTeardown {
     private final Ec2ImageCatalog imageCatalog;
     private final Ec2InstanceTypeCatalog instanceTypeCatalog;
     private final Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents;
+    private final ComputePassRoleGate passRoleGate;
 
     // region::id → resource (persisted via StorageFactory so state survives a restart in
     // persistent/hybrid/wal modes; see #1297 — CloudFormation persists stacks/exports that
@@ -126,12 +128,23 @@ public class Ec2Service implements ContainerTeardown {
     // subnetId → counter for IP assignment (runtime-only, not persisted)
     private final Map<String, AtomicInteger> subnetIpCounters = new ConcurrentHashMap<>();
 
+    /** Package-private test constructor without PassRole wiring. */
+    Ec2Service(EmulatorConfig config, Ec2ContainerManager containerManager,
+               Ec2PortForwardManager portForwardManager,
+               AmiImageResolver amiImageResolver, Ec2ImageCatalog imageCatalog,
+               Ec2InstanceTypeCatalog instanceTypeCatalog, StorageFactory storageFactory,
+               Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents) {
+        this(config, containerManager, portForwardManager, amiImageResolver, imageCatalog,
+                instanceTypeCatalog, storageFactory, flowLogNetworkActivityEvents, null);
+    }
+
     @Inject
     public Ec2Service(EmulatorConfig config, Ec2ContainerManager containerManager,
                       Ec2PortForwardManager portForwardManager,
                       AmiImageResolver amiImageResolver, Ec2ImageCatalog imageCatalog,
                       Ec2InstanceTypeCatalog instanceTypeCatalog, StorageFactory storageFactory,
-                      Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents) {
+                      Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents,
+                      ComputePassRoleGate passRoleGate) {
         this(config, containerManager, portForwardManager, amiImageResolver, imageCatalog, instanceTypeCatalog,
                 flowLogNetworkActivityEvents,
                 storageFactory.create("ec2", "ec2-vpcs.json", new TypeReference<Map<String, Vpc>>() {}),
@@ -151,7 +164,8 @@ public class Ec2Service implements ContainerTeardown {
                 storageFactory.create("ec2", "ec2-nat-gateways.json", new TypeReference<Map<String, NatGateway>>() {}),
                 storageFactory.create("ec2", "ec2-spot-instance-requests.json", new TypeReference<Map<String, SpotInstanceRequest>>() {}),
                 storageFactory.create("ec2", "ec2-network-acls.json", new TypeReference<Map<String, NetworkAcl>>() {}),
-                storageFactory.create("ec2", "ec2-tags.json", new TypeReference<Map<String, List<Tag>>>() {}));
+                storageFactory.create("ec2", "ec2-tags.json", new TypeReference<Map<String, List<Tag>>>() {}),
+                passRoleGate);
     }
 
     // Package-private for hermetic tests (pass in-memory or temp-dir-backed StorageBackends directly).
@@ -178,6 +192,37 @@ public class Ec2Service implements ContainerTeardown {
                StorageBackend<String, SpotInstanceRequest> spotInstanceRequests,
                StorageBackend<String, NetworkAcl> networkAcls,
                StorageBackend<String, List<Tag>> tags) {
+        this(config, containerManager, portForwardManager, amiImageResolver, imageCatalog, instanceTypeCatalog,
+                flowLogNetworkActivityEvents, vpcs, subnets, securityGroups, securityGroupRules,
+                internetGateways, routeTables, keyPairs, addresses, instances, volumes, registeredImages,
+                snapshots, launchTemplates, vpcEndpoints, natGateways, spotInstanceRequests, networkAcls,
+                tags, null);
+    }
+
+    Ec2Service(EmulatorConfig config, Ec2ContainerManager containerManager,
+               Ec2PortForwardManager portForwardManager,
+               AmiImageResolver amiImageResolver, Ec2ImageCatalog imageCatalog,
+               Ec2InstanceTypeCatalog instanceTypeCatalog,
+               Event<FlowLogNetworkActivityEvent> flowLogNetworkActivityEvents,
+               StorageBackend<String, Vpc> vpcs,
+               StorageBackend<String, Subnet> subnets,
+               StorageBackend<String, SecurityGroup> securityGroups,
+               StorageBackend<String, SecurityGroupRule> securityGroupRules,
+               StorageBackend<String, InternetGateway> internetGateways,
+               StorageBackend<String, RouteTable> routeTables,
+               StorageBackend<String, KeyPair> keyPairs,
+               StorageBackend<String, Address> addresses,
+               StorageBackend<String, Instance> instances,
+               StorageBackend<String, Volume> volumes,
+               StorageBackend<String, Image> registeredImages,
+               StorageBackend<String, Snapshot> snapshots,
+               StorageBackend<String, LaunchTemplate> launchTemplates,
+               StorageBackend<String, VpcEndpoint> vpcEndpoints,
+               StorageBackend<String, NatGateway> natGateways,
+               StorageBackend<String, SpotInstanceRequest> spotInstanceRequests,
+               StorageBackend<String, NetworkAcl> networkAcls,
+               StorageBackend<String, List<Tag>> tags,
+               ComputePassRoleGate passRoleGate) {
         this.accountId = config.defaultAccountId();
         this.config = config;
         this.containerManager = containerManager;
@@ -186,6 +231,7 @@ public class Ec2Service implements ContainerTeardown {
         this.imageCatalog = imageCatalog;
         this.instanceTypeCatalog = instanceTypeCatalog;
         this.flowLogNetworkActivityEvents = flowLogNetworkActivityEvents;
+        this.passRoleGate = passRoleGate;
         this.vpcs = vpcs;
         this.subnets = subnets;
         this.securityGroups = securityGroups;
@@ -620,6 +666,9 @@ public class Ec2Service implements ContainerTeardown {
                                     String userData, String iamInstanceProfileArn) {
         if (imageId == null || imageId.isBlank()) {
             throw new AwsException("MissingParameter", "The request must contain the parameter ImageId", 400);
+        }
+        if (passRoleGate != null) {
+            passRoleGate.authorizeEc2InstanceProfile(iamInstanceProfileArn, region);
         }
         ensureDefaultResources(region);
 

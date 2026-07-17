@@ -110,7 +110,7 @@ class ContainerLauncherTest {
                 runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager,
                 mock(io.github.hectorvent.floci.services.lambda.LambdaLayerService.class),
                 credentialsServer, reachableEndpoint, containerDetector, currentContainerNetworkResolver,
-                awsEnv, null);
+                awsEnv);
 
         lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
         lenient().when(credentialsServer.injectRelativeUri()).thenReturn(false);

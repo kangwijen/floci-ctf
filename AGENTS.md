@@ -292,7 +292,10 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Cognito unknown `AuthFlow` issues tokens | Closed | `CognitoAuthFlowHandler` rejects unrecognized flows (`CognitoAuthFlowHandlerTest`) |
 | S3 CopyObject / UploadPartCopy source IAM | Closed | Second evaluation of `s3:GetObject` (or versioned Get) on the copy source (`IamEnforcementFilterTest`) |
 | Missing `aws:RequestedRegion` / `aws:CurrentTime` / `aws:EpochTime` | Closed | `buildConditionContext` populates these keys (`IamEnforcementFilterTest`, `IamConditionContextResolverTest`) |
-| `iam:PassRole` missing on create paths | Closed | PassRole checked when creating SFN / Scheduler / Pipes / Lambda resources that take a role (`IamEnforcementFilterTest`, related service tests) |
+| `iam:PassRole` missing on create paths (SFN / Scheduler / Pipes) | Closed | PassRole on create for SFN / Scheduler / Pipes (`StepFunctionsService`, `SchedulerService`, `PipesService`) |
+| `authorizePassRole` fail-open when caller unresolved | Closed | Denies missing/unresolved AKID under enforcement (`PassRoleFailsClosedWithoutCallerTest`) |
+| ECS / EC2 PassRole on task and instance profile | Closed | RegisterTaskDefinition / RunTask and RunInstances instance-profile association (`EcsTaskRoleRequiresPassRoleTest`, `Ec2InstanceProfilePassRoleTest`, `ComputePassRoleGateTest`) |
+| Lambda CreateFunction / UpdateFunctionConfiguration PassRole | Closed | Setup-time PassRole on Role (`LambdaCreateFunctionPassRoleTest`). Residual: role trust policy not checked at PassRole (O4) |
 | CloudFormation TemplateURL S3 IAM gap | Closed | Template fetch evaluates caller S3 IAM (`CloudFormationIntegrationTest`) |
 | S3 `BypassGovernanceRetention` without IAM | Closed | Object lock bypass requires `s3:BypassGovernanceRetention` (`S3BypassGovernanceRetentionIamIntegrationTest`) |
 | WebSocket `$connect` without SigV4 / IAM | Closed | `$connect` requires SigV4 and IAM when enforcement is on (`WebSocketConnectIamGateIntegrationTest`) |

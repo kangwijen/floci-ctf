@@ -16,6 +16,7 @@ import io.github.hectorvent.floci.services.lambda.model.LambdaAlias;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.lambda.model.LambdaUrlConfig;
 import io.github.hectorvent.floci.services.lambda.model.ScalingConfig;
+import io.github.hectorvent.floci.services.iam.ComputePassRoleGate;
 import io.github.hectorvent.floci.services.lambda.zip.CodeStore;
 import io.github.hectorvent.floci.services.lambda.zip.ZipExtractor;
 import io.github.hectorvent.floci.services.s3.S3Service;
@@ -66,6 +67,7 @@ public class LambdaService {
     private final KinesisEventSourcePoller kinesisPoller;
     private final DynamoDbStreamsEventSourcePoller dynamodbStreamsPoller;
     private final StorageFactory storageFactory;
+    private final ComputePassRoleGate passRoleGate;
     private Map<String, Integer> versionCounters = new ConcurrentHashMap<>();
     private Map<String, FunctionEventInvokeConfig> eventInvokeConfigs = new ConcurrentHashMap<>();
     /**
@@ -133,6 +135,35 @@ public class LambdaService {
         this.kinesisPoller = null;
         this.dynamodbStreamsPoller = null;
         this.storageFactory = storageFactory;
+        this.passRoleGate = null;
+    }
+
+    /** Package-private constructor for PassRole unit tests. */
+    LambdaService(LambdaFunctionStore functionStore,
+                  WarmPool warmPool,
+                  CodeStore codeStore,
+                  ZipExtractor zipExtractor,
+                  EmulatorConfig config,
+                  RegionResolver regionResolver,
+                  StorageFactory storageFactory,
+                  ComputePassRoleGate passRoleGate) {
+        this.functionStore = functionStore;
+        this.executorService = null;
+        this.concurrencyLimiter = new LambdaConcurrencyLimiter();
+        this.warmPool = warmPool;
+        this.codeStore = codeStore;
+        this.zipExtractor = zipExtractor;
+        this.config = config;
+        this.regionResolver = regionResolver;
+        this.esmStore = null;
+        this.aliasStore = null;
+        this.s3Service = null;
+        this.sqsService = null;
+        this.poller = null;
+        this.kinesisPoller = null;
+        this.dynamodbStreamsPoller = null;
+        this.storageFactory = storageFactory;
+        this.passRoleGate = passRoleGate;
     }
 
     @Inject
@@ -151,7 +182,8 @@ public class LambdaService {
                           SqsEventSourcePoller poller,
                           KinesisEventSourcePoller kinesisPoller,
                           DynamoDbStreamsEventSourcePoller dynamodbStreamsPoller,
-                          StorageFactory storageFactory) {
+                          StorageFactory storageFactory,
+                          ComputePassRoleGate passRoleGate) {
         this.functionStore = functionStore;
         this.executorService = executorService;
         this.concurrencyLimiter = concurrencyLimiter;
@@ -168,6 +200,7 @@ public class LambdaService {
         this.kinesisPoller = kinesisPoller;
         this.dynamodbStreamsPoller = dynamodbStreamsPoller;
         this.storageFactory = storageFactory;
+        this.passRoleGate = passRoleGate;
     }
 
     /** Package-private accessor for tests that want to assert limiter state directly. */
@@ -255,6 +288,10 @@ public class LambdaService {
         if (functionStore.get(region, functionName).isPresent()) {
             throw new AwsException("ResourceConflictException",
                     "Function already exist: " + functionName, 409);
+        }
+
+        if (passRoleGate != null) {
+            passRoleGate.authorizeLambdaExecutionRole(role, region);
         }
 
         LambdaFunction fn = new LambdaFunction();
@@ -465,6 +502,9 @@ public class LambdaService {
             String role = (String) request.get("Role");
             if (role == null || role.isBlank()) {
                 throw new AwsException("InvalidParameterValueException", "Role is required", 400);
+            }
+            if (passRoleGate != null) {
+                passRoleGate.authorizeLambdaExecutionRole(role, region);
             }
             fn.setRole(role);
         }

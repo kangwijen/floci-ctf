@@ -28,6 +28,7 @@ import io.github.hectorvent.floci.services.ecs.model.ServiceRevision;
 import io.github.hectorvent.floci.services.ecs.model.TaskDefinition;
 import io.github.hectorvent.floci.services.ecs.model.TaskSet;
 import io.github.hectorvent.floci.services.ecs.model.TaskStatus;
+import io.github.hectorvent.floci.services.iam.ComputePassRoleGate;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -59,6 +60,7 @@ public class EcsService implements ContainerTeardown {
     private final EcsContainerManager containerManager;
     private final EcsLoadBalancerRegistrar lbRegistrar;
     private final StorageFactory storageFactory;
+    private final ComputePassRoleGate passRoleGate;
     private final boolean dockerMode;
     private final String baseUrl;
     private final ScheduledExecutorService reconciler = Executors.newSingleThreadScheduledExecutor(
@@ -94,13 +96,21 @@ public class EcsService implements ContainerTeardown {
     @Inject
     public EcsService(RegionResolver regionResolver, EcsContainerManager containerManager,
                       EmulatorConfig config, EcsLoadBalancerRegistrar lbRegistrar,
-                      StorageFactory storageFactory) {
+                      StorageFactory storageFactory, ComputePassRoleGate passRoleGate) {
         this.regionResolver = regionResolver;
         this.containerManager = containerManager;
         this.dockerMode = !config.services().ecs().mock();
         this.baseUrl = config.effectiveBaseUrl();
         this.lbRegistrar = lbRegistrar;
         this.storageFactory = storageFactory;
+        this.passRoleGate = passRoleGate;
+    }
+
+    /** Package-private constructor for hermetic unit tests without PassRole wiring. */
+    EcsService(RegionResolver regionResolver, EcsContainerManager containerManager,
+               EmulatorConfig config, EcsLoadBalancerRegistrar lbRegistrar,
+               StorageFactory storageFactory) {
+        this(regionResolver, containerManager, config, lbRegistrar, storageFactory, null);
     }
 
     @PostConstruct
@@ -312,6 +322,9 @@ public class EcsService implements ContainerTeardown {
                 throw new AwsException("ClientException", "No Fargate configuration exists for given values.", 400);
             }
         }
+        if (passRoleGate != null) {
+            passRoleGate.authorizeEcsTaskRoles(taskRoleArn, executionRoleArn, region);
+        }
         int revision = latestRevisions.merge(family, 1, Integer::sum);
 
         TaskDefinition td = new TaskDefinition();
@@ -479,6 +492,9 @@ public class EcsService implements ContainerTeardown {
                     taskDef.getTaskDefinitionArn());
             throw new AwsException("ClientException",
                     "Task definition " + taskDef.getTaskDefinitionArn() + " has no container definitions.", 400);
+        }
+        if (passRoleGate != null) {
+            passRoleGate.authorizeEcsTaskRoles(taskDef.getTaskRoleArn(), taskDef.getExecutionRoleArn(), region);
         }
         List<EcsTask> launched = new ArrayList<>();
         for (int i = 0; i < count; i++) {
