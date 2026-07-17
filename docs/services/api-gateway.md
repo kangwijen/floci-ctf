@@ -60,7 +60,7 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`:
 
 Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`, `ApiGatewaySqsIntegrationTest`.
 
-**Unsigned invoke under strict IAM:** On the execute plane (`/execute-api/...` or `/restapis/{id}/{stage}/_user_request_/...`), `AnonymousAccessGate` permits unsigned requests only when the matched REST method has `authorizationType=NONE`. Methods configured with `authorizationType=AWS_IAM` (or any other non-`NONE` value) require SigV4 like any other data-plane path. Positive regression: `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`. Negative regression: `AnonymousAccessGateBypassIntegrationTest`. See [Anonymous-access exceptions](iam.md#anonymous-access-exceptions) in the IAM service doc.
+**Unsigned invoke under strict IAM:** On the execute plane (`/execute-api/...` or `/restapis/{id}/{stage}/_user_request_/...`), `AnonymousAccessGate` permits unsigned requests only when the matched REST method has explicit `authorizationType=NONE`. A null or blank auth type is **not** treated as `NONE` under strict enforcement (`ExecuteAuthzGate`). Methods configured with `authorizationType=AWS_IAM` (or any other non-`NONE` value) require SigV4 like any other data-plane path. Positive regression: `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`. Negative regression: `AnonymousAccessGateBypassIntegrationTest`, `ExecuteAuthzGateTest`. See [Anonymous-access exceptions](iam.md#anonymous-access-exceptions) in the IAM service doc.
 
 ### HTTP API JWT authorizers
 
@@ -70,13 +70,28 @@ JWKS and OpenID discovery HTTP fetches go through `OutboundUrlGuard` when `FLOCI
 
 `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` defaults to `true`. If signature verification is required and no usable key is available, the authorizer denies the request.
 
+### Execute-plane authorizer gate (`ExecuteAuthzGate`)
+
+REST, HTTP API REQUEST, and WebSocket `$connect` CUSTOM authorizers share `ExecuteAuthzGate`:
+
+| Behavior | Result |
+|----------|--------|
+| Null / blank `authorizationType` under strict | Deny (not treated as `NONE`) |
+| `COGNITO_USER_POOLS` / unknown auth type | 403 (not implemented; no silent allow) |
+| `AWS_IAM` | Proceeds to `IamEnforcementFilter` / SigV4 path (not anonymous) |
+| CUSTOM missing `authorizerId` | 403 |
+| CUSTOM unresolvable Lambda URI or non-`REQUEST` authorizer (HTTP/WS) | 500 |
+| Lambda authorizer policy `Statement[]` | All statements evaluated; explicit Deny wins |
+
+Regression: `ExecuteAuthzGateTest`, `ApiGatewayExecuteControllerTest` (policy cases), HTTP/WS authorizer integration tests.
+
 ### REST CUSTOM authorizers
 
-When a REST method uses a CUSTOM Lambda authorizer, Floci evaluates **all** Statements in the authorizer policy document (not only the first Allow). Explicit Deny wins.
+When a REST method uses a CUSTOM Lambda authorizer, Floci evaluates **all** Statements in the authorizer policy document via `ExecuteAuthzGate` (not only the first Allow). Explicit Deny wins. Misconfigured CUSTOM (missing authorizer id or Lambda URI) fails closed.
 
 ### WebSocket APIs (CTF)
 
-Under IAM enforcement and SigV4 validation, the `$connect` route requires a valid SigV4 signature and IAM allow for `execute-api:Invoke` (AWS-shaped connect-time auth). Later routes use the established connection. WebSocket `HTTP_PROXY` integrations run `OutboundUrlGuard` on the URL **after** stage-variable substitution. Regression: `WebSocketConnectIamGateIntegrationTest`, `WebSocketIntegrationInvokerSubstitutionTest`.
+Under IAM enforcement and SigV4 validation, the `$connect` route requires a valid SigV4 signature and IAM allow for `execute-api:Invoke` (AWS-shaped connect-time auth). Later routes use the established connection. WebSocket `HTTP_PROXY` integrations run `OutboundUrlGuard` on the URL **after** stage-variable substitution. CUSTOM on `$connect` uses the same Deny-wins multi-Statement evaluator; non-`REQUEST` authorizer types fail closed. Regression: `WebSocketConnectIamGateIntegrationTest`, `WebSocketIntegrationInvokerSubstitutionTest`, `ExecuteAuthzGateTest`.
 
 ### Examples
 

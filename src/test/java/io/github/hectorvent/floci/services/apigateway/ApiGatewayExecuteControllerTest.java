@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.apigateway;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -97,6 +98,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void singleAllowStatementAllows() {
         JsonNode stmts = statements("""
                 [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "%s" }]
@@ -105,6 +107,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void singleDenyStatementDenies() {
         JsonNode stmts = statements("""
                 [{ "Action": "execute-api:Invoke", "Effect": "Deny", "Resource": "%s" }]
@@ -113,6 +116,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void explicitDenyWinsOverAllowRegardlessOfOrder() {
         JsonNode allowThenDeny = statements("""
                 [
@@ -132,6 +136,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void allowStatementMatchesAfterNonMatchingResourceStatement() {
         JsonNode stmts = statements("""
                 [
@@ -143,6 +148,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void noMatchingStatementDeniesByDefault() {
         JsonNode stmts = statements("""
                 [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "arn:aws:execute-api:us-east-1:000000000000:other-api/*" }]
@@ -151,11 +157,13 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void emptyStatementListDeniesByDefault() {
         assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(statements("[]"), METHOD_ARN));
     }
 
     @Test
+    @Tag("security-regression")
     void wildcardResourceAllowsMatchingMethodArn() {
         JsonNode stmts = statements("""
                 [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "arn:aws:execute-api:us-east-1:000000000000:api1/*" }]
@@ -164,6 +172,7 @@ class ApiGatewayExecuteControllerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void resourceArrayIsEvaluatedForAMatch() {
         JsonNode stmts = statements("""
                 [{
