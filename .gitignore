@@ -47,3 +47,7 @@ tools/fuzz/.jqwik-database
 # Python tooling caches
 __pycache__/
 *.pyc
+
+.worktrees/
+.superpowers/
+
