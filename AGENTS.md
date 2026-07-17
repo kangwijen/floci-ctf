@@ -214,7 +214,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Blank Lambda `Role` / CodeBuild `serviceRole` injects operator `AWS_*` under enforcement | Closed | `LambdaBlankRoleOperatorCredentialIntegrationTest`, `CodeBuildBlankServiceRoleIntegrationTest`, `ContainerLauncherTest` |
 | `PolicyPrincipalMatcher` service principal substring (non-SLR assumed-role session) | Closed | `PolicyPrincipalMatcherTest` |
 | Duck / Athena / S3 Select uses operator S3 keys under IAM enforcement | Closed | `AthenaDuckOperatorS3BypassIntegrationTest` |
-| In-process IAM gaps (IoT rules, Secrets rotation, CodePipeline, CFN `Custom::`, SFN `ecs:runTask` + ItemReader S3) | Closed | `InProcessTargetAuthorizerTest` |
+| In-process IAM gaps (IoT rules, Secrets rotation, CodePipeline Lambda invoke, CFN `Custom::`, SFN `ecs:runTask` + ItemReader S3) | Closed (Lambda path) | `InProcessTargetAuthorizerTest` |
+| CodePipeline S3 / CodeBuild / CodeDeploy / nested pipeline role IAM | Residual | Providers now call `InProcessTargetAuthorizer` with the pipeline role (`CodePipelineCodeBuildDeniedTest`, `InProcessTargetAuthorizerTest`). Residual: custom/third-party job workers and non-AWS owners remain ungated |
 | ASIA session account not used for IAM resource ARNs | Closed | `IamEnforcementFilterTest` |
 | S3 route-scope overclaim exclusions incomplete | Closed | `IamActionRegistryTest` (exclude `/lambda-url`, not `/lambda` prefix, so buckets like `lambda-*` stay S3-scoped) |
 | EventBridge `StartReplay` allows cross-bus destination | Closed | `EventBridgeReplayIntegrationTest` |
@@ -280,7 +281,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | HTTP API JWT JWKS / OIDC fetch SSRF | Closed | `JwtAuthorizerVerifier` calls `OutboundUrlGuard` before JWKS and discovery GETs (`JwtAuthorizerVerifierTest`) |
 | IAM `ForAllValues:` / `ForAnyValue:` set operators | Closed | `IamPolicyEvaluator` evaluates multi-value condition operators (`IamPolicyEvaluatorTest`) |
 | TagResources non-ARN entries treated as `*` | Closed | Tagging path skips non-ARN `ResourceARNList` entries instead of falling back to `*` (`TaggingIamScopedIntegrationTest`, `IamEnforcementFilterTest`) |
-| Scheduler universal target ARN under-scope | Closed | `ScheduleInvoker` authorizes the concrete target ARN (`ScheduleInvokerTest`) |
+| Scheduler universal target ARN under-scope | Closed | `ScheduleInvoker` authorizes the concrete target ARN; missing TopicArn/QueueUrl is deny with no pseudo-ARN fallback (`ScheduleInvokerTest`) |
+| Lambda Function URL IAM resource `function:*` | Closed | `/lambda-url/{urlId}` resolves via store (`LambdaUrlArnNotWildcardTest`); `AuthType=AWS_IAM` requires Authorization even when non-strict (`LambdaUrlAwsIamAuthTypeTest`) |
 | REST CUSTOM authorizer Statement under-eval | Closed | `ApiGatewayExecuteController` evaluates all policy Statements (`IamEnforcementFilterTest` / APIGW execute path) |
 | Cognito userInfo ignores revoked tokens | Closed | `CognitoUserInfoController` rejects revoked access tokens (`CognitoUserInfoIntegrationTest`) |
 | Inactive IAM access keys still authenticate | Closed | `IamService.findSecretKey` ignores inactive keys (`IamServiceTest`) |
