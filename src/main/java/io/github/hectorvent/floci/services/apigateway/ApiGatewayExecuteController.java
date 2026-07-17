@@ -21,6 +21,7 @@ import io.github.hectorvent.floci.services.apigatewayv2.websocket.ConnectionInfo
 import io.github.hectorvent.floci.services.apigatewayv2.websocket.WebSocketConnectionManager;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.Listener;
+import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.elbv2.model.LoadBalancer;
 import io.github.hectorvent.floci.services.lambda.LambdaArnUtils;
@@ -387,8 +388,9 @@ public class ApiGatewayExecuteController {
                 }
 
                 JsonNode policy = objectMapper.readTree(result.getPayload());
-                String effect = policy.path("policyDocument").path("Statement").get(0).path("Effect").asText("Deny");
-                if ("Deny".equalsIgnoreCase(effect)) {
+                String methodArn = buildMethodArn(region, apiId, stageName, httpMethod, requestPath);
+                boolean allowed = evaluateCustomAuthorizerPolicy(policy.path("policyDocument").path("Statement"), methodArn);
+                if (!allowed) {
                     return new AuthorizerResult(
                             Response.status(403).entity(jsonMessage("User is not authorized to access this resource")).build(),
                             null,
@@ -594,6 +596,53 @@ public class ApiGatewayExecuteController {
         String normalizedPath = requestPath == null ? "" : requestPath.replaceFirst("^/", "");
         String arnRegion = region == null ? regionResolver.getDefaultRegion() : region;
         return AwsArnUtils.Arn.of("execute-api", arnRegion, regionResolver.getAccountId(), apiId + "/" + stageName + "/" + httpMethod + "/" + normalizedPath).toString();
+    }
+
+    /**
+     * Evaluates a CUSTOM Lambda authorizer policy document against the requested method ARN.
+     * All Statement entries are checked rather than only the first one. An explicit Deny on
+     * any matching statement wins over an Allow on another matching statement, matching AWS
+     * IAM evaluation semantics for API Gateway Lambda authorizers. Absent a matching Allow,
+     * the request is denied by default.
+     */
+    static boolean evaluateCustomAuthorizerPolicy(JsonNode statements, String methodArn) {
+        if (statements == null || !statements.isArray() || statements.isEmpty()) {
+            return false;
+        }
+        boolean allowed = false;
+        for (JsonNode statement : statements) {
+            if (!authorizerStatementApplies(statement, methodArn)) {
+                continue;
+            }
+            String effect = statement.path("Effect").asText("Deny");
+            if ("Deny".equalsIgnoreCase(effect)) {
+                return false;
+            }
+            if ("Allow".equalsIgnoreCase(effect)) {
+                allowed = true;
+            }
+        }
+        return allowed;
+    }
+
+    private static boolean authorizerStatementApplies(JsonNode statement, String methodArn) {
+        return authorizerFieldMatches(statement.path("Action"), "execute-api:Invoke")
+                && authorizerFieldMatches(statement.path("Resource"), methodArn);
+    }
+
+    private static boolean authorizerFieldMatches(JsonNode field, String value) {
+        if (field == null || field.isMissingNode() || field.isNull()) {
+            return true;
+        }
+        if (field.isArray()) {
+            for (JsonNode entry : field) {
+                if (entry.isTextual() && IamPolicyEvaluator.globMatches(entry.asText(), value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return field.isTextual() && IamPolicyEvaluator.globMatches(field.asText(), value);
     }
 
     /**

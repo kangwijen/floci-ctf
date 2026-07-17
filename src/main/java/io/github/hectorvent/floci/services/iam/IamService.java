@@ -1095,7 +1095,9 @@ public class IamService implements SessionAccountLookup {
 
     public Optional<String> findSecretKey(String accessKeyId) {
         maybePurgeExpiredSessions();
-        Optional<String> userSecret = accessKeys.get(accessKeyId).map(AccessKey::getSecretAccessKey);
+        Optional<String> userSecret = accessKeys.get(accessKeyId)
+                .filter(key -> "Active".equals(key.getStatus()))
+                .map(AccessKey::getSecretAccessKey);
         if (userSecret.isPresent()) {
             return userSecret;
         }

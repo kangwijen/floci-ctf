@@ -93,6 +93,30 @@ class TaggingIamScopedIntegrationTest {
                 .body("__type", equalTo("AccessDeniedException"));
     }
 
+    /**
+     * Multi-entry {@code ResourceARNList} with no ARN-prefixed entries must still be evaluated
+     * against IAM (as the {@code *} resource) rather than skipped entirely. A caller with no
+     * {@code tagging:TagResources} Allow policy must be denied, not silently let through.
+     */
+    @Test
+    void tagResourcesWithNonArnListDeniedNotBypassed() {
+        given()
+                .header("Authorization", playerTaggingAuth())
+                .header("X-Amz-Target", TARGET_PREFIX + "TagResources")
+                .contentType(CT)
+                .body("""
+                        {
+                          "ResourceARNList": ["not-an-arn-1", "not-an-arn-2"],
+                          "Tags": {"Environment": "bypass-attempt"}
+                        }
+                        """)
+        .when()
+                .post("/")
+        .then()
+                .statusCode(403)
+                .body("__type", equalTo("AccessDeniedException"));
+    }
+
     private String playerTaggingAuth() {
         return CtfLabIamTestSupport.scopedAuth(playerAkid, "tagging");
     }

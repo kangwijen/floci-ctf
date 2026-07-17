@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.iam;
 
 import io.github.hectorvent.floci.services.ecr.EcrService;
+import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.s3.S3Service;
@@ -28,6 +29,7 @@ public class ResourcePolicyResolver {
     private final KmsService kmsService;
     private final SecretsManagerService secretsManagerService;
     private final EcrService ecrService;
+    private final EventBridgeService eventBridgeService;
 
     @Inject
     public ResourcePolicyResolver(S3Service s3Service,
@@ -36,7 +38,8 @@ public class ResourcePolicyResolver {
                                   SnsService snsService,
                                   KmsService kmsService,
                                   SecretsManagerService secretsManagerService,
-                                  EcrService ecrService) {
+                                  EcrService ecrService,
+                                  EventBridgeService eventBridgeService) {
         this.s3Service = s3Service;
         this.lambdaService = lambdaService;
         this.sqsService = sqsService;
@@ -44,6 +47,7 @@ public class ResourcePolicyResolver {
         this.kmsService = kmsService;
         this.secretsManagerService = secretsManagerService;
         this.ecrService = ecrService;
+        this.eventBridgeService = eventBridgeService;
     }
 
     /**
@@ -70,6 +74,9 @@ public class ResourcePolicyResolver {
             case "secretsmanager" -> secretsManagerService.findSecretResourcePolicyDocument(resourceArn, region)
                     .ifPresent(docs::add);
             case "ecr" -> ecrService.findRepositoryPolicyByArn(resourceArn).ifPresent(docs::add);
+            case "events" -> eventBusFromArn(resourceArn)
+                    .flatMap(busName -> eventBridgeService.findBusPolicyDocument(busName, region))
+                    .ifPresent(docs::add);
             default -> { }
         }
         return List.copyOf(docs);
@@ -86,6 +93,18 @@ public class ResourcePolicyResolver {
         int slash = rest.indexOf('/');
         String bucket = slash > 0 ? rest.substring(0, slash) : rest;
         return Optional.of(bucket);
+    }
+
+    private static Optional<String> eventBusFromArn(String arn) {
+        int idx = arn.indexOf(":event-bus/");
+        if (idx < 0) {
+            return Optional.empty();
+        }
+        String name = arn.substring(idx + ":event-bus/".length());
+        if (name.isEmpty() || "*".equals(name)) {
+            return Optional.empty();
+        }
+        return Optional.of(name);
     }
 
     private static Optional<String> lambdaFunctionFromArn(String arn, String region) {

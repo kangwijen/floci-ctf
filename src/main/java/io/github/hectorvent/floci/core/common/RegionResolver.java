@@ -89,6 +89,22 @@ public class RegionResolver {
         return defaultAccountId;
     }
 
+    /**
+     * Returns the SigV4 access key ID that signed the current request when called from a request
+     * context (including a synthetic scope activated by a background worker), or {@code null}
+     * when there is no active request scope or the request was unauthenticated.
+     */
+    public String getCallerAccessKeyId() {
+        if (requestContextInstance != null) {
+            try {
+                return requestContextInstance.get().getAccessKeyId();
+            } catch (ContextNotActiveException ignored) {
+                // outside request scope
+            }
+        }
+        return null;
+    }
+
     public String buildArn(String service, String region, String resource) {
         return AwsArnUtils.Arn.of(service, region, getAccountId(), resource).toString();
     }

@@ -12,6 +12,7 @@ import io.github.hectorvent.floci.core.common.XmlBuilder;
 import io.github.hectorvent.floci.core.common.XmlParser;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
 import io.github.hectorvent.floci.services.sns.SnsQueryHandler;
 import io.github.hectorvent.floci.services.s3.model.Bucket;
@@ -100,6 +101,7 @@ public class S3Controller {
     private final SnsQueryHandler snsQueryHandler;
     private final io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest;
     private final IamService iamService;
+    private final InProcessIamAuthorizer iamAuthorizer;
     private final EmulatorConfig emulatorConfig;
     private final AccountResolver accountResolver;
     private final io.github.hectorvent.floci.services.floci.ui.UiPages uiPages;
@@ -112,6 +114,7 @@ public class S3Controller {
                         SnsQueryHandler snsQueryHandler,
                         io.quarkus.vertx.http.runtime.CurrentVertxRequest currentVertxRequest,
                         IamService iamService,
+                        InProcessIamAuthorizer iamAuthorizer,
                         EmulatorConfig emulatorConfig,
                         AccountResolver accountResolver,
                         io.github.hectorvent.floci.services.floci.ui.UiPages uiPages,
@@ -123,6 +126,7 @@ public class S3Controller {
         this.snsQueryHandler = snsQueryHandler;
         this.currentVertxRequest = currentVertxRequest;
         this.iamService = iamService;
+        this.iamAuthorizer = iamAuthorizer;
         this.emulatorConfig = emulatorConfig;
         this.accountResolver = accountResolver;
         this.uiPages = uiPages;
@@ -1062,6 +1066,7 @@ public class S3Controller {
             }
             boolean bypass = "true".equalsIgnoreCase(
                     httpHeaders.getHeaderString("x-amz-bypass-governance-retention"));
+            authorizeBypassGovernanceRetentionIfRequested(bucket, key, bypass, httpHeaders);
             S3Object result = s3Service.deleteObject(bucket, key, versionId, bypass);
             var resp = Response.noContent();
             if (result != null) {
@@ -1731,8 +1736,27 @@ public class S3Controller {
         Instant retainUntil = dateStr != null ? Instant.parse(dateStr) : null;
         boolean bypass = "true".equalsIgnoreCase(
                 httpHeaders.getHeaderString("x-amz-bypass-governance-retention"));
+        authorizeBypassGovernanceRetentionIfRequested(bucket, key, bypass, httpHeaders);
         s3Service.putObjectRetention(bucket, key, versionId, mode, retainUntil, bypass);
         return Response.ok().build();
+    }
+
+    /**
+     * AWS conditionally requires {@code s3:BypassGovernanceRetention} whenever a caller sends
+     * {@code x-amz-bypass-governance-retention:true}, independent of whether the target object
+     * currently has an active GOVERNANCE-mode lock. Without this check, any caller with plain
+     * {@code s3:DeleteObject} or {@code s3:PutObjectRetention} could always override retention by
+     * setting the header, defeating the point of governance-mode Object Lock as a control that
+     * requires a separate, more privileged grant.
+     */
+    private void authorizeBypassGovernanceRetentionIfRequested(String bucket, String key, boolean bypass,
+                                                                HttpHeaders httpHeaders) {
+        if (!bypass) {
+            return;
+        }
+        String region = regionResolver.resolveRegion(httpHeaders);
+        String resourceArn = AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+        iamAuthorizer.authorizeCallerAction("s3:BypassGovernanceRetention", resourceArn, region, "s3");
     }
 
     private Response handleGetObjectRetention(String bucket, String key, String versionId) {

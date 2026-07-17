@@ -341,6 +341,43 @@ class PipesTargetInvokerTest {
     }
 
     @Test
+    void applyEnrichment_authorizesEnrichmentTargetBeforeInvoking() {
+        String region = "us-east-1";
+        String enrichmentArn = "arn:aws:lambda:" + region + ":000000000000:function:enrich-fn";
+        Pipe pipe = enrichmentPipe(region, enrichmentArn);
+        pipe.setRoleArn("arn:aws:iam::000000000000:role/pipe-exec-role");
+        when(lambdaService.invoke(eq(region), eq("enrich-fn"), any(byte[].class), eq(InvocationType.RequestResponse)))
+                .thenReturn(new io.github.hectorvent.floci.services.lambda.model.InvokeResult(
+                        200, null, "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8), null, "req"));
+
+        invoker.applyEnrichment(pipe, "[]", region);
+
+        verify(targetAuthorizer).authorizePipeTarget(
+                "arn:aws:iam::000000000000:role/pipe-exec-role", enrichmentArn, region);
+    }
+
+    @Test
+    void applyEnrichment_deniedEnrichmentTargetSkipsLambdaInvoke() {
+        String region = "us-east-1";
+        String enrichmentArn = "arn:aws:lambda:" + region + ":000000000000:function:enrich-fn";
+        Pipe pipe = enrichmentPipe(region, enrichmentArn);
+        pipe.setRoleArn("arn:aws:iam::000000000000:role/pipe-exec-role");
+        doThrow(new RuntimeException("not authorized")).when(targetAuthorizer)
+                .authorizePipeTarget(anyString(), eq(enrichmentArn), eq(region));
+
+        assertThrows(RuntimeException.class, () -> invoker.applyEnrichment(pipe, "[]", region));
+
+        verifyNoInteractions(lambdaService);
+    }
+
+    @Test
+    void applyEnrichment_noEnrichmentSkipsAuthorization() {
+        Pipe pipe = createPipe("arn:aws:states:us-east-1:000000000000:stateMachine:target", null);
+        invoker.applyEnrichment(pipe, "[{\"x\":1}]", "us-east-1");
+        verifyNoInteractions(targetAuthorizer);
+    }
+
+    @Test
     void applyEnrichment_lambdaFunctionErrorThrows() {
         String region = "us-east-1";
         Pipe pipe = enrichmentPipe(region, "arn:aws:lambda:" + region + ":000000000000:function:enrich-fn");

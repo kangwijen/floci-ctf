@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -576,6 +577,25 @@ public class EventBridgeService {
 
         busStore.put(key, bus);
         LOG.infov("Put permission on bus {0}, statement {1}", effectiveBus, statementId);
+    }
+
+    /**
+     * Bus resource policy for IAM enforcement (statements added via {@link #putPermission}).
+     * Returns empty when the bus does not exist or carries no policy.
+     */
+    public Optional<String> findBusPolicyDocument(String busNameOrArn, String region) {
+        String effectiveName;
+        try {
+            effectiveName = resolvedBusName(busNameOrArn);
+        } catch (AwsException e) {
+            return Optional.empty();
+        }
+        Optional<EventBus> bus = busStore.get(busKey(region, effectiveName));
+        if (bus.isEmpty()) {
+            return Optional.empty();
+        }
+        String policy = bus.get().getPolicy();
+        return (policy == null || policy.isBlank()) ? Optional.empty() : Optional.of(policy);
     }
 
     public void removePermission(String busName, String statementId, boolean removeAll, String region) {

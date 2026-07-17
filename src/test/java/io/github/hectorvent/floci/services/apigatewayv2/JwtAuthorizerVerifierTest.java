@@ -2,6 +2,7 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import org.junit.jupiter.api.Test;
 
 import javax.crypto.Mac;
@@ -9,6 +10,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,12 +45,27 @@ class JwtAuthorizerVerifierTest {
         assertFalse(verifier.verify(token, null));
     }
 
+    @Test
+    void rejectsRs256TokenWhenIssuerIsBlockedOutboundUrl() throws Exception {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
+        when(config.ctf()).thenReturn(ctf);
+        OutboundUrlGuard blockingGuard = new OutboundUrlGuard(true, List.of(), false);
+        JwtAuthorizerVerifier verifier = new JwtAuthorizerVerifier(
+                config, new ObjectMapper(), HttpClient.newHttpClient(), blockingGuard);
+        String signingInput = base64Url("{\"alg\":\"RS256\",\"kid\":\"test-kid\"}") + "." + base64Url("{\"sub\":\"user\"}");
+        String token = signingInput + "." + base64Url("ignored-signature");
+
+        assertFalse(verifier.verify(token, "http://169.254.169.254:80"));
+    }
+
     private static JwtAuthorizerVerifier verifier() {
         EmulatorConfig config = mock(EmulatorConfig.class);
         EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
         when(config.ctf()).thenReturn(ctf);
         when(ctf.apiGatewayJwtHmacSecret()).thenReturn(Optional.of(SECRET));
-        return new JwtAuthorizerVerifier(config, new ObjectMapper(), HttpClient.newHttpClient());
+        OutboundUrlGuard permissiveGuard = new OutboundUrlGuard(false, List.of(), false);
+        return new JwtAuthorizerVerifier(config, new ObjectMapper(), HttpClient.newHttpClient(), permissiveGuard);
     }
 
     private static String hs256Jwt(String payload) throws Exception {

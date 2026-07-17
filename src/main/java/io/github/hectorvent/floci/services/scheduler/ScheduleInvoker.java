@@ -45,6 +45,7 @@ public class ScheduleInvoker {
     private final EcsService ecsService;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
+    private final String defaultAccountId;
     private final InProcessTargetAuthorizer targetAuthorizer;
 
     @Inject
@@ -63,6 +64,7 @@ public class ScheduleInvoker {
         this.ecsService = ecsService;
         this.objectMapper = objectMapper;
         this.baseUrl = config.baseUrl();
+        this.defaultAccountId = config.defaultAccountId();
         this.targetAuthorizer = targetAuthorizer;
     }
 
@@ -70,7 +72,6 @@ public class ScheduleInvoker {
         if (target == null || target.getArn() == null) {
             return;
         }
-        targetAuthorizer.authorizeSchedulerTarget(target.getRoleArn(), target.getArn(), region);
         String arn = target.getArn();
         String payload = target.getInput() != null ? target.getInput() : "{}";
 
@@ -80,10 +81,18 @@ public class ScheduleInvoker {
         // mis-match (e.g. "aws-sdk:sns:publish" contains ":sns:").
         int sdkIdx = arn.indexOf(":aws-sdk:");
         if (sdkIdx >= 0) {
-            invokeUniversalTarget(arn.substring(sdkIdx + ":aws-sdk:".length()), payload, region);
+            String serviceAction = arn.substring(sdkIdx + ":aws-sdk:".length());
+            // Authorize against the real delivery resource extracted from Input, not the
+            // scheduler pseudo-ARN — otherwise a Deny scoped to a specific SNS topic or SQS
+            // queue never matches and is silently bypassed.
+            String universalResourceArn = universalTargetResourceArn(serviceAction, payload, region);
+            targetAuthorizer.authorizeSchedulerTarget(
+                    target.getRoleArn(), universalResourceArn != null ? universalResourceArn : arn, region);
+            invokeUniversalTarget(serviceAction, payload, region);
             return;
         }
 
+        targetAuthorizer.authorizeSchedulerTarget(target.getRoleArn(), arn, region);
         String targetRegion = extractRegion(arn, region);
         if (arn.contains(":sqs:")) {
             String queueUrl = AwsArnUtils.arnToQueueUrl(arn, baseUrl);
@@ -151,6 +160,33 @@ public class ScheduleInvoker {
                 new io.github.hectorvent.floci.services.ecs.model.NetworkConfiguration();
         target.setAwsvpcConfiguration(targetVpc);
         return target;
+    }
+
+    /**
+     * Extracts the real delivery resource ARN from a universal target's {@code Input} payload
+     * so IAM can be evaluated against the actual resource instead of the scheduler pseudo-ARN
+     * ({@code arn:aws:scheduler:::aws-sdk:<service>:<action>}). Returns {@code null} when the
+     * action is unsupported or the resource identifier is missing/unparseable, in which case
+     * the caller falls back to the pseudo-ARN.
+     */
+    private String universalTargetResourceArn(String serviceAction, String input, String region) {
+        JsonNode params;
+        try {
+            params = objectMapper.readTree(input == null || input.isBlank() ? "{}" : input);
+        } catch (Exception e) {
+            return null;
+        }
+        return switch (serviceAction) {
+            case "sns:publish" -> {
+                String topicArn = text(params, "TopicArn");
+                yield topicArn != null ? topicArn : text(params, "TargetArn");
+            }
+            case "sqs:sendMessage" -> {
+                String queueUrl = text(params, "QueueUrl");
+                yield queueUrl != null ? AwsArnUtils.queueUrlToArn(queueUrl, region, defaultAccountId) : null;
+            }
+            default -> null;
+        };
     }
 
     /**

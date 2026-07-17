@@ -97,6 +97,7 @@ public class PipesTargetInvoker {
         if (enrichment == null || enrichment.isBlank()) {
             return payload;
         }
+        targetAuthorizer.authorizePipeTarget(pipe.getRoleArn(), enrichment, region);
         JsonNode ep = pipe.getEnrichmentParameters();
         if (ep != null && ep.path("InputTemplate").isTextual()) {
             payload = applyInputTemplate(ep.get("InputTemplate").asText(), payload);

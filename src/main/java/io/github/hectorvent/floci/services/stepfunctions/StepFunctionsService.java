@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,6 +45,7 @@ public class StepFunctionsService implements Resettable {
     private final RegionResolver regionResolver;
     private final AslExecutor aslExecutor;
     private final ObjectMapper objectMapper;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     // Fields that are valid only in JSONPath mode. Validated against real AWS:
     // creating a JSONata state machine with any of these fields returns SCHEMA_VALIDATION_FAILED.
@@ -57,7 +59,8 @@ public class StepFunctionsService implements Resettable {
 
     @Inject
     public StepFunctionsService(StorageFactory storageFactory, RegionResolver regionResolver,
-                                AslExecutor aslExecutor, ObjectMapper objectMapper) {
+                                AslExecutor aslExecutor, ObjectMapper objectMapper,
+                                InProcessIamAuthorizer iamAuthorizer) {
         this.stateMachineStore = storageFactory.create("stepfunctions", "sfn-state-machines.json",
                 new TypeReference<Map<String, StateMachine>>() {});
         this.executionStore = storageFactory.create("stepfunctions", "sfn-executions.json",
@@ -67,6 +70,7 @@ public class StepFunctionsService implements Resettable {
         this.regionResolver = regionResolver;
         this.aslExecutor = aslExecutor;
         this.objectMapper = objectMapper;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     public void clear() {
@@ -84,6 +88,7 @@ public class StepFunctionsService implements Resettable {
             throw new AwsException("StateMachineAlreadyExists", "State machine already exists: " + arn, 400);
         }
 
+        iamAuthorizer.authorizePassRole(roleArn, "states.amazonaws.com", region);
         validateDefinition(definition);
 
         StateMachine sm = new StateMachine();

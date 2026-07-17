@@ -858,6 +858,27 @@ class IamServiceTest {
     }
 
     @Test
+    void findSecretKeyRejectsInactiveAccessKey() {
+        InMemoryStorage<String, AccessKey> accessKeys = new InMemoryStorage<>();
+        iamService = iamService(false, accessKeys);
+        AccessKey key = new AccessKey("AKIAINACTIVE00000001", "inactive-secret-key-value-01234", "alice");
+        key.setStatus("Inactive");
+        accessKeys.put(key.getAccessKeyId(), key);
+
+        assertTrue(iamService.findSecretKey(key.getAccessKeyId()).isEmpty());
+    }
+
+    @Test
+    void findSecretKeyAllowsActiveAccessKey() {
+        InMemoryStorage<String, AccessKey> accessKeys = new InMemoryStorage<>();
+        iamService = iamService(false, accessKeys);
+        AccessKey key = new AccessKey("AKIAACTIVEKEY0000001", "active-secret-key-value-012345", "alice");
+        accessKeys.put(key.getAccessKeyId(), key);
+
+        assertEquals("active-secret-key-value-012345", iamService.findSecretKey(key.getAccessKeyId()).orElseThrow());
+    }
+
+    @Test
     void findSecretKeyRejectsExpiredSessionCredentials() {
         String sessionAkid = "ASIAEXPIREDSESSION01";
         iamService.registerSession(

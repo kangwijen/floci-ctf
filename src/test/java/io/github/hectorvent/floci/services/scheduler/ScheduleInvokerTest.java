@@ -45,6 +45,7 @@ class ScheduleInvokerTest {
     private SnsService snsService;
     private EventBridgeService eventBridgeService;
     private EcsService ecsService;
+    private InProcessTargetAuthorizer targetAuthorizer;
     private ScheduleInvoker invoker;
 
     @BeforeEach
@@ -54,11 +55,13 @@ class ScheduleInvokerTest {
         snsService = mock(SnsService.class);
         eventBridgeService = mock(EventBridgeService.class);
         ecsService = mock(EcsService.class);
+        targetAuthorizer = mock(InProcessTargetAuthorizer.class);
         EmulatorConfig config = mock(EmulatorConfig.class);
         when(config.baseUrl()).thenReturn("http://localhost:4566");
+        when(config.defaultAccountId()).thenReturn("000000000000");
         invoker = new ScheduleInvoker(sqsService, lambdaService, snsService,
                 eventBridgeService, ecsService, new ObjectMapper(), config,
-                mock(InProcessTargetAuthorizer.class));
+                targetAuthorizer);
     }
 
     @Test
@@ -277,6 +280,56 @@ class ScheduleInvokerTest {
                 eq("scheduler"),
                 eq(List.<ContainerOverride>of()),
                 isNull(),
+                eq("us-east-1"));
+    }
+
+    @Test
+    void universalSnsPublishAuthorizesAgainstRealTopicArnNotPseudoArn() {
+        Target target = new Target();
+        target.setArn("arn:aws:scheduler:::aws-sdk:sns:publish");
+        target.setRoleArn("arn:aws:iam::000000000000:role/x");
+        target.setInput("{\"TopicArn\":\"" + TOPIC_ARN + "\",\"Message\":\"hello\"}");
+
+        invoker.invoke(target, "us-east-1");
+
+        // A Deny scoped to TOPIC_ARN must be evaluated against TOPIC_ARN, not the
+        // scheduler pseudo-ARN, or the Deny would never match.
+        verify(targetAuthorizer).authorizeSchedulerTarget(
+                eq("arn:aws:iam::000000000000:role/x"), eq(TOPIC_ARN), eq("us-east-1"));
+        verify(targetAuthorizer, never()).authorizeSchedulerTarget(
+                anyString(), eq("arn:aws:scheduler:::aws-sdk:sns:publish"), anyString());
+    }
+
+    @Test
+    void universalSqsSendMessageAuthorizesAgainstRealQueueArnNotPseudoArn() {
+        Target target = new Target();
+        target.setArn("arn:aws:scheduler:::aws-sdk:sqs:sendMessage");
+        target.setRoleArn("arn:aws:iam::000000000000:role/x");
+        target.setInput("{\"QueueUrl\":\"http://localhost:4566/000000000000/secret-queue\","
+                + "\"MessageBody\":\"hi\"}");
+
+        invoker.invoke(target, "us-east-1");
+
+        verify(targetAuthorizer).authorizeSchedulerTarget(
+                eq("arn:aws:iam::000000000000:role/x"),
+                eq("arn:aws:sqs:us-east-1:000000000000:secret-queue"),
+                eq("us-east-1"));
+        verify(targetAuthorizer, never()).authorizeSchedulerTarget(
+                anyString(), eq("arn:aws:scheduler:::aws-sdk:sqs:sendMessage"), anyString());
+    }
+
+    @Test
+    void universalTargetFallsBackToPseudoArnWhenResourceIdentifierMissing() {
+        Target target = new Target();
+        target.setArn("arn:aws:scheduler:::aws-sdk:sns:publish");
+        target.setRoleArn("arn:aws:iam::000000000000:role/x");
+        target.setInput("{\"Message\":\"hello\"}");
+
+        invoker.invoke(target, "us-east-1");
+
+        verify(targetAuthorizer).authorizeSchedulerTarget(
+                eq("arn:aws:iam::000000000000:role/x"),
+                eq("arn:aws:scheduler:::aws-sdk:sns:publish"),
                 eq("us-east-1"));
     }
 

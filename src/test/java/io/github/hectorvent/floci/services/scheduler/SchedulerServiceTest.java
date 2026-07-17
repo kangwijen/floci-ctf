@@ -30,7 +30,8 @@ class SchedulerServiceTest {
         service = new SchedulerService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
-                new RegionResolver("us-east-1", "000000000000")
+                new RegionResolver("us-east-1", "000000000000"),
+                null
         );
     }
 

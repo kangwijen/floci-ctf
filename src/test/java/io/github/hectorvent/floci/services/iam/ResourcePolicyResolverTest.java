@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.iam;
 
 import io.github.hectorvent.floci.services.ecr.EcrService;
+import io.github.hectorvent.floci.services.eventbridge.EventBridgeService;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.s3.S3Service;
@@ -31,6 +32,7 @@ class ResourcePolicyResolverTest {
     private KmsService kmsService;
     private SecretsManagerService secretsManagerService;
     private EcrService ecrService;
+    private EventBridgeService eventBridgeService;
     private ResourcePolicyResolver resolver;
 
     @BeforeEach
@@ -42,8 +44,10 @@ class ResourcePolicyResolverTest {
         kmsService = mock(KmsService.class);
         secretsManagerService = mock(SecretsManagerService.class);
         ecrService = mock(EcrService.class);
+        eventBridgeService = mock(EventBridgeService.class);
         resolver = new ResourcePolicyResolver(
-                s3Service, lambdaService, sqsService, snsService, kmsService, secretsManagerService, ecrService);
+                s3Service, lambdaService, sqsService, snsService, kmsService, secretsManagerService, ecrService,
+                eventBridgeService);
     }
 
     @Test
@@ -190,5 +194,42 @@ class ResourcePolicyResolverTest {
         when(ecrService.findRepositoryPolicyByArn(repoArn)).thenReturn(Optional.empty());
 
         assertTrue(resolver.resolve("ecr", repoArn, REGION).isEmpty());
+    }
+
+    @Test
+    void eventsResolvesBusPolicyFromEventBusArn() {
+        String busArn = "arn:aws:events:" + REGION + ":" + ACCOUNT + ":event-bus/shared-bus";
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::111111111111:root"},
+               "Action":"events:PutEvents","Resource":"*"}
+            ]}""";
+        when(eventBridgeService.findBusPolicyDocument("shared-bus", REGION)).thenReturn(Optional.of(policy));
+
+        assertEquals(List.of(policy), resolver.resolve("events", busArn, REGION));
+    }
+
+    @Test
+    void eventsReturnsEmptyWhenBusHasNoPolicy() {
+        String busArn = "arn:aws:events:" + REGION + ":" + ACCOUNT + ":event-bus/no-policy-bus";
+        when(eventBridgeService.findBusPolicyDocument("no-policy-bus", REGION)).thenReturn(Optional.empty());
+
+        assertTrue(resolver.resolve("events", busArn, REGION).isEmpty());
+    }
+
+    @Test
+    void eventsIgnoresRuleArnsSinceRulesHaveNoResourcePolicy() {
+        String ruleArn = "arn:aws:events:" + REGION + ":" + ACCOUNT + ":rule/shared-bus/some-rule";
+
+        assertTrue(resolver.resolve("events", ruleArn, REGION).isEmpty());
+        verifyNoInteractions(eventBridgeService);
+    }
+
+    @Test
+    void eventsIgnoresWildcardBusArn() {
+        String wildcardArn = "arn:aws:events:" + REGION + ":" + ACCOUNT + ":event-bus/*";
+
+        assertTrue(resolver.resolve("events", wildcardArn, REGION).isEmpty());
+        verifyNoInteractions(eventBridgeService);
     }
 }

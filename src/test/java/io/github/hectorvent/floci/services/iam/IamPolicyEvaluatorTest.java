@@ -65,6 +65,85 @@ class IamPolicyEvaluatorTest {
                 assertTrue(IamPolicyEvaluator.globMatches(pattern, value + "b")));
     }
 
+    @Test
+    void forAllValuesStringEqualsDeniesWhenEveryRequestValueMatches() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iam:TagUser","Resource":"*"},
+              {"Effect":"Deny","Action":"iam:TagUser","Resource":"*",
+               "Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["environment","webserver"]}}}
+            ]}""";
+
+        Decision decision = evaluator.simulateCustomPolicy(List.of(policy), "iam:TagUser", "*",
+                Map.of("aws:TagKeys", "environment,webserver"));
+
+        assertEquals(Decision.DENY, decision);
+    }
+
+    @Test
+    void forAllValuesStringEqualsAllowsWhenARequestValueDoesNotMatch() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iam:TagUser","Resource":"*"},
+              {"Effect":"Deny","Action":"iam:TagUser","Resource":"*",
+               "Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["environment","webserver"]}}}
+            ]}""";
+
+        Decision decision = evaluator.simulateCustomPolicy(List.of(policy), "iam:TagUser", "*",
+                Map.of("aws:TagKeys", "environment,unrelated-tag"));
+
+        assertEquals(Decision.ALLOW, decision);
+    }
+
+    @Test
+    void forAnyValueStringEqualsDeniesWhenAnyRequestValueMatches() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"ec2:CreateSnapshot","Resource":"*"},
+              {"Effect":"Deny","Action":"ec2:CreateSnapshot","Resource":"*",
+               "Condition":{"ForAnyValue:StringEquals":{"aws:TagKeys":"webserver"}}}
+            ]}""";
+
+        Decision decision = evaluator.simulateCustomPolicy(List.of(policy), "ec2:CreateSnapshot", "*",
+                Map.of("aws:TagKeys", "environment,webserver"));
+
+        assertEquals(Decision.DENY, decision);
+    }
+
+    @Test
+    void forAnyValueStringEqualsAllowsWhenNoRequestValueMatches() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"ec2:CreateSnapshot","Resource":"*"},
+              {"Effect":"Deny","Action":"ec2:CreateSnapshot","Resource":"*",
+               "Condition":{"ForAnyValue:StringEquals":{"aws:TagKeys":"webserver"}}}
+            ]}""";
+
+        Decision decision = evaluator.simulateCustomPolicy(List.of(policy), "ec2:CreateSnapshot", "*",
+                Map.of("aws:TagKeys", "environment,production"));
+
+        assertEquals(Decision.ALLOW, decision);
+    }
+
+    @Test
+    void forAllValuesOnMissingRequestKeyIsVacuouslyTrue() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        String policy = """
+            {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":"iam:TagUser","Resource":"*"},
+              {"Effect":"Deny","Action":"iam:TagUser","Resource":"*",
+               "Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["environment"]}}}
+            ]}""";
+
+        Decision decision = evaluator.simulateCustomPolicy(List.of(policy), "iam:TagUser", "*", Map.of());
+
+        assertEquals(Decision.DENY, decision);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<?, ?> policyParseCache(IamPolicyEvaluator evaluator) throws Exception {
         Field field = IamPolicyEvaluator.class.getDeclaredField("policyParseCache");

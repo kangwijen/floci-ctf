@@ -15,6 +15,7 @@ import io.github.hectorvent.floci.services.cloudformation.model.ChangeSet;
 import io.github.hectorvent.floci.services.cloudformation.model.Stack;
 import io.github.hectorvent.floci.services.cloudformation.model.StackEvent;
 import io.github.hectorvent.floci.services.cloudformation.model.StackResource;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -57,6 +58,7 @@ public class CloudFormationService {
     private final RegionResolver regionResolver;
     private final SamTransformProcessor samTransformProcessor;
     private final Clock clock;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     // Persisted state so stacks survive a restart (criteria #10, #11). The in-memory maps above are
     // the live working copy; these backends are write-through + loaded on startup. CloudFormation is
@@ -70,7 +72,7 @@ public class CloudFormationService {
     public CloudFormationService(CloudFormationResourceProvisioner provisioner, S3Service s3Service,
                                  ObjectMapper objectMapper, EmulatorConfig config,
                                  RegionResolver regionResolver, Clock clock,
-                                 StorageFactory storageFactory) {
+                                 StorageFactory storageFactory, InProcessIamAuthorizer iamAuthorizer) {
         this.provisioner = provisioner;
         this.s3Service = s3Service;
         this.objectMapper = objectMapper;
@@ -78,6 +80,7 @@ public class CloudFormationService {
         this.regionResolver = regionResolver;
         this.samTransformProcessor = new SamTransformProcessor(objectMapper);
         this.clock = clock;
+        this.iamAuthorizer = iamAuthorizer;
         this.storageAccount = config.defaultAccountId();
         this.stackBackend = asAccountAware(storageFactory.create(
                 "cloudformation", "cloudformation-stacks.json", new TypeReference<Map<String, Stack>>() {}));
@@ -146,7 +149,7 @@ public class CloudFormationService {
                                      String templateBody, String templateUrl,
                                      Map<String, String> parameters, List<String> capabilities,
                                      Map<String, String> tags, String region) {
-        String resolvedTemplate = resolveTemplate(templateBody, templateUrl);
+        String resolvedTemplate = resolveTemplate(templateBody, templateUrl, region);
 
         // Detect first creation atomically: the mapping function runs at most once per key, so the
         // flag is only set for the thread that actually creates the stack (no double-recording under
@@ -232,7 +235,13 @@ public class CloudFormationService {
         String templateBody = cs.getTemplateBody();
         Map<String, String> params = cs.getParameters() != null ? cs.getParameters() : Map.of();
 
-        return executor.submit(() -> runUnderAccount(accountId,
+        // Captured on the calling (request-scoped) thread: the background executor thread has no
+        // JAX-RS request scope of its own, so RegionResolver#getCallerAccessKeyId would otherwise
+        // resolve to nothing once inside the submitted task, silently disabling every downstream
+        // iam:PassRole and IAM-resource-creation check performed by CloudFormationResourceProvisioner
+        // and the service layer it calls into (StepFunctionsService, PipesService, SchedulerService).
+        String callerAkid = regionResolver.getCallerAccessKeyId();
+        return executor.submit(() -> runUnderAccount(accountId, callerAkid,
                 () -> executeTemplate(stack, templateBody, params, isCreate, region, accountId)));
     }
 
@@ -242,6 +251,17 @@ public class CloudFormationService {
      * the intended account. Mirrors the pattern used by other background workers.
      */
     private void runUnderAccount(String accountId, Runnable body) {
+        runUnderAccount(accountId, null, body);
+    }
+
+    /**
+     * Same as {@link #runUnderAccount(String, Runnable)}, but also carries the stack-creating
+     * caller's SigV4 access key ID into the synthetic scope so downstream in-process IAM checks
+     * (see {@link io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer}) evaluate against
+     * the real caller instead of failing open (PassRole) or closed (IAM resource creation) on a
+     * missing identity.
+     */
+    private void runUnderAccount(String accountId, String callerAkid, Runnable body) {
         ManagedContext requestContext = Arc.container().requestContext();
         boolean alreadyActive = requestContext.isActive();
         if (!alreadyActive) {
@@ -249,19 +269,23 @@ public class CloudFormationService {
         }
         // Background workers normally have no active scope, so a fresh one is activated and
         // terminated below. But if we ran inside an already-active scope, restore its previous
-        // account afterwards so we never leave the overridden account ID behind on a reused thread.
+        // account/access-key afterwards so we never leave the overridden identity behind on a
+        // reused thread.
         RequestContext ctx = Arc.container().instance(RequestContext.class).get();
         String previousAccountId = alreadyActive ? ctx.getAccountId() : null;
+        String previousAkid = alreadyActive ? ctx.getAccessKeyId() : null;
         try {
             if (accountId != null) {
                 ctx.setAccountId(accountId);
             }
+            ctx.setAccessKeyId(callerAkid);
             body.run();
         } finally {
             if (!alreadyActive) {
                 requestContext.terminate();
             } else {
                 ctx.setAccountId(previousAccountId);
+                ctx.setAccessKeyId(previousAkid);
             }
         }
     }
@@ -774,12 +798,12 @@ public class CloudFormationService {
         return new CloudFormationYamlParser(objectMapper).parse(trimmed);
     }
 
-    private String resolveTemplate(String templateBody, String templateUrl) {
+    private String resolveTemplate(String templateBody, String templateUrl, String region) {
         if (templateBody != null && !templateBody.isBlank()) {
             return templateBody;
         }
         if (templateUrl != null && !templateUrl.isBlank()) {
-            return fetchTemplateFromS3(templateUrl);
+            return fetchTemplateFromS3(templateUrl, region);
         }
         return "{}";
     }
@@ -788,15 +812,15 @@ public class CloudFormationService {
      * Resolves a template body from an inline body or a TemplateURL (fetched from S3), for callers
      * outside this service such as the StackSets handler. Returns {@code null} when neither is given.
      */
-    public String resolveTemplateBody(String templateBody, String templateUrl) {
+    public String resolveTemplateBody(String templateBody, String templateUrl, String region) {
         if ((templateBody == null || templateBody.isBlank())
                 && (templateUrl == null || templateUrl.isBlank())) {
             return null;
         }
-        return resolveTemplate(templateBody, templateUrl);
+        return resolveTemplate(templateBody, templateUrl, region);
     }
 
-    private String fetchTemplateFromS3(String url) {
+    private String fetchTemplateFromS3(String url, String region) {
         // Parse S3 URL — three forms:
         //   Virtual-hosted AWS:   https://bucket.s3[.region].amazonaws.com/key
         //   Virtual-hosted local: http://bucket.localhost:4566/key  (or configured/default hostname)
@@ -828,6 +852,14 @@ public class CloudFormationService {
             bucket = slash > 0 ? rawPath.substring(0, slash) : rawPath;
             key = slash > 0 ? rawPath.substring(slash + 1) : "";
         }
+
+        // AWS requires the caller's identity to hold s3:GetObject on the TemplateURL object itself,
+        // separate from whatever action created the stack. Without this, any principal with
+        // cloudformation:CreateStack could read arbitrary S3 objects (as the CloudFormation service
+        // role would) simply by pointing TemplateURL at them and inspecting the resulting failure
+        // message or exported template body.
+        String sourceArn = AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+        iamAuthorizer.authorizeCallerAction("s3:GetObject", sourceArn, region, "s3");
 
         try {
             var obj = s3Service.getObject(bucket, key);
@@ -867,7 +899,7 @@ public class CloudFormationService {
             return resource;
         }
 
-        String childTemplate = fetchTemplateFromS3(templateUrl);
+        String childTemplate = fetchTemplateFromS3(templateUrl, region);
         String childStackName = parentStack.getStackName() + "-" + logicalId;
 
         Stack childStack = newStack(childStackName, region);

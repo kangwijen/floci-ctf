@@ -369,6 +369,47 @@ class CognitoUserInfoIntegrationTest {
                 .header("WWW-Authenticate", containsString("invalid_token"));
     }
 
+    @Test
+    @Order(15)
+    void globalSignOutRevokesUserInfoAccessForPreviouslyIssuedToken() throws Exception {
+        JsonNode authResp = cognitoJson("InitiateAuth", """
+                {
+                  "ClientId": "%s",
+                  "AuthFlow": "USER_PASSWORD_AUTH",
+                  "AuthParameters": {
+                    "USERNAME": "%s",
+                    "PASSWORD": "%s"
+                  }
+                }
+                """.formatted(clientId, USERNAME, PASSWORD));
+        String tokenToRevoke = authResp.path("AuthenticationResult").path("AccessToken").asText();
+        assertNotNull(tokenToRevoke);
+        assertFalse(tokenToRevoke.isBlank());
+
+        given()
+                .header("Authorization", "Bearer " + tokenToRevoke)
+        .when()
+                .get("/cognito-idp/oauth2/userInfo")
+        .then()
+                .statusCode(200);
+
+        cognitoAction("GlobalSignOut", """
+                {
+                  "AccessToken": "%s"
+                }
+                """.formatted(tokenToRevoke))
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", "Bearer " + tokenToRevoke)
+        .when()
+                .get("/cognito-idp/oauth2/userInfo")
+        .then()
+                .statusCode(401)
+                .header("WWW-Authenticate", containsString("invalid_token"));
+    }
+
     private static String base64Url(String raw) {
         return java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));

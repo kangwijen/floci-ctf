@@ -31,7 +31,7 @@ class PipesServiceTest {
         RegionResolver regionResolver = new RegionResolver("us-east-1", "000000000000");
 
         PipesPoller poller = Mockito.mock(PipesPoller.class);
-        pipesService = new PipesService(storageFactory, regionResolver, poller);
+        pipesService = new PipesService(storageFactory, regionResolver, poller, null);
     }
 
     @Test

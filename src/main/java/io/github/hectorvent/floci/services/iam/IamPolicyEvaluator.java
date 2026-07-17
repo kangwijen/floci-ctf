@@ -349,7 +349,13 @@ public class IamPolicyEvaluator {
                                             Map<String, List<String>> keyValueMap,
                                             Map<String, String> ctx) {
         boolean ifExists = operator.endsWith("IfExists");
-        String baseOp = ifExists ? operator.substring(0, operator.length() - "IfExists".length()) : operator;
+        String withoutIfExists = ifExists ? operator.substring(0, operator.length() - "IfExists".length()) : operator;
+
+        boolean forAllValues = withoutIfExists.startsWith("ForAllValues:");
+        boolean forAnyValue = withoutIfExists.startsWith("ForAnyValue:");
+        String baseOp = forAllValues ? withoutIfExists.substring("ForAllValues:".length())
+                : forAnyValue ? withoutIfExists.substring("ForAnyValue:".length())
+                : withoutIfExists;
 
         for (Map.Entry<String, List<String>> entry : keyValueMap.entrySet()) {
             String condKey = entry.getKey().toLowerCase();
@@ -364,6 +370,9 @@ public class IamPolicyEvaluator {
                         return false;
                     }
                     continue;
+                }
+                if (forAllValues) {
+                    continue; // ForAllValues on a missing request key is vacuously true
                 }
                 if (ifExists) {
                     continue; // key missing + IfExists → pass this key
@@ -380,19 +389,39 @@ public class IamPolicyEvaluator {
                 continue;
             }
 
-            // OR across condValues for this key
-            boolean keyMatch = false;
-            for (String condValue : condValues) {
-                if (evaluateSingleCondition(baseOp, ctxValue, condValue)) {
-                    keyMatch = true;
-                    break;
-                }
+            boolean keyMatch;
+            if (forAllValues || forAnyValue) {
+                // Multivalued context keys are represented as a comma-joined string; see
+                // ForAllValues/ForAnyValue set-operator semantics in the AWS IAM condition docs.
+                List<String> requestValues = splitMultiValue(ctxValue);
+                keyMatch = forAllValues
+                        ? requestValues.stream().allMatch(rv -> matchesAnyConditionValue(baseOp, rv, condValues))
+                        : requestValues.stream().anyMatch(rv -> matchesAnyConditionValue(baseOp, rv, condValues));
+            } else {
+                keyMatch = matchesAnyConditionValue(baseOp, ctxValue, condValues);
             }
             if (!keyMatch) {
                 return false;
             }
         }
         return true;
+    }
+
+    /** OR across condValues for a single request-side value. */
+    private boolean matchesAnyConditionValue(String operator, String ctxValue, List<String> condValues) {
+        for (String condValue : condValues) {
+            if (evaluateSingleCondition(operator, ctxValue, condValue)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> splitMultiValue(String value) {
+        if (value.isEmpty()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(",")).toList();
     }
 
     private boolean evaluateSingleCondition(String operator, String ctxValue, String condValue) {

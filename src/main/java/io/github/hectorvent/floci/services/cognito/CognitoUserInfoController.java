@@ -77,6 +77,19 @@ public class CognitoUserInfoController {
             return bearerError(401, "invalid_token", "Cannot derive user pool from iss: " + iss);
         }
 
+        String jti = asString(claims.get("jti"));
+        String tokenUsername = asString(claims.get("username"));
+        if (tokenUsername == null) {
+            tokenUsername = asString(claims.get("cognito:username"));
+        }
+        long iat = claims.get("iat") instanceof Number number ? number.longValue() : 0L;
+        try {
+            cognitoService.validateAccessTokenNotRevoked(jti, poolId, tokenUsername, iat);
+        } catch (AwsException e) {
+            LOG.debug("Access token revocation check failed", e);
+            return bearerError(401, "invalid_token", e.getMessage() == null ? "Invalid access token" : e.getMessage());
+        }
+
         CognitoUser user;
         try {
             List<CognitoUser> matches = cognitoService.listUsers(poolId, "sub=\"" + sub + "\"");

@@ -20,9 +20,13 @@ import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.logging.Logger;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -230,7 +234,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String resource = arnBuilder.build("s3", ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", action, ctx, region);
 
         if (evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx) == Decision.DENY) {
             LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
@@ -301,6 +305,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             evaluateEmrMultiClusterAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
         }
+        if (isEventsMultiBusPutEvents(credentialScope, ctx)) {
+            evaluateEventsMultiBusAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
+        if (isLogsMultiGroupStartQuery(credentialScope, ctx)) {
+            evaluateLogsMultiGroupAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
         if (isTaggingMultiResourceRequest(credentialScope, ctx)) {
             evaluateTaggingMultiResourceAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
@@ -331,7 +343,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         String serviceScope = routeScope != null ? routeScope : credentialScope;
         String resource = arnBuilder.build(serviceScope, ctx, region, accountId);
         List<String> resourcePolicies = resourcePolicyResolver.resolve(serviceScope, resource, region);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, action, ctx, region);
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
         if (decision == Decision.DENY
@@ -347,7 +359,90 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         if (decision == Decision.DENY) {
             LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            return;
         }
+
+        if ("s3".equals(credentialScope)) {
+            evaluateS3CopySourceAndAbortIfDenied(ctx, akid, region, accountId, caller);
+        }
+    }
+
+    /**
+     * CopyObject and UploadPartCopy are both PUT requests carrying an {@code x-amz-copy-source}
+     * header. The main evaluation above only checks {@code s3:PutObject} on the destination; AWS
+     * separately requires {@code s3:GetObject} (or {@code s3:GetObjectVersion} when the copy
+     * source pins a version) on the source object. Without this, a caller with only
+     * {@code s3:PutObject} on their own bucket could exfiltrate any object they can name as a
+     * copy source.
+     */
+    private void evaluateS3CopySourceAndAbortIfDenied(ContainerRequestContext ctx,
+                                                       String akid,
+                                                       String region,
+                                                       String accountId,
+                                                       CallerContext caller) {
+        String copySource = ctx.getHeaderString("x-amz-copy-source");
+        if (copySource == null || copySource.isBlank()) {
+            return;
+        }
+        ParsedS3CopySource parsed = parseS3CopySource(copySource);
+        if (parsed == null) {
+            return;
+        }
+
+        String sourceAction = parsed.versionId() != null ? "s3:GetObjectVersion" : "s3:GetObject";
+        String sourceResource = AwsArnUtils.Arn.of("s3", "", "", parsed.bucket() + "/" + parsed.key()).toString();
+        List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", sourceResource, region);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", sourceAction, ctx, region);
+
+        Decision decision = evaluator.evaluate(caller, resourcePolicies, sourceAction, sourceResource, conditionCtx);
+        if (decision == Decision.DENY) {
+            LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2} copySource",
+                    akid, sourceAction, sourceResource);
+            ctx.abortWith(accessDeniedResponse(sourceAction, "s3", ctx.getMediaType()));
+        }
+    }
+
+    private record ParsedS3CopySource(String bucket, String key, String versionId) {
+    }
+
+    /**
+     * Mirrors {@code S3Controller}'s copy-source parsing: strip a leading {@code '/'}, URL-decode
+     * the remainder, split on the first {@code '/'} into bucket and key, then pull an optional
+     * {@code versionId} query parameter off the key.
+     */
+    private static ParsedS3CopySource parseS3CopySource(String copySource) {
+        String source = copySource.startsWith("/") ? copySource.substring(1) : copySource;
+        String decoded;
+        try {
+            decoded = URLDecoder.decode(source, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        int slashIndex = decoded.indexOf('/');
+        if (slashIndex <= 0) {
+            return null;
+        }
+        String bucket = decoded.substring(0, slashIndex);
+        String pathAfterBucket = decoded.substring(slashIndex + 1);
+
+        int queryStart = pathAfterBucket.indexOf('?');
+        if (queryStart < 0) {
+            return new ParsedS3CopySource(bucket, pathAfterBucket, null);
+        }
+        String key = pathAfterBucket.substring(0, queryStart);
+        String query = pathAfterBucket.substring(queryStart + 1);
+        String versionId = null;
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            if ("versionId".equals(pair.substring(0, eq))) {
+                versionId = pair.substring(eq + 1);
+                break;
+            }
+        }
+        return new ParsedS3CopySource(bucket, key, versionId);
     }
 
     private static boolean isDynamoDbBatchExecuteStatement(String credentialScope, ContainerRequestContext ctx) {
@@ -495,7 +590,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
         for (String resource : resources) {
             if ("*".equals(resource)) {
                 continue;
@@ -539,7 +634,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllDynamoDbExecuteStatementPartiQLResources(ctx, region, accountId);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
 
         for (String resource : resources) {
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
@@ -607,7 +702,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
             String resource = resources.get(i);
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
-            Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+            Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
             Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
             if (decision == Decision.DENY
                     && "kms".equals(credentialScope)
@@ -679,7 +774,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllEmrClusterResources(ctx, region, accountId);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
 
         for (String resource : resources) {
             if ("*".equals(resource)) {
@@ -693,6 +788,87 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                 return;
             }
         }
+    }
+
+    private static boolean isEventsMultiBusPutEvents(String credentialScope, ContainerRequestContext ctx) {
+        if (!"events".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || !target.endsWith(".PutEvents")) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            var entries = node.get("Entries");
+            if (entries == null || !entries.isArray() || entries.size() <= 1) {
+                return false;
+            }
+            java.util.Set<String> buses = new java.util.HashSet<>();
+            for (var entry : entries) {
+                String bus = entry.path("EventBusName").asText(null);
+                buses.add((bus == null || bus.isBlank()) ? "default" : bus);
+            }
+            return buses.size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void evaluateEventsMultiBusAndAbortIfDenied(ContainerRequestContext ctx,
+                                                        String credentialScope,
+                                                        String akid,
+                                                        String region,
+                                                        String accountId,
+                                                        boolean strict) {
+        evaluateMultiResourceAndAbortIfDenied(
+                ctx, credentialScope, akid, region, accountId, strict,
+                arnBuilder.buildAllEventsPutEventsResources(ctx, region, accountId),
+                "eventsPutEventsMultiBus");
+    }
+
+    private static boolean isLogsMultiGroupStartQuery(String credentialScope, ContainerRequestContext ctx) {
+        if (!"logs".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        if (target == null || !target.endsWith(".StartQuery")) {
+            return false;
+        }
+        byte[] body = RequestBodyBuffer.buffer(ctx);
+        if (body.length == 0) {
+            return false;
+        }
+        try {
+            var node = EMR_BODY_MAPPER.readTree(body);
+            int count = 0;
+            count += logGroupArrayCount(node, "logGroupNames");
+            count += logGroupArrayCount(node, "logGroupIdentifiers");
+            return count > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int logGroupArrayCount(JsonNode node, String fieldName) {
+        var array = node.get(fieldName);
+        return array != null && array.isArray() ? array.size() : 0;
+    }
+
+    private void evaluateLogsMultiGroupAndAbortIfDenied(ContainerRequestContext ctx,
+                                                        String credentialScope,
+                                                        String akid,
+                                                        String region,
+                                                        String accountId,
+                                                        boolean strict) {
+        evaluateMultiResourceAndAbortIfDenied(
+                ctx, credentialScope, akid, region, accountId, strict,
+                arnBuilder.buildAllLogsStartQueryResources(ctx, region, accountId),
+                "logsStartQueryMultiGroup");
     }
 
     private static boolean isTaggingMultiResourceRequest(String credentialScope, ContainerRequestContext ctx) {
@@ -748,7 +924,20 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         List<String> resources = arnBuilder.buildAllTaggingResources(ctx);
-        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
+
+        if (resources.size() == 1 && "*".equals(resources.getFirst())) {
+            // ResourceARNList had multiple entries but none were ARN-prefixed, so
+            // buildAllTaggingResources could not extract a real resource. Evaluate IAM
+            // against the wildcard resource instead of skipping evaluation entirely.
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, "*", region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, "*", conditionCtx);
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource=* taggingMultiArn", akid, action);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
 
         for (String resource : resources) {
             if ("*".equals(resource)) {
@@ -768,7 +957,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                                       String accountId,
                                                       String credentialScope,
                                                       String action,
-                                                      ContainerRequestContext ctx) {
+                                                      ContainerRequestContext ctx,
+                                                      String region) {
         Map<String, String> out = new HashMap<>();
         Optional<CallerIdentity> identity = iamService.resolveCallerIdentity(
                 accessKeyId, accountId, config.auth().rootAccessKeyId());
@@ -792,6 +982,12 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             }
         }
         out.put("aws:sourceip", sourceIp);
+        if (region != null && !region.isBlank()) {
+            out.put("aws:requestedregion", region);
+        }
+        Instant now = Instant.now();
+        out.put("aws:currenttime", now.toString());
+        out.put("aws:epochtime", String.valueOf(now.getEpochSecond()));
         if ("s3".equals(credentialScope)) {
             enrichS3ConditionKeys(ctx, out);
         }

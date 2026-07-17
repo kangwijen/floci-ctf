@@ -142,7 +142,7 @@ class LambdaBlankRoleOperatorCredentialIntegrationTest {
                 runtimeApiServerFactory, dockerHostResolver, config, ecrRegistryManager,
                 mock(LambdaLayerService.class),
                 credentialsServer, reachableEndpoint, containerDetector, currentContainerNetworkResolver,
-                awsEnv);
+                awsEnv, null);
 
         lenient().when(runtimeApiServerFactory.create()).thenReturn(runtimeApiServer);
         lenient().when(runtimeApiServer.getPort()).thenReturn(9000);

@@ -49,6 +49,7 @@ public class AccountContextFilter implements ContainerRequestFilter {
             String akid = accountResolver.extractAccessKeyId(auth);
             requestContext.setAccountId(resolveAccount(akid, accountResolver.resolve(auth)));
             requestContext.setRegion(regionResolver.resolveRegionFromAuth(auth));
+            requestContext.setAccessKeyId(akid);
         } else {
             String credential = ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
             if (credential != null && !credential.isEmpty()) {
@@ -56,9 +57,11 @@ public class AccountContextFilter implements ContainerRequestFilter {
                 requestContext.setAccountId(
                         resolveAccount(akid, accountResolver.resolveFromPresignedCredential(credential)));
                 requestContext.setRegion(regionResolver.resolveRegionFromPresignedCredential(credential));
+                requestContext.setAccessKeyId(akid);
             } else {
                 requestContext.setAccountId(accountResolver.resolve(null));
                 requestContext.setRegion(regionResolver.resolveRegionFromAuth(null));
+                requestContext.setAccessKeyId(null);
             }
         }
     }

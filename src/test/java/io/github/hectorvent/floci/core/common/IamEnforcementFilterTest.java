@@ -8,16 +8,24 @@ import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
 import io.github.hectorvent.floci.services.iam.ResourcePolicyResolver;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.kms.KmsService;
+import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,7 +34,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -303,6 +313,433 @@ class IamEnforcementFilterTest {
                         && "10".equals(context.get("s3:max-keys"))));
     }
 
+    // ── aws:RequestedRegion / aws:CurrentTime / aws:EpochTime condition keys ────
+
+    /**
+     * These condition keys let identity and resource policies scope access by region and time
+     * (e.g. {@code aws:RequestedRegion} region-locking, {@code aws:EpochTime} temporary access
+     * windows). Before this fix {@code buildConditionContext} omitted all three, so any policy
+     * relying on them silently evaluated as if the condition key were absent — for
+     * {@code StringEquals}/{@code DateGreaterThan} conditions that meant the statement never
+     * matched, effectively disabling the restriction rather than enforcing it.
+     */
+    @Test
+    void buildConditionContextIncludesRequestedRegionCurrentTimeAndEpochTime() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        IamService iamService = mock(IamService.class);
+        IamPolicyEvaluator evaluator = mock(IamPolicyEvaluator.class);
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        ResourceArnBuilder arnBuilder = mock(ResourceArnBuilder.class);
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("222233334444");
+        ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+
+        String auth = "AWS4-HMAC-SHA256 Credential=AKIAREGIONCHECK/20260629/eu-west-1/lambda/aws4_request, "
+                + "SignedHeaders=host, Signature=abc";
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(true);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(authConfig.trustForwardedHeaders()).thenReturn(false);
+        when(accountResolver.extractAccessKeyId(auth)).thenReturn("AKIAREGIONCHECK");
+        when(accountResolver.resolve(auth)).thenReturn("222233334444");
+        when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("eu-west-1");
+        when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
+        when(containerRequest.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/2015-03-31/functions/fn/invocations");
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(actionRegistry.resolveRestRouteScope(containerRequest)).thenReturn(null);
+        when(actionRegistry.resolve("lambda", containerRequest)).thenReturn("lambda:InvokeFunction");
+        when(iamService.resolveCallerContext("AKIAREGIONCHECK"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"lambda:InvokeFunction",
+                           "Resource":"arn:aws:lambda:eu-west-1:222233334444:function:fn"}
+                        ]}""")));
+        when(arnBuilder.build("lambda", containerRequest, "eu-west-1", "222233334444"))
+                .thenReturn("arn:aws:lambda:eu-west-1:222233334444:function:fn");
+        when(resourcePolicyResolver.resolve(eq("lambda"), anyString(), eq("eu-west-1")))
+                .thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("lambda:InvokeFunction"),
+                eq("arn:aws:lambda:eu-west-1:222233334444:function:fn"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        IamEnforcementFilter filter = new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext, new IamConditionContextResolver());
+
+        long before = java.time.Instant.now().getEpochSecond();
+        filter.filter(containerRequest);
+        long after = java.time.Instant.now().getEpochSecond();
+
+        verify(evaluator).evaluate(any(), any(), eq("lambda:InvokeFunction"),
+                eq("arn:aws:lambda:eu-west-1:222233334444:function:fn"),
+                argThat(context -> {
+                    if (!"eu-west-1".equals(context.get("aws:requestedregion"))) {
+                        return false;
+                    }
+                    String currentTime = context.get("aws:currenttime");
+                    if (currentTime == null) {
+                        return false;
+                    }
+                    java.time.Instant.parse(currentTime);
+                    String epochTime = context.get("aws:epochtime");
+                    if (epochTime == null) {
+                        return false;
+                    }
+                    long epoch = Long.parseLong(epochTime);
+                    return epoch >= before && epoch <= after;
+                }));
+    }
+
+    // ── S3 CopyObject / UploadPartCopy: s3:GetObject on x-amz-copy-source ────
+
+    /**
+     * CopyObject and UploadPartCopy carry an {@code x-amz-copy-source} header naming the object
+     * being read. The main filter path only checks {@code s3:PutObject} on the destination; AWS
+     * separately requires {@code s3:GetObject} on the source. A caller with {@code s3:PutObject}
+     * on their own bucket but no read access to the source object must be denied.
+     */
+    @Test
+    void s3CopyObjectDeniesWhenSourceGetObjectIsDenied() {
+        CopyTestHarness h = buildCopySourceHarness();
+        when(h.evaluator.evaluate(any(), any(), eq("s3:GetObject"),
+                eq("arn:aws:s3:::source-bucket/source-key"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.DENY);
+
+        h.filter.filter(h.containerRequest);
+
+        verify(h.containerRequest).abortWith(any());
+    }
+
+    @Test
+    void s3CopyObjectAllowsWhenSourceGetObjectIsAllowed() {
+        CopyTestHarness h = buildCopySourceHarness();
+        when(h.evaluator.evaluate(any(), any(), eq("s3:GetObject"),
+                eq("arn:aws:s3:::source-bucket/source-key"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        h.filter.filter(h.containerRequest);
+
+        verify(h.containerRequest, never()).abortWith(any());
+        verify(h.evaluator).evaluate(any(), any(), eq("s3:GetObject"),
+                eq("arn:aws:s3:::source-bucket/source-key"), any());
+    }
+
+    @Test
+    void s3PutObjectWithoutCopySourceHeaderSkipsSourceCheck() {
+        CopyTestHarness h = buildCopySourceHarness();
+        when(h.containerRequest.getHeaderString("x-amz-copy-source")).thenReturn(null);
+
+        h.filter.filter(h.containerRequest);
+
+        verify(h.containerRequest, never()).abortWith(any());
+        verify(h.evaluator, never()).evaluate(any(), any(), eq("s3:GetObject"), anyString(), any());
+    }
+
+    @Test
+    void s3CopyObjectUsesGetObjectVersionWhenSourceHasVersionId() {
+        CopyTestHarness h = buildCopySourceHarness();
+        when(h.containerRequest.getHeaderString("x-amz-copy-source"))
+                .thenReturn("/source-bucket/source-key?versionId=abc123");
+        when(h.evaluator.evaluate(any(), any(), eq("s3:GetObjectVersion"),
+                eq("arn:aws:s3:::source-bucket/source-key"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.DENY);
+
+        h.filter.filter(h.containerRequest);
+
+        verify(h.containerRequest).abortWith(any());
+        verify(h.evaluator, never()).evaluate(any(), any(), eq("s3:GetObject"), anyString(), any());
+    }
+
+    private record CopyTestHarness(IamEnforcementFilter filter, IamPolicyEvaluator evaluator,
+                                   ContainerRequestContext containerRequest) {
+    }
+
+    /**
+     * Builds a filter wired for an S3 PUT (CopyObject) request: destination
+     * {@code s3:PutObject} on {@code dest-bucket/dest-key} always allowed, source object
+     * {@code source-bucket/source-key} named via {@code x-amz-copy-source}. Tests override the
+     * source-check decision or remove the header.
+     */
+    private static CopyTestHarness buildCopySourceHarness() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        IamService iamService = mock(IamService.class);
+        IamPolicyEvaluator evaluator = mock(IamPolicyEvaluator.class);
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        ResourceArnBuilder arnBuilder = mock(ResourceArnBuilder.class);
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("222233334444");
+        ContainerRequestContext containerRequest = mock(ContainerRequestContext.class);
+        UriInfo uriInfo = mock(UriInfo.class);
+
+        String auth = "AWS4-HMAC-SHA256 Credential=AKIACOPYSOURCE/20260629/us-east-1/s3/aws4_request, "
+                + "SignedHeaders=host, Signature=abc";
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(true);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(authConfig.trustForwardedHeaders()).thenReturn(false);
+        when(accountResolver.extractAccessKeyId(auth)).thenReturn("AKIACOPYSOURCE");
+        when(accountResolver.resolve(auth)).thenReturn("222233334444");
+        when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("us-east-1");
+        when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
+        when(containerRequest.getHeaderString("x-amz-copy-source"))
+                .thenReturn("/source-bucket/source-key");
+        when(containerRequest.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/dest-bucket/dest-key");
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(actionRegistry.resolveRestRouteScope(containerRequest)).thenReturn(null);
+        when(actionRegistry.resolve("s3", containerRequest)).thenReturn("s3:PutObject");
+        when(iamService.resolveCallerContext("AKIACOPYSOURCE"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":["s3:PutObject","s3:GetObject","s3:GetObjectVersion"],
+                           "Resource":"arn:aws:s3:::*"}
+                        ]}""")));
+        when(arnBuilder.build("s3", containerRequest, "us-east-1", "222233334444"))
+                .thenReturn("arn:aws:s3:::dest-bucket/dest-key");
+        when(resourcePolicyResolver.resolve(eq("s3"), anyString(), eq("us-east-1")))
+                .thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("s3:PutObject"),
+                eq("arn:aws:s3:::dest-bucket/dest-key"), any()))
+                .thenReturn(IamPolicyEvaluator.Decision.ALLOW);
+
+        IamEnforcementFilter filter = new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext, new IamConditionContextResolver());
+
+        return new CopyTestHarness(filter, evaluator, containerRequest);
+    }
+
+    // ── Multi-resource gates: EventBridge PutEvents / CloudWatch Logs StartQuery ────
+
+    @Test
+    void eventsPutEventsMultiBusDeniesWhenAnySecondaryBusIsDenied() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper(), mock(SecretsManagerService.class));
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"Entries":[
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"allowed-bus"},
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"secret-bus"}
+                ]}""");
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("AWSEvents.PutEvents");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("events", containerRequest)).thenReturn("events:PutEvents");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIAEVENTS"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"events:PutEvents",
+                           "Resource":"arn:aws:events:us-east-1:222222222222:event-bus/allowed-bus"}
+                        ]}""")));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("events"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIAEVENTS", "events");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest).abortWith(any());
+    }
+
+    @Test
+    void eventsPutEventsMultiBusAllowsWhenEveryBusIsAllowed() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper(), mock(SecretsManagerService.class));
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"Entries":[
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"allowed-bus"},
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"also-allowed-bus"}
+                ]}""");
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("AWSEvents.PutEvents");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("events", containerRequest)).thenReturn("events:PutEvents");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIAEVENTS"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"events:PutEvents",
+                           "Resource":"arn:aws:events:us-east-1:222222222222:event-bus/*"}
+                        ]}""")));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("events"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIAEVENTS", "events");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest, never()).abortWith(any());
+    }
+
+    @Test
+    void logsStartQueryMultiGroupDeniesWhenAnySecondaryGroupIsDenied() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper(), mock(SecretsManagerService.class));
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn","/aws/lambda/secret-fn"],
+                 "queryString":"fields @message"}""");
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("Logs_20140328.StartQuery");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("logs", containerRequest)).thenReturn("logs:StartQuery");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIALOGS"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"logs:StartQuery",
+                           "Resource":"arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn"}
+                        ]}""")));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("logs"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIALOGS", "logs");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest).abortWith(any());
+    }
+
+    @Test
+    void logsStartQueryMultiGroupAllowsWhenEveryGroupIsAllowed() {
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper(), mock(SecretsManagerService.class));
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn","/aws/lambda/also-allowed-fn"]}""");
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("Logs_20140328.StartQuery");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("logs", containerRequest)).thenReturn("logs:StartQuery");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIALOGS"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"logs:StartQuery",
+                           "Resource":"arn:aws:logs:us-east-1:222222222222:log-group:*"}
+                        ]}""")));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("logs"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIALOGS", "logs");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest, never()).abortWith(any());
+    }
+
+    /**
+     * Builds a filter wired for the multi-resource gate tests and stubs {@code containerRequest}
+     * with a matching {@code Authorization} header, so caller {@code akid} authenticates via
+     * SigV4 for {@code credentialScope} in {@code us-east-1} under account {@code 222222222222},
+     * with strict enforcement off so only the multi-resource gate itself is under test.
+     */
+    private static IamEnforcementFilter buildFilter(ContainerRequestContext containerRequest,
+                                                     IamActionRegistry actionRegistry,
+                                                     ResourceArnBuilder arnBuilder,
+                                                     IamPolicyEvaluator evaluator,
+                                                     IamService iamService,
+                                                     ResourcePolicyResolver resourcePolicyResolver,
+                                                     String akid,
+                                                     String credentialScope) {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iamConfig = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig authConfig = mock(EmulatorConfig.AuthConfig.class);
+        AccountResolver accountResolver = mock(AccountResolver.class);
+        RegionResolver regionResolver = mock(RegionResolver.class);
+        KmsService kmsService = mock(KmsService.class);
+        AnonymousAccessGate anonymousAccessGate = mock(AnonymousAccessGate.class);
+        RequestContext requestContext = new RequestContext();
+        requestContext.setAccountId("222222222222");
+
+        String auth = "AWS4-HMAC-SHA256 Credential=" + akid + "/20260629/us-east-1/" + credentialScope
+                + "/aws4_request, SignedHeaders=host, Signature=abc";
+
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iamConfig);
+        when(iamConfig.enforcementEnabled()).thenReturn(true);
+        when(iamConfig.strictEnforcementEnabled()).thenReturn(false);
+        when(config.auth()).thenReturn(authConfig);
+        when(authConfig.rootAccessKeyId()).thenReturn(Optional.empty());
+        when(accountResolver.extractAccessKeyId(auth)).thenReturn(akid);
+        when(accountResolver.resolve(auth)).thenReturn("222222222222");
+        when(regionResolver.resolveRegionFromAuth(auth)).thenReturn("us-east-1");
+        when(containerRequest.getHeaderString("Authorization")).thenReturn(auth);
+
+        return new IamEnforcementFilter(
+                config, accountResolver, iamService, evaluator, actionRegistry, arnBuilder,
+                resourcePolicyResolver, regionResolver, kmsService, anonymousAccessGate,
+                requestContext, new IamConditionContextResolver());
+    }
+
+    /**
+     * Builds a POST {@link ContainerRequestContext} backed by a real JSON body, wired for
+     * {@link io.github.hectorvent.floci.core.common.RequestBodyBuffer} and the real
+     * {@link ResourceArnBuilder} to read via {@code getEntityStream}/{@code setEntityStream} and
+     * the property-backed body cache.
+     */
+    private static ContainerRequestContext jsonBodyRequestCtx(String json) {
+        ContainerRequestContext ctx = Mockito.mock(ContainerRequestContext.class);
+        UriInfo uriInfo = Mockito.mock(UriInfo.class);
+        when(uriInfo.getPath()).thenReturn("/");
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(ctx.getUriInfo()).thenReturn(uriInfo);
+        when(ctx.getMethod()).thenReturn("POST");
+        when(ctx.getMediaType()).thenReturn(MediaType.valueOf("application/x-amz-json-1.1"));
+
+        AtomicReference<InputStream> streamRef = new AtomicReference<>(
+                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        when(ctx.getEntityStream()).thenAnswer(inv -> streamRef.get());
+        doAnswer(inv -> {
+            streamRef.set(inv.getArgument(0));
+            return null;
+        }).when(ctx).setEntityStream(any(InputStream.class));
+
+        Map<String, Object> properties = new HashMap<>();
+        when(ctx.getProperty(anyString())).thenAnswer(inv -> properties.get(inv.getArgument(0)));
+        doAnswer(inv -> {
+            properties.put(inv.getArgument(0), inv.getArgument(1));
+            return null;
+        }).when(ctx).setProperty(anyString(), any());
+
+        return ctx;
+    }
+
     @Test
     void queryProtocolGetsXmlErrorResponse() {
         // IAM/STS/EC2/SQS/SNS/RDS/ELBv2/CFN/... — Query protocol, form-encoded body, XML response.
@@ -457,3 +894,4 @@ class IamEnforcementFilterTest {
         return entity.toString();
     }
 }
+

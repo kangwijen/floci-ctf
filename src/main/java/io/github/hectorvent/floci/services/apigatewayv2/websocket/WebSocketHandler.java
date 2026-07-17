@@ -2,13 +2,18 @@ package io.github.hectorvent.floci.services.apigatewayv2.websocket;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AccountResolver;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.github.hectorvent.floci.services.apigatewayv2.ApiGatewayV2Service;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Api;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Integration;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Route;
 import io.github.hectorvent.floci.services.apigatewayv2.model.Stage;
+import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.ext.web.Router;
@@ -16,12 +21,15 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.MultivaluedHashMap;
+import jakarta.ws.rs.core.MultivaluedMap;
 import org.jboss.logging.Logger;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -47,6 +55,10 @@ public class WebSocketHandler {
     private final RegionResolver regionResolver;
     private final ObjectMapper objectMapper;
     private final io.vertx.core.Vertx vertx;
+    private final EmulatorConfig config;
+    private final AccountResolver accountResolver;
+    private final IamService iamService;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
     public WebSocketHandler(ApiGatewayV2Service apiGatewayV2Service,
@@ -57,7 +69,11 @@ public class WebSocketHandler {
                             WebSocketAuthorizerService authorizerService,
                             RegionResolver regionResolver,
                             ObjectMapper objectMapper,
-                            io.vertx.core.Vertx vertx) {
+                            io.vertx.core.Vertx vertx,
+                            EmulatorConfig config,
+                            AccountResolver accountResolver,
+                            IamService iamService,
+                            InProcessIamAuthorizer iamAuthorizer) {
         this.apiGatewayV2Service = apiGatewayV2Service;
         this.connectionManager = connectionManager;
         this.routeSelectionEvaluator = routeSelectionEvaluator;
@@ -67,6 +83,10 @@ public class WebSocketHandler {
         this.regionResolver = regionResolver;
         this.objectMapper = objectMapper;
         this.vertx = vertx;
+        this.config = config;
+        this.accountResolver = accountResolver;
+        this.iamService = iamService;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     /**
@@ -101,6 +121,17 @@ public class WebSocketHandler {
 
         // Resolve region from the request Authorization header
         String region = resolveRegionFromVertxRequest(ctx);
+
+        // SigV4/IAM gate. WebSocket connections bypass JAX-RS entirely (registered directly on the
+        // Vert.x Router — see init() above), so neither SigV4ValidationFilter nor IamEnforcementFilter
+        // ever see this request. AWS checks AWS_IAM authorization only once, at $connect time, since
+        // a WebSocket connection is stateful; this mirrors that by gating the upgrade itself rather
+        // than every subsequent message.
+        int rejectStatus = authorizeConnect(ctx, region, apiId, stageName);
+        if (rejectStatus != 0) {
+            ctx.response().setStatusCode(rejectStatus).end();
+            return;
+        }
 
         // Validate the API exists and is a WEBSOCKET protocol API
         Api api;
@@ -689,6 +720,69 @@ public class WebSocketHandler {
         // Use a simple JAX-RS HttpHeaders adapter to delegate to RegionResolver
         jakarta.ws.rs.core.HttpHeaders headers = new SimpleHttpHeaders(authHeader);
         return regionResolver.resolveRegion(headers);
+    }
+
+    /**
+     * Validates SigV4 and {@code execute-api:Invoke} IAM authorization for a $connect upgrade
+     * request, mirroring {@link io.github.hectorvent.floci.core.common.SigV4ValidationFilter} and
+     * {@link io.github.hectorvent.floci.core.common.IamEnforcementFilter} on the HTTP execute-api
+     * path: signature verification is gated by {@code floci.auth.validate-signatures} and IAM
+     * evaluation by {@code floci.services.iam.enforcement-enabled}, independently of each other.
+     *
+     * @return {@code 0} when the connection may proceed, otherwise the HTTP status code to send
+     */
+    private int authorizeConnect(RoutingContext ctx, String region, String apiId, String stageName) {
+        String authHeader = ctx.request().getHeader("Authorization");
+        String akid = authHeader != null && !authHeader.isBlank()
+                ? accountResolver.extractAccessKeyId(authHeader) : null;
+
+        if (config.auth().validateSignatures()) {
+            if (authHeader == null || authHeader.isBlank()) {
+                LOG.debugv("WebSocket upgrade rejected: missing Authorization for API {0}", apiId);
+                return 401;
+            }
+            if (akid == null) {
+                LOG.debugv("WebSocket upgrade rejected: unparsable Authorization for API {0}", apiId);
+                return 403;
+            }
+            Optional<String> secret = config.auth().rootAccessKeyId().filter(akid::equals).isPresent()
+                    ? config.auth().resolveRootSecretAccessKey()
+                    : iamService.findSecretKey(akid);
+            if (secret.isEmpty()) {
+                LOG.debugv("WebSocket upgrade rejected: unknown access key {0} for API {1}", akid, apiId);
+                return 403;
+            }
+            SigV4RequestValidator.Result result = SigV4RequestValidator.validate(
+                    ctx.request().method().name(),
+                    ctx.request().path(),
+                    ctx.request().query(),
+                    toMultivaluedMap(ctx),
+                    authHeader.trim(),
+                    secret.get(),
+                    new byte[0]);
+            if (result != SigV4RequestValidator.Result.VALID) {
+                LOG.debugv("WebSocket upgrade rejected: SigV4 {0} for access key {1} on API {2}",
+                        result, akid, apiId);
+                return 403;
+            }
+        }
+
+        if (config.services().iam().enforcementEnabled()) {
+            String routeArn = proxyEventBuilder.buildRouteArn(region, apiId, stageName, "$connect");
+            try {
+                iamAuthorizer.authorizeExplicitCaller(akid, "execute-api:Invoke", routeArn, region, "execute-api");
+            } catch (AwsException e) {
+                LOG.debugv("WebSocket upgrade rejected: {0}", e.getMessage());
+                return e.getHttpStatus();
+            }
+        }
+        return 0;
+    }
+
+    private static MultivaluedMap<String, String> toMultivaluedMap(RoutingContext ctx) {
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        ctx.request().headers().forEach(entry -> headers.add(entry.getKey(), entry.getValue()));
+        return headers;
     }
 
     /**

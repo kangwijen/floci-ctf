@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -44,16 +45,19 @@ public class JwtAuthorizerVerifier {
     private final EmulatorConfig config;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final OutboundUrlGuard outboundUrlGuard;
 
     @Inject
-    public JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper) {
-        this(config, objectMapper, HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build());
+    public JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper, OutboundUrlGuard outboundUrlGuard) {
+        this(config, objectMapper, HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build(), outboundUrlGuard);
     }
 
-    JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper, HttpClient httpClient) {
+    JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper, HttpClient httpClient,
+                          OutboundUrlGuard outboundUrlGuard) {
         this.config = config;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+        this.outboundUrlGuard = outboundUrlGuard;
     }
 
     public boolean verify(String token, String issuer) {
@@ -139,6 +143,7 @@ public class JwtAuthorizerVerifier {
     }
 
     private Map<String, Object> readJson(URI uri) throws Exception {
+        outboundUrlGuard.validateHttpUrl(uri.toString());
         HttpRequest request = HttpRequest.newBuilder(uri).GET().timeout(HTTP_TIMEOUT).build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {

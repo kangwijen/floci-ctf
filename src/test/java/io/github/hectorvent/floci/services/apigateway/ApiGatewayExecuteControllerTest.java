@@ -1,10 +1,13 @@
 package io.github.hectorvent.floci.services.apigateway;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -75,5 +78,100 @@ class ApiGatewayExecuteControllerTest {
                     routeKey, "/payments/spei/" + i);
             assertEquals("spei/" + i, p.get("proxy"));
         }
+    }
+
+    /**
+     * Verifies {@link ApiGatewayExecuteController#evaluateCustomAuthorizerPolicy(JsonNode, String)}
+     * evaluates every Statement entry in a CUSTOM Lambda authorizer policy document, with an
+     * explicit Deny winning over an Allow regardless of statement order.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String METHOD_ARN = "arn:aws:execute-api:us-east-1:000000000000:api1/test/GET/secured";
+
+    private static JsonNode statements(String json) {
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    @Test
+    void singleAllowStatementAllows() {
+        JsonNode stmts = statements("""
+                [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "%s" }]
+                """.formatted(METHOD_ARN));
+        assertTrue(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
+    }
+
+    @Test
+    void singleDenyStatementDenies() {
+        JsonNode stmts = statements("""
+                [{ "Action": "execute-api:Invoke", "Effect": "Deny", "Resource": "%s" }]
+                """.formatted(METHOD_ARN));
+        assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
+    }
+
+    @Test
+    void explicitDenyWinsOverAllowRegardlessOfOrder() {
+        JsonNode allowThenDeny = statements("""
+                [
+                  { "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "%s" },
+                  { "Action": "execute-api:Invoke", "Effect": "Deny", "Resource": "%s" }
+                ]
+                """.formatted(METHOD_ARN, METHOD_ARN));
+        assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(allowThenDeny, METHOD_ARN));
+
+        JsonNode denyThenAllow = statements("""
+                [
+                  { "Action": "execute-api:Invoke", "Effect": "Deny", "Resource": "%s" },
+                  { "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "%s" }
+                ]
+                """.formatted(METHOD_ARN, METHOD_ARN));
+        assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(denyThenAllow, METHOD_ARN));
+    }
+
+    @Test
+    void allowStatementMatchesAfterNonMatchingResourceStatement() {
+        JsonNode stmts = statements("""
+                [
+                  { "Action": "execute-api:Invoke", "Effect": "Deny", "Resource": "arn:aws:execute-api:us-east-1:000000000000:other-api/*" },
+                  { "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "%s" }
+                ]
+                """.formatted(METHOD_ARN));
+        assertTrue(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
+    }
+
+    @Test
+    void noMatchingStatementDeniesByDefault() {
+        JsonNode stmts = statements("""
+                [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "arn:aws:execute-api:us-east-1:000000000000:other-api/*" }]
+                """);
+        assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
+    }
+
+    @Test
+    void emptyStatementListDeniesByDefault() {
+        assertFalse(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(statements("[]"), METHOD_ARN));
+    }
+
+    @Test
+    void wildcardResourceAllowsMatchingMethodArn() {
+        JsonNode stmts = statements("""
+                [{ "Action": "execute-api:Invoke", "Effect": "Allow", "Resource": "arn:aws:execute-api:us-east-1:000000000000:api1/*" }]
+                """);
+        assertTrue(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
+    }
+
+    @Test
+    void resourceArrayIsEvaluatedForAMatch() {
+        JsonNode stmts = statements("""
+                [{
+                  "Action": "execute-api:Invoke",
+                  "Effect": "Allow",
+                  "Resource": ["arn:aws:execute-api:us-east-1:000000000000:other-api/*", "%s"]
+                }]
+                """.formatted(METHOD_ARN));
+        assertTrue(ApiGatewayExecuteController.evaluateCustomAuthorizerPolicy(stmts, METHOD_ARN));
     }
 }

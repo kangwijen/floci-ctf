@@ -89,7 +89,7 @@ public class ResourceArnBuilder {
         String path = ctx.getUriInfo().getPath();
         return switch (credentialScope) {
             case "s3"                   -> buildS3Arn(path);
-            case "lambda"               -> buildLambdaArn(path, region, accountId);
+            case "lambda"               -> buildLambdaArn(ctx, path, region, accountId);
             case "sqs"                  -> buildSqsArn(ctx, region, accountId);
             case "sns"                  -> buildSnsArn(ctx, region, accountId);
             case "dynamodb"             -> buildDynamoDbArn(ctx, region, accountId);
@@ -277,6 +277,12 @@ public class ResourceArnBuilder {
         if (tableArn != null) {
             return appendDynamoDbIndexSuffix(jsonText(node, "IndexName"), tableArn);
         }
+        // DynamoDB Streams (DescribeStream / GetShardIterator / ListStreams) carry StreamArn
+        // instead of TableName/TableArn — without this, per-stream Deny policies never match.
+        String streamArn = firstArn(jsonText(node, "StreamArn"), jsonText(node, "StreamARN"));
+        if (streamArn != null) {
+            return streamArn;
+        }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
     }
 
@@ -389,7 +395,49 @@ public class ResourceArnBuilder {
         if (logGroup != null && !logGroup.isBlank()) {
             return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:" + logGroup).toString();
         }
+        String firstGroupArn = firstLogsStartQueryGroupArn(node, region, accountId);
+        if (firstGroupArn != null) {
+            return firstGroupArn;
+        }
         return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:*").toString();
+    }
+
+    /**
+     * Returns the ARN for the first log group named in a StartQuery {@code logGroupNames} or
+     * {@code logGroupIdentifiers} array, or {@code null} when neither is present.
+     */
+    private static String firstLogsStartQueryGroupArn(JsonNode node, String region, String accountId) {
+        String first = firstNonBlank(
+                firstJsonArrayText(node, "logGroupNames"),
+                firstJsonArrayText(node, "logGroupIdentifiers"));
+        return first == null ? null : logGroupArn(first, region, accountId);
+    }
+
+    /**
+     * Extracts a bare log group name from either a plain name or a log-group ARN
+     * ({@code arn:aws:logs:region:account:log-group:name[:*]}), matching
+     * {@code CloudWatchLogsHandler.extractLogGroupNameFromArn}.
+     */
+    private static String extractLogGroupName(String value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.contains(":log-group:")) {
+            String name = value.substring(value.indexOf(":log-group:") + ":log-group:".length());
+            if (name.endsWith(":*")) {
+                name = name.substring(0, name.length() - 2);
+            }
+            return name;
+        }
+        return value;
+    }
+
+    private static String logGroupArn(String value, String region, String accountId) {
+        String name = extractLogGroupName(value);
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:" + name).toString();
     }
 
     private String buildEventsArnFromJson(JsonNode node, String region, String accountId) {
@@ -403,6 +451,12 @@ public class ResourceArnBuilder {
                 return AwsArnUtils.Arn.of("events", region, accountId, "rule/" + rule).toString();
             }
             return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/" + bus).toString();
+        }
+        JsonNode entries = node.get("Entries");
+        if (entries != null && entries.isArray() && !entries.isEmpty()) {
+            String firstBus = jsonTextFromNode(entries.get(0), "EventBusName");
+            String effectiveBus = (firstBus == null || firstBus.isBlank()) ? "default" : firstBus;
+            return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/" + effectiveBus).toString();
         }
         return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/*").toString();
     }
@@ -459,7 +513,7 @@ public class ResourceArnBuilder {
 
     // ── Lambda ──────────────────────────────────────────────────────────────────
 
-    private String buildLambdaArn(String path, String region, String accountId) {
+    private String buildLambdaArn(ContainerRequestContext ctx, String path, String region, String accountId) {
         String layer = extractSegmentAfter(path, "layers");
         if (layer != null) {
             int version = layer.indexOf(':');
@@ -468,6 +522,12 @@ public class ResourceArnBuilder {
         }
         String name = extractSegmentAfter(path, "functions");
         if (name == null) {
+            // The event-source-mappings endpoints carry no /functions/{name} path segment; the
+            // target function is only in the JSON body (CreateEventSourceMapping FunctionName).
+            String esmArn = eventSourceMappingFunctionArn(ctx, path, region, accountId);
+            if (esmArn != null) {
+                return esmArn;
+            }
             return AwsArnUtils.Arn.of("lambda", region, accountId, "function:*").toString();
         }
         int colon = name.indexOf(':');
@@ -475,6 +535,31 @@ public class ResourceArnBuilder {
             name = name.substring(0, colon);
         }
         return AwsArnUtils.Arn.of("lambda", region, accountId, "function:" + name).toString();
+    }
+
+    private String eventSourceMappingFunctionArn(ContainerRequestContext ctx, String path,
+                                                  String region, String accountId) {
+        if (!path.contains("/event-source-mappings")) {
+            return null;
+        }
+        String fn = readJsonStringField(ctx, "FunctionName");
+        if (fn == null || fn.isBlank()) {
+            return null;
+        }
+        // CreateEventSourceMapping's FunctionName accepts a bare name, a name with an
+        // alias/version qualifier (name:qualifier), or a full ARN (optionally qualified) —
+        // normalize all three down to the bare function name before building the ARN.
+        if (fn.startsWith("arn:")) {
+            int marker = fn.indexOf(":function:");
+            if (marker >= 0) {
+                fn = fn.substring(marker + ":function:".length());
+            }
+        }
+        int colon = fn.indexOf(':');
+        if (colon > 0) {
+            fn = fn.substring(0, colon);
+        }
+        return AwsArnUtils.Arn.of("lambda", region, accountId, "function:" + fn).toString();
     }
 
     // ── SQS ─────────────────────────────────────────────────────────────────────
@@ -666,6 +751,14 @@ public class ResourceArnBuilder {
                 readJsonStringField(ctx, "TableArn"));
         if (tableArn != null) {
             return appendDynamoDbIndexSuffix(readJsonStringField(ctx, "IndexName"), tableArn);
+        }
+        // DynamoDB Streams (DescribeStream / GetShardIterator / ListStreams) carry StreamArn
+        // instead of TableName/TableArn — without this, per-stream Deny policies never match.
+        String streamArn = firstArn(
+                readJsonStringField(ctx, "StreamArn"),
+                readJsonStringField(ctx, "StreamARN"));
+        if (streamArn != null) {
+            return streamArn;
         }
         return AwsArnUtils.Arn.of("dynamodb", region, accountId, "table/*").toString();
     }
@@ -1397,7 +1490,50 @@ public class ResourceArnBuilder {
             }
             return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:" + logGroup).toString();
         }
+        // StartQuery's logGroupNames/logGroupIdentifiers arrays carry no top-level logGroupName —
+        // single-resource fallback for the common one-group case. Multiple distinct groups are
+        // gated for multi-resource evaluation in IamEnforcementFilter via
+        // buildAllLogsStartQueryResources.
+        List<String> startQueryResources = buildAllLogsStartQueryResources(ctx, region, accountId);
+        if (!startQueryResources.isEmpty()) {
+            return startQueryResources.getFirst();
+        }
         return AwsArnUtils.Arn.of("logs", region, accountId, "log-group:*").toString();
+    }
+
+    /**
+     * Builds a distinct log-group ARN for every group named in a StartQuery request's
+     * {@code logGroupNames} or {@code logGroupIdentifiers} array (mutually exclusive with the
+     * singular {@code logGroupName}), so per-group Deny policies are evaluated instead of a
+     * {@code log-group:*} wildcard.
+     */
+    public List<String> buildAllLogsStartQueryResources(ContainerRequestContext ctx,
+                                                         String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        LinkedHashSet<String> arns = new LinkedHashSet<>();
+        collectLogsStartQueryGroupArns(node, "logGroupNames", region, accountId, arns);
+        collectLogsStartQueryGroupArns(node, "logGroupIdentifiers", region, accountId, arns);
+        if (arns.isEmpty()) {
+            return List.of(AwsArnUtils.Arn.of("logs", region, accountId, "log-group:*").toString());
+        }
+        return List.copyOf(arns);
+    }
+
+    private static void collectLogsStartQueryGroupArns(JsonNode node, String fieldName,
+                                                        String region, String accountId,
+                                                        LinkedHashSet<String> out) {
+        JsonNode array = node.get(fieldName);
+        if (array == null || !array.isArray()) {
+            return;
+        }
+        for (JsonNode entry : array) {
+            if (entry != null && entry.isTextual()) {
+                String arn = logGroupArn(entry.asText(), region, accountId);
+                if (arn != null) {
+                    out.add(arn);
+                }
+            }
+        }
     }
 
     // ── EventBridge ───────────────────────────────────────────────────────────────
@@ -1422,7 +1558,38 @@ public class ResourceArnBuilder {
             }
             return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/" + bus).toString();
         }
+        // PutEvents carries the bus name per-entry, not as a top-level field — single-resource
+        // fallback for the common one-bus case. Multiple distinct buses are gated for
+        // multi-resource evaluation in IamEnforcementFilter via buildAllEventsPutEventsResources.
+        List<String> putEventsResources = buildAllEventsPutEventsResources(ctx, region, accountId);
+        if (!putEventsResources.isEmpty()) {
+            return putEventsResources.getFirst();
+        }
         return AwsArnUtils.Arn.of("events", region, accountId, "event-bus/*").toString();
+    }
+
+    /**
+     * Builds a distinct event-bus ARN for every bus referenced across a PutEvents
+     * {@code Entries[]} array, so per-bus Deny policies are evaluated instead of a
+     * {@code event-bus/*} wildcard when entries target more than one bus.
+     */
+    public List<String> buildAllEventsPutEventsResources(ContainerRequestContext ctx,
+                                                          String region, String accountId) {
+        JsonNode node = readJsonBodyNode(ctx);
+        JsonNode entries = node.get("Entries");
+        if (entries == null || !entries.isArray() || entries.isEmpty()) {
+            return List.of(AwsArnUtils.Arn.of("events", region, accountId, "event-bus/*").toString());
+        }
+        LinkedHashSet<String> buses = new LinkedHashSet<>();
+        for (JsonNode entry : entries) {
+            String bus = entry != null ? jsonTextFromNode(entry, "EventBusName") : null;
+            buses.add((bus == null || bus.isBlank()) ? "default" : bus);
+        }
+        List<String> arns = new ArrayList<>(buses.size());
+        for (String bus : buses) {
+            arns.add(AwsArnUtils.Arn.of("events", region, accountId, "event-bus/" + bus).toString());
+        }
+        return Collections.unmodifiableList(arns);
     }
 
     // ── Step Functions ───────────────────────────────────────────────────────────

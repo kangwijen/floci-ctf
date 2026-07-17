@@ -89,17 +89,7 @@ final class CognitoAuthFlowHandler {
             case "REFRESH_TOKEN_AUTH", "REFRESH_TOKEN" -> handleRefreshToken(pool, client, authParameters, clientMetadata);
             case "USER_SRP_AUTH" -> handleUserSrpAuth(pool, client, authParameters, clientMetadata);
             case "CUSTOM_AUTH" -> handleCustomAuth(pool, client, authParameters, clientMetadata);
-            default -> {
-                String username = authParameters.get("USERNAME");
-                if (username == null) {
-                    throw new AwsException("InvalidParameterException", "USERNAME is required", 400);
-                }
-                CognitoUser user = service.adminGetUser(pool.getId(), username);
-                Map<String, Object> result = new HashMap<>();
-                result.put("AuthenticationResult",
-                        issueTokens(pool, client, user, "TokenGeneration_Authentication", clientMetadata));
-                yield result;
-            }
+            default -> throw unsupportedAuthFlow(authFlow);
         };
     }
 
@@ -127,14 +117,21 @@ final class CognitoAuthFlowHandler {
             case "REFRESH_TOKEN_AUTH", "REFRESH_TOKEN" -> handleRefreshToken(pool, client, authParameters, clientMetadata);
             case "ADMIN_USER_SRP_AUTH" -> handleUserSrpAuth(pool, client, authParameters, clientMetadata);
             case "CUSTOM_AUTH" -> handleCustomAuth(pool, client, authParameters, clientMetadata);
-            default -> {
-                CognitoUser user = service.adminGetUser(userPoolId, username);
-                Map<String, Object> result = new HashMap<>();
-                result.put("AuthenticationResult",
-                        issueTokens(pool, client, user, "TokenGeneration_Authentication", clientMetadata));
-                yield result;
-            }
+            default -> throw unsupportedAuthFlow(authFlow);
         };
+    }
+
+    /**
+     * AWS rejects unrecognized {@code AuthFlow} values with {@code InvalidParameterException}
+     * rather than authenticating the caller. A permissive default branch here would let anyone
+     * with {@code cognito-idp:InitiateAuth} obtain tokens for any existing user without
+     * verifying a password, SRP proof, or refresh token.
+     */
+    private static AwsException unsupportedAuthFlow(String authFlow) {
+        return new AwsException("InvalidParameterException",
+                "1 validation error detected: Value '" + authFlow + "' at 'authFlow' failed to satisfy constraint: "
+                        + "Member must satisfy enum value set: [USER_SRP_AUTH, REFRESH_TOKEN_AUTH, REFRESH_TOKEN, "
+                        + "CUSTOM_AUTH, ADMIN_NO_SRP_AUTH, USER_PASSWORD_AUTH, ADMIN_USER_PASSWORD_AUTH]", 400);
     }
 
     Map<String, Object> respondToAuthChallenge(String clientId, String challengeName, String session,

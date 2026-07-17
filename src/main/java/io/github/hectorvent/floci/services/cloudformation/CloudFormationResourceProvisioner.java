@@ -56,6 +56,7 @@ import io.github.hectorvent.floci.services.elbv2.model.Rule;
 import io.github.hectorvent.floci.services.elbv2.model.RuleCondition;
 import io.github.hectorvent.floci.services.elbv2.model.TargetGroup;
 import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
@@ -159,6 +160,7 @@ public class CloudFormationResourceProvisioner {
     private final AutoScalingService autoScalingService;
     private final FirehoseService firehoseService;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final InProcessIamAuthorizer iamAuthorizer;
     // Item 15 decomposition: extracted per-service provisioners are consulted before the switch
     // below. As types migrate, their switch cases and provisionXxx methods are removed here; the
     // now-dead service deps above are cleared in the final cleanup once the switch is empty.
@@ -193,7 +195,8 @@ public class CloudFormationResourceProvisioner {
                                              AutoScalingService autoScalingService,
                                              FirehoseService firehoseService,
                                              CloudFormationResourceRegistry resourceRegistry,
-                                             InProcessTargetAuthorizer targetAuthorizer) {
+                                             InProcessTargetAuthorizer targetAuthorizer,
+                                             InProcessIamAuthorizer iamAuthorizer) {
         this.s3Service = s3Service;
         this.sqsService = sqsService;
         this.snsService = snsService;
@@ -227,6 +230,7 @@ public class CloudFormationResourceProvisioner {
         this.firehoseService = firehoseService;
         this.resourceRegistry = resourceRegistry;
         this.targetAuthorizer = targetAuthorizer;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     /**
@@ -273,12 +277,12 @@ public class CloudFormationResourceProvisioner {
                 case "AWS::Lambda::Function" -> provisionLambda(resource, properties, engine, region, accountId, stackName);
                 case "AWS::Lambda::LayerVersion" ->
                         provisionLambdaLayerVersion(resource, properties, engine, region, stackName);
-                case "AWS::IAM::Role" -> provisionIamRole(resource, properties, engine, accountId, stackName);
-                case "AWS::IAM::User" -> provisionIamUser(resource, properties, engine, stackName);
-                case "AWS::IAM::AccessKey" -> provisionIamAccessKey(resource, properties, engine);
+                case "AWS::IAM::Role" -> provisionIamRole(resource, properties, engine, region, accountId, stackName);
+                case "AWS::IAM::User" -> provisionIamUser(resource, properties, engine, region, accountId, stackName);
+                case "AWS::IAM::AccessKey" -> provisionIamAccessKey(resource, properties, engine, region, accountId);
                 case "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy" ->
-                        provisionIamPolicy(resource, properties, engine, accountId, stackName);
-                case "AWS::IAM::InstanceProfile" -> provisionInstanceProfile(resource, properties, engine, accountId, stackName);
+                        provisionIamPolicy(resource, properties, engine, region, accountId, stackName);
+                case "AWS::IAM::InstanceProfile" -> provisionInstanceProfile(resource, properties, engine, region, accountId, stackName);
                 case "AWS::SSM::Parameter" -> provisionSsmParameter(resource, properties, engine, region, stackName);
                 case "AWS::KMS::Key" -> provisionKmsKey(resource, properties, engine, region, accountId);
                 case "AWS::KMS::Alias" -> provisionKmsAlias(resource, properties, engine, region);
@@ -1856,8 +1860,21 @@ public class CloudFormationResourceProvisioner {
 
     // ── IAM Role ──────────────────────────────────────────────────────────────
 
+    /**
+     * Gates privileged IAM resource creation (role, user, access key, policy, instance profile)
+     * behind the caller's identity policy. CloudFormation provisioning runs on a background
+     * executor thread that bypasses {@link io.github.hectorvent.floci.core.common.IamEnforcementFilter},
+     * so without this check any caller with permission to create a stack could mint new IAM
+     * principals or credentials regardless of their own IAM permissions.
+     */
+    private void authorizeIamCreate(String iamAction, String resourceArn, String region) {
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizeCallerAction(iamAction, resourceArn, region);
+        }
+    }
+
     private void provisionIamRole(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                  String accountId, String stackName) {
+                                  String region, String accountId, String stackName) {
         String roleName = resolveOptional(props, "RoleName", engine);
         if (roleName == null || roleName.isBlank()) {
             roleName = generatePhysicalName(stackName, r.getLogicalId(), 64, false);
@@ -1870,6 +1887,9 @@ public class CloudFormationResourceProvisioner {
             path = "/";
         }
         String description = resolveOptional(props, "Description", engine);
+
+        String roleArn = AwsArnUtils.Arn.of("iam", "", accountId, "role" + path + roleName).toString();
+        authorizeIamCreate("iam:CreateRole", roleArn, region);
 
         try {
             var role = iamService.createRole(roleName, path, assumeDoc, description, 3600, Map.of());
@@ -1898,7 +1918,7 @@ public class CloudFormationResourceProvisioner {
     // ── IAM Policy ────────────────────────────────────────────────────────────
 
     private void provisionIamPolicy(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                    String accountId, String stackName) {
+                                    String region, String accountId, String stackName) {
         String policyName = resolveOptional(props, "PolicyName", engine);
         if (policyName == null || policyName.isBlank()) {
             policyName = generatePhysicalName(stackName, r.getLogicalId(), 128, false);
@@ -1906,6 +1926,9 @@ public class CloudFormationResourceProvisioner {
         String document = props != null && props.has("PolicyDocument")
                 ? props.get("PolicyDocument").toString()
                 : "{\"Version\":\"2012-10-17\",\"Statement\":[]}";
+
+        String policyArn = AwsArnUtils.Arn.of("iam", "", accountId, "policy/" + policyName).toString();
+        authorizeIamCreate("iam:CreatePolicy", policyArn, region);
 
         var policy = iamService.createPolicy(policyName, "/", null, document, Map.of());
         r.setPhysicalId(policy.getArn());
@@ -1923,18 +1946,20 @@ public class CloudFormationResourceProvisioner {
     }
 
     private void provisionIamManagedPolicy(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                           String accountId, String stackName) {
-        provisionIamPolicy(r, props, engine, accountId, stackName);
+                                           String region, String accountId, String stackName) {
+        provisionIamPolicy(r, props, engine, region, accountId, stackName);
     }
 
     // ── IAM Instance Profile ──────────────────────────────────────────────────
 
     private void provisionInstanceProfile(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                          String accountId, String stackName) {
+                                          String region, String accountId, String stackName) {
         String name = resolveOptional(props, "InstanceProfileName", engine);
         if (name == null || name.isBlank()) {
             name = generatePhysicalName(stackName, r.getLogicalId(), 128, false);
         }
+        String profileArn = AwsArnUtils.Arn.of("iam", "", accountId, "instance-profile/" + name).toString();
+        authorizeIamCreate("iam:CreateInstanceProfile", profileArn, region);
         try {
             var profile = iamService.createInstanceProfile(name, "/");
             r.setPhysicalId(name);
@@ -2490,19 +2515,24 @@ public class CloudFormationResourceProvisioner {
 
 
     private void provisionIamUser(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                  String stackName) {
+                                  String region, String accountId, String stackName) {
         String userName = resolveOptional(props, "UserName", engine);
         if (userName == null || userName.isBlank()) {
             userName = generatePhysicalName(stackName, r.getLogicalId(), 64, false);
         }
+        String userArn = AwsArnUtils.Arn.of("iam", "", accountId, "user/" + userName).toString();
+        authorizeIamCreate("iam:CreateUser", userArn, region);
         var user = iamService.createUser(userName, "/");
         r.setPhysicalId(userName);
         r.getAttributes().put("Arn", user.getArn());
     }
 
-    private void provisionIamAccessKey(StackResource r, JsonNode props, CloudFormationTemplateEngine engine) {
+    private void provisionIamAccessKey(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
+                                       String region, String accountId) {
         String userName = resolveOptional(props, "UserName", engine);
         if (userName != null) {
+            String userArn = AwsArnUtils.Arn.of("iam", "", accountId, "user/" + userName).toString();
+            authorizeIamCreate("iam:CreateAccessKey", userArn, region);
             var key = iamService.createAccessKey(userName);
             r.setPhysicalId(key.getAccessKeyId());
             r.getAttributes().put("SecretAccessKey", key.getSecretAccessKey());

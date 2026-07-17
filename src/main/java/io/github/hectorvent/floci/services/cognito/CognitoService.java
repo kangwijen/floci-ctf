@@ -2365,6 +2365,17 @@ public class CognitoService {
         validateUserNotGloballySignedOut(username, poolId, "refresh", iat);
     }
 
+    /**
+     * Checks that an access token has not been revoked and its user has not been globally
+     * signed out. Callers that only verify the RS256 signature/exp/nbf via
+     * {@link #verifyAndDecodeAccessToken(String)} (such as the OIDC userInfo endpoint) must
+     * call this afterward to reject tokens invalidated by RevokeToken or GlobalSignOut.
+     */
+    void validateAccessTokenNotRevoked(String jti, String poolId, String username, long iat) {
+        validateTokenNotRevoked(jti, poolId, "access");
+        validateUserNotGloballySignedOut(username, poolId, "access", iat);
+    }
+
     private void validateTokenNotRevoked(String jti, String poolId, String tokenType) {
         if (jti == null) {
             return;

@@ -18,6 +18,7 @@ import io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkReso
 import io.github.hectorvent.floci.core.common.docker.DockerHostResolver;
 import io.github.hectorvent.floci.core.common.docker.LaunchedContainerAwsEnv;
 import io.github.hectorvent.floci.services.ecr.registry.EcrRegistryManager;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.lambda.container.LambdaContainerCredentialsServer;
 import io.github.hectorvent.floci.services.lambda.LambdaLayerService;
 import io.github.hectorvent.floci.services.lambda.model.ContainerState;
@@ -93,6 +94,7 @@ public class ContainerLauncher {
     private final ContainerDetector containerDetector;
     private final CurrentContainerNetworkResolver currentContainerNetworkResolver;
     private final LaunchedContainerAwsEnv awsEnv;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     /** Matches an AWS-shaped ECR image URI: {@code <account>.dkr.ecr.<region>.amazonaws.com/<repo>[:tag]}. */
     private static final java.util.regex.Pattern AWS_ECR_URI =
@@ -112,7 +114,8 @@ public class ContainerLauncher {
                              ContainerReachableEndpoint reachableEndpoint,
                              ContainerDetector containerDetector,
                              CurrentContainerNetworkResolver currentContainerNetworkResolver,
-                             LaunchedContainerAwsEnv awsEnv) {
+                             LaunchedContainerAwsEnv awsEnv,
+                             InProcessIamAuthorizer iamAuthorizer) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.logStreamer = logStreamer;
@@ -127,6 +130,7 @@ public class ContainerLauncher {
         this.containerDetector = containerDetector;
         this.currentContainerNetworkResolver = currentContainerNetworkResolver;
         this.awsEnv = awsEnv;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     /**
@@ -206,6 +210,14 @@ public class ContainerLauncher {
         String flociHostname = java.net.URI.create(flociEndpoint).getHost();
 
         String executionRoleArn = fn.getRole();
+        // Best-effort iam:PassRole compensating control. When this launch happens inside an
+        // active request scope with a resolvable SigV4 caller (a synchronous Invoke call), that
+        // caller must be allowed to pass the function's execution role. Event-source-triggered and
+        // other background launches have no caller in scope and are left ungated here, per
+        // authorizePassRole's caller-resolution skip semantics.
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(executionRoleArn, "lambda.amazonaws.com", lambdaRegion);
+        }
         String credentialToken = credentialsServer.registerFunction(
                 fn.getFunctionName(), executionRoleArn, lambdaRegion);
         // When TLS is on, the container must trust Floci's self-signed cert so HTTPS callbacks

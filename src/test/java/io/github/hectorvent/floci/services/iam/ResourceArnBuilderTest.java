@@ -193,6 +193,47 @@ class ResourceArnBuilderTest {
         assertEquals("arn:aws:iam::222222222222:policy/PathfindingPolicy", arn);
     }
 
+    // ── Lambda ────────────────────────────────────────────────────────────────
+
+    @Test
+    void lambdaGetFunctionBuildsFunctionArnFromPath() {
+        ContainerRequestContext ctx = pathCtx("2015-03-31/functions/my-fn", jsonBodyCtx("{}"));
+        String arn = builder.build("lambda", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lambda:us-east-1:222222222222:function:my-fn", arn);
+    }
+
+    @Test
+    void lambdaCreateEventSourceMappingReadsFunctionNameFromJsonBody() {
+        ContainerRequestContext ctx = pathCtx("2015-03-31/event-source-mappings",
+                jsonBodyCtx("{\"EventSourceArn\":\"arn:aws:sqs:us-east-1:222222222222:q\","
+                        + "\"FunctionName\":\"secret-fn\"}"));
+        String arn = builder.build("lambda", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lambda:us-east-1:222222222222:function:secret-fn", arn);
+    }
+
+    @Test
+    void lambdaCreateEventSourceMappingStripsVersionQualifierFromFunctionName() {
+        ContainerRequestContext ctx = pathCtx("2015-03-31/event-source-mappings",
+                jsonBodyCtx("{\"FunctionName\":\"secret-fn:live\"}"));
+        String arn = builder.build("lambda", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lambda:us-east-1:222222222222:function:secret-fn", arn);
+    }
+
+    @Test
+    void lambdaCreateEventSourceMappingAcceptsFullFunctionArnInJsonBody() {
+        ContainerRequestContext ctx = pathCtx("2015-03-31/event-source-mappings",
+                jsonBodyCtx("{\"FunctionName\":\"arn:aws:lambda:us-east-1:222222222222:function:secret-fn:live\"}"));
+        String arn = builder.build("lambda", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lambda:us-east-1:222222222222:function:secret-fn", arn);
+    }
+
+    @Test
+    void lambdaEventSourceMappingsWithoutFunctionNameFallsBackToWildcard() {
+        ContainerRequestContext ctx = pathCtx("2015-03-31/event-source-mappings", jsonBodyCtx("{}"));
+        String arn = builder.build("lambda", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:lambda:us-east-1:222222222222:function:*", arn);
+    }
+
     // ── DynamoDB ──────────────────────────────────────────────────────────────
 
     @Test
@@ -297,6 +338,49 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = jsonBodyCtx("{\"Limit\":10}");
         String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/*", arn);
+    }
+
+    @Test
+    void dynamodbDescribeStreamUsesStreamArnInsteadOfTableWildcard() {
+        String streamArn = "arn:aws:dynamodb:us-east-1:222222222222:table/orders/stream/2024-01-01T00:00:00.000";
+        ContainerRequestContext ctx = jsonBodyCtx("{\"StreamArn\":\"" + streamArn + "\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals(streamArn, arn);
+    }
+
+    @Test
+    void dynamodbGetShardIteratorUsesUpperCaseStreamArnField() {
+        String streamArn = "arn:aws:dynamodb:us-east-1:222222222222:table/orders/stream/2024-01-01T00:00:00.000";
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"StreamARN":"%s","ShardId":"shardId-00000001"}""".formatted(streamArn));
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals(streamArn, arn);
+    }
+
+    @Test
+    void dynamodbStreamsPrefersTableNameOverStreamArnWhenBothPresent() {
+        String streamArn = "arn:aws:dynamodb:us-east-1:222222222222:table/decoy/stream/2024-01-01T00:00:00.000";
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"TableName\":\"real-table\",\"StreamArn\":\"" + streamArn + "\"}");
+        String arn = builder.build("dynamodb", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/real-table", arn);
+    }
+
+    @Test
+    void dynamodbFromJsonBodyUsesStreamArnInsteadOfTableWildcard() throws Exception {
+        String streamArn = "arn:aws:dynamodb:us-east-1:222222222222:table/orders/stream/2024-01-01T00:00:00.000";
+        var node = new ObjectMapper().readTree("{\"StreamArn\":\"" + streamArn + "\"}");
+        String arn = builder.buildFromJsonBody("dynamodb", node, REGION, ACCOUNT);
+        assertEquals(streamArn, arn);
+    }
+
+    @Test
+    void dynamodbFromJsonBodyPrefersTableNameOverStreamArn() throws Exception {
+        String streamArn = "arn:aws:dynamodb:us-east-1:222222222222:table/decoy/stream/2024-01-01T00:00:00.000";
+        var node = new ObjectMapper().readTree(
+                "{\"TableName\":\"real-table\",\"StreamArn\":\"" + streamArn + "\"}");
+        String arn = builder.buildFromJsonBody("dynamodb", node, REGION, ACCOUNT);
+        assertEquals("arn:aws:dynamodb:us-east-1:222222222222:table/real-table", arn);
     }
 
     @Test
@@ -581,6 +665,108 @@ class ResourceArnBuilderTest {
         ContainerRequestContext ctx = jsonBodyCtx("{\"Name\":\"default\",\"Rule\":\"cron-rule\"}");
         String arn = builder.build("events", ctx, REGION, ACCOUNT);
         assertEquals("arn:aws:events:us-east-1:222222222222:rule/cron-rule", arn);
+    }
+
+    @Test
+    void eventsPutEventsSingleEntryExtractsEventBusNameFromEntries() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Entries":[{"Source":"app","DetailType":"order","Detail":"{}",
+                             "EventBusName":"orders-bus"}]}""");
+        String arn = builder.build("events", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:events:us-east-1:222222222222:event-bus/orders-bus", arn);
+    }
+
+    @Test
+    void eventsPutEventsWithoutEventBusNameDefaultsToDefaultBus() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Entries":[{"Source":"app","DetailType":"order","Detail":"{}"}]}""");
+        String arn = builder.build("events", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:events:us-east-1:222222222222:event-bus/default", arn);
+    }
+
+    @Test
+    void eventsPutEventsMultiBusUsesFirstEntryBusForSingleResource() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Entries":[
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"allowed-bus"},
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"secret-bus"}
+                ]}""");
+        String arn = builder.build("events", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:events:us-east-1:222222222222:event-bus/allowed-bus", arn);
+    }
+
+    @Test
+    void eventsBuildAllPutEventsResourcesIncludesEveryDistinctBus() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Entries":[
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"allowed-bus"},
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"secret-bus"},
+                  {"Source":"app","DetailType":"order","Detail":"{}","EventBusName":"allowed-bus"}
+                ]}""");
+        List<String> arns = builder.buildAllEventsPutEventsResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:events:us-east-1:222222222222:event-bus/allowed-bus",
+                "arn:aws:events:us-east-1:222222222222:event-bus/secret-bus"), arns);
+    }
+
+    @Test
+    void eventsBuildAllPutEventsResourcesFallsBackToWildcardWhenNoEntries() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        List<String> arns = builder.buildAllEventsPutEventsResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of("arn:aws:events:us-east-1:222222222222:event-bus/*"), arns);
+    }
+
+    @Test
+    void logsStartQueryWithSingleLogGroupNameBuildsGroupArn() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn"],"queryString":"fields @message"}""");
+        String arn = builder.build("logs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn", arn);
+    }
+
+    @Test
+    void logsStartQueryWithLogGroupIdentifiersArnExtractsBareGroupName() {
+        String groupArn = "arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn:*";
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"logGroupIdentifiers\":[\"" + groupArn + "\"]}");
+        String arn = builder.build("logs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn", arn);
+    }
+
+    @Test
+    void logsStartQueryMultiGroupUsesFirstGroupForSingleResource() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn","/aws/lambda/secret-fn"]}""");
+        String arn = builder.build("logs", ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn", arn);
+    }
+
+    @Test
+    void logsBuildAllStartQueryResourcesIncludesEveryDistinctGroup() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn","/aws/lambda/secret-fn"]}""");
+        List<String> arns = builder.buildAllLogsStartQueryResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn",
+                "arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/secret-fn"), arns);
+    }
+
+    @Test
+    void logsBuildAllStartQueryResourcesMergesNamesAndIdentifiers() {
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"logGroupNames":["/aws/lambda/allowed-fn"],
+                 "logGroupIdentifiers":["arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/secret-fn:*"]}""");
+        List<String> arns = builder.buildAllLogsStartQueryResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of(
+                "arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/allowed-fn",
+                "arn:aws:logs:us-east-1:222222222222:log-group:/aws/lambda/secret-fn"), arns);
+    }
+
+    @Test
+    void logsBuildAllStartQueryResourcesFallsBackToWildcardWhenNoGroups() {
+        ContainerRequestContext ctx = jsonBodyCtx("{}");
+        List<String> arns = builder.buildAllLogsStartQueryResources(ctx, REGION, ACCOUNT);
+        assertEquals(List.of("arn:aws:logs:us-east-1:222222222222:log-group:*"), arns);
     }
 
     @Test

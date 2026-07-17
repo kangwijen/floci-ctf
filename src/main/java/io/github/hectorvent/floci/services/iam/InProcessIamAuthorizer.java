@@ -17,6 +17,7 @@ import org.jboss.logging.Logger;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Evaluates IAM policies for in-process service calls (Step Functions task integrations,
@@ -59,6 +60,148 @@ public class InProcessIamAuthorizer {
         this.resourcePolicyResolver = resourcePolicyResolver;
         this.regionResolver = regionResolver;
         this.kmsService = kmsService;
+    }
+
+    /**
+     * Authorizes {@code iam:PassRole} for the caller of the current request against a role ARN
+     * being attached to a service resource (Step Functions state machine, EventBridge Scheduler
+     * schedule, EventBridge Pipes pipe, or a Lambda function's execution role).
+     *
+     * <p>AWS requires {@code iam:PassRole} on the caller's identity — separate from whatever
+     * permission created the resource itself — with the {@code iam:PassedToService} condition key
+     * set to the service principal that will assume the role. Without this, any caller who can
+     * create the resource can silently reuse any role that exists in the account, regardless of
+     * whether they are allowed to pass it.
+     *
+     * <p>Resolves the caller from {@link RegionResolver#getCallerAccessKeyId()} so this works both
+     * for the direct HTTP creation path (JAX-RS request scope) and for CloudFormation-driven
+     * creation, where {@link io.github.hectorvent.floci.services.cloudformation.CloudFormationService}
+     * activates a synthetic request scope carrying the stack-creator's access key on the background
+     * provisioning thread. When no caller can be resolved (root credentials, unauthenticated
+     * internal callers, or no active request scope) the check is skipped rather than denied, matching
+     * the "unknown key — bypass" behavior {@link IamService#resolveCallerContext} already uses
+     * elsewhere in this class.
+     *
+     * @param roleArn         the role being attached; a blank value is a no-op (the caller's own
+     *                        validation is responsible for rejecting a missing role)
+     * @param servicePrincipal the AWS service principal that will assume the role
+     *                        (e.g. {@code states.amazonaws.com})
+     * @param region          AWS region, used for identity-based policy condition evaluation
+     */
+    public void authorizePassRole(String roleArn, String servicePrincipal, String region) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (roleArn == null || roleArn.isBlank()) {
+            return;
+        }
+        String akid = regionResolver.getCallerAccessKeyId();
+        if (akid == null || akid.isBlank()) {
+            return;
+        }
+        if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
+            return;
+        }
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            return;
+        }
+
+        String accountId = regionResolver.getAccountId();
+        Optional<String> callerArn = iamService.resolveCallerArn(akid);
+        Map<String, String> conditionCtx = buildConditionContext(
+                callerArn.orElse("arn:aws:iam::" + accountId + ":root"), accountId);
+        conditionCtx.put("iam:passedtoservice", servicePrincipal);
+        if (region != null && !region.isBlank()) {
+            conditionCtx.put("aws:requestedregion", region);
+        }
+
+        Decision decision = evaluator.evaluate(caller, List.of(), "iam:PassRole", roleArn, conditionCtx);
+        if (decision == Decision.DENY) {
+            LOG.infov("In-process IAM DENY (PassRole): akid={0} role={1} service={2}",
+                    akid, roleArn, servicePrincipal);
+            throw new AwsException("AccessDeniedException",
+                    "User: " + callerArn.orElse(akid) + " is not authorized to perform: iam:PassRole on resource: "
+                            + roleArn, 403);
+        }
+    }
+
+    /**
+     * Authorizes an IAM action for the caller of the current request against a specific resource
+     * ARN, independent of any execution role. Used by privileged CloudFormation resource types
+     * ({@code AWS::IAM::Role}, {@code AWS::IAM::User}, {@code AWS::IAM::AccessKey}, ...) whose
+     * provisioning bypasses HTTP IAM enforcement entirely when run from the stack's background
+     * executor thread.
+     *
+     * <p>Unlike {@link #authorizePassRole}, an unresolvable caller is denied rather than skipped:
+     * this method gates the ability to mint new IAM principals, so failing open on an
+     * unauthenticated or unknown caller would defeat the purpose of the check.
+     *
+     * @param iamAction   canonical action, e.g. {@code iam:CreateRole}
+     * @param resourceArn target resource ARN (or {@code "*"} when the action has no path-scoped
+     *                    resource, e.g. before the physical name is known)
+     * @param region      AWS region
+     */
+    public void authorizeCallerAction(String iamAction, String resourceArn, String region) {
+        authorizeCallerAction(iamAction, resourceArn, region, "iam");
+    }
+
+    /**
+     * Same as {@link #authorizeCallerAction(String, String, String)}, but resolves resource-based
+     * policies (bucket policies, key policies, ...) under the given SigV4 credential scope instead
+     * of always assuming an IAM-domain resource. Used when the gated action targets a resource in a
+     * different service, e.g. {@code s3:GetObject} on a CloudFormation {@code TemplateURL}.
+     */
+    public void authorizeCallerAction(String iamAction, String resourceArn, String region, String credentialScope) {
+        authorizeExplicitCaller(regionResolver.getCallerAccessKeyId(), iamAction, resourceArn, region, credentialScope);
+    }
+
+    /**
+     * Same as {@link #authorizeCallerAction(String, String, String, String)}, but takes the caller's
+     * access key ID directly instead of resolving it from {@link RegionResolver#getCallerAccessKeyId()}.
+     * Used by callers outside the JAX-RS request scope that already have SigV4 credentials in hand,
+     * e.g. the WebSocket handler, which registers on the Vert.x router and never enters a JAX-RS
+     * {@code ContainerRequestContext}.
+     */
+    public void authorizeExplicitCaller(String akid, String iamAction, String resourceArn, String region,
+                                        String credentialScope) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return;
+        }
+        if (akid == null || akid.isBlank()) {
+            denyCallerAction(iamAction, resourceArn, "unknown", "no caller identity");
+            return;
+        }
+        if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
+            return;
+        }
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            denyCallerAction(iamAction, resourceArn, akid, "unknown access key");
+            return;
+        }
+        if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(iamAction)) {
+            return;
+        }
+
+        String accountId = regionResolver.getAccountId();
+        String resource = resourceArn != null && !resourceArn.isBlank() ? resourceArn : "*";
+        List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
+        Optional<String> callerArn = iamService.resolveCallerArn(akid);
+        Map<String, String> conditionCtx = buildConditionContext(
+                callerArn.orElse("arn:aws:iam::" + accountId + ":root"), accountId);
+
+        Decision decision = evaluator.evaluate(caller, resourcePolicies, iamAction, resource, conditionCtx);
+        if (decision == Decision.DENY) {
+            denyCallerAction(iamAction, resourceArn, akid, "policy evaluation denied");
+        }
+    }
+
+    private void denyCallerAction(String iamAction, String resourceArn, String akid, String reason) {
+        LOG.infov("In-process IAM DENY ({0}): akid={1} action={2} resource={3}",
+                reason, akid, iamAction, resourceArn);
+        throw new AwsException("AccessDeniedException",
+                "User: " + akid + " is not authorized to perform: " + iamAction, 403);
     }
 
     /**

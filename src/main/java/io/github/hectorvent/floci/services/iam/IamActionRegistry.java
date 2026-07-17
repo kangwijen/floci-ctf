@@ -25,6 +25,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
 
 /**
  * Maps (credentialScope, httpMethod, requestPath) → IAM action string.
@@ -383,8 +384,15 @@ public class IamActionRegistry {
     }
 
     /**
-     * Maps S3 versioning and list-versions calls to AWS IAM actions
-     * ({@code s3:ListBucketVersions}, {@code s3:GetObjectVersion}, {@code s3:PutBucketVersioning}).
+     * Maps S3 versioning, sub-resource, and multipart/batch operations to AWS IAM actions
+     * ({@code s3:ListBucketVersions}, {@code s3:GetObjectVersion}, {@code s3:PutBucketVersioning},
+     * {@code s3:PutBucketPolicy}, {@code s3:DeleteObject}, ...).
+     *
+     * <p>Without this mapping, sub-resource writes (e.g. {@code PUT /{bucket}?policy}) and
+     * POST operations (e.g. {@code POST /{bucket}?delete}) fall through to the generic
+     * path-based {@code RULES} table or resolve to {@code null}, which either evaluates the
+     * wrong IAM action (bypassing an explicit {@code Deny} on the real action) or skips IAM
+     * evaluation entirely in non-strict mode.
      */
     private static String resolveS3Action(ContainerRequestContext ctx) {
         var query = ctx.getUriInfo().getQueryParameters();
@@ -413,6 +421,134 @@ public class IamActionRegistry {
             if ("DELETE".equals(method)) {
                 return "s3:DeleteObjectVersion";
             }
+        }
+
+        String subResourceAction = objectKey
+                ? resolveS3ObjectSubResourceAction(query, method)
+                : resolveS3BucketSubResourceAction(query, method);
+        if (subResourceAction != null) {
+            return subResourceAction;
+        }
+
+        if ("POST".equals(method)) {
+            return resolveS3PostAction(query, objectKey);
+        }
+        return null;
+    }
+
+    /**
+     * Maps bucket sub-resource query parameters on PUT/DELETE requests to the AWS IAM bucket
+     * policy action documented for the corresponding S3 API operation (e.g. {@code ?policy}
+     * on PUT is {@code s3:PutBucketPolicy}, not {@code s3:CreateBucket}).
+     *
+     * @see <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-with-s3-policy-actions.html">
+     *      Required permissions for Amazon S3 API operations</a>
+     */
+    private static String resolveS3BucketSubResourceAction(MultivaluedMap<String, String> query, String method) {
+        boolean put = "PUT".equals(method);
+        boolean delete = "DELETE".equals(method);
+        if (!put && !delete) {
+            return null;
+        }
+        if (query.containsKey("policy")) {
+            return put ? "s3:PutBucketPolicy" : "s3:DeleteBucketPolicy";
+        }
+        if (query.containsKey("acl")) {
+            return put ? "s3:PutBucketAcl" : null;
+        }
+        if (query.containsKey("lifecycle")) {
+            return "s3:PutLifecycleConfiguration";
+        }
+        if (query.containsKey("cors")) {
+            return "s3:PutBucketCORS";
+        }
+        if (query.containsKey("tagging")) {
+            return "s3:PutBucketTagging";
+        }
+        if (query.containsKey("website")) {
+            return put ? "s3:PutBucketWebsite" : "s3:DeleteBucketWebsite";
+        }
+        if (query.containsKey("logging")) {
+            return "s3:PutBucketLogging";
+        }
+        if (query.containsKey("notification")) {
+            return put ? "s3:PutBucketNotification" : null;
+        }
+        if (query.containsKey("object-lock")) {
+            return put ? "s3:PutBucketObjectLockConfiguration" : null;
+        }
+        if (query.containsKey("encryption")) {
+            return "s3:PutEncryptionConfiguration";
+        }
+        if (query.containsKey("publicAccessBlock")) {
+            return "s3:PutBucketPublicAccessBlock";
+        }
+        if (query.containsKey("ownershipControls")) {
+            return "s3:PutBucketOwnershipControls";
+        }
+        if (query.containsKey("requestPayment")) {
+            return put ? "s3:PutBucketRequestPayment" : null;
+        }
+        if (delete && query.containsKey("replication")) {
+            return "s3:PutReplicationConfiguration";
+        }
+        return null;
+    }
+
+    /**
+     * Maps object sub-resource query parameters on PUT/DELETE requests to the AWS IAM object
+     * policy action documented for the corresponding S3 API operation.
+     */
+    private static String resolveS3ObjectSubResourceAction(MultivaluedMap<String, String> query, String method) {
+        if ("PUT".equals(method)) {
+            if (query.containsKey("tagging")) {
+                return "s3:PutObjectTagging";
+            }
+            if (query.containsKey("retention")) {
+                return "s3:PutObjectRetention";
+            }
+            if (query.containsKey("legal-hold")) {
+                return "s3:PutObjectLegalHold";
+            }
+            if (query.containsKey("acl")) {
+                return "s3:PutObjectAcl";
+            }
+        }
+        if ("DELETE".equals(method)) {
+            if (query.containsKey("tagging")) {
+                return "s3:DeleteObjectTagging";
+            }
+            if (query.containsKey("uploadId")) {
+                return "s3:AbortMultipartUpload";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Maps S3 POST sub-resource operations to AWS IAM actions. AWS S3 has no dedicated POST
+     * rules in the generic {@code RULES} table, so without this mapping every POST resolves
+     * to {@code null}: allowed unconditionally in non-strict mode, denied for every legitimate
+     * POST in strict mode.
+     */
+    private static String resolveS3PostAction(MultivaluedMap<String, String> query, boolean objectKey) {
+        if (!objectKey) {
+            if (query.containsKey("delete")) {
+                return "s3:DeleteObject";
+            }
+            return null;
+        }
+        if (query.containsKey("uploads")) {
+            return "s3:PutObject";
+        }
+        if (query.containsKey("restore")) {
+            return "s3:RestoreObject";
+        }
+        if (query.containsKey("select")) {
+            return "s3:GetObject";
+        }
+        if (query.containsKey("uploadId")) {
+            return "s3:PutObject";
         }
         return null;
     }

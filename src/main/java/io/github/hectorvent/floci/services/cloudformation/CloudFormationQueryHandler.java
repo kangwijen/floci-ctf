@@ -65,10 +65,10 @@ public class CloudFormationQueryHandler {
             case "SetStackPolicy" -> Response.ok(emptyResult("SetStackPolicyResponse")).build();
             case "GetStackPolicy" -> Response.ok(emptyResult("GetStackPolicyResponse")).build();
             case "DescribeStackResource" -> describeStackResource(params, region);
-            case "CreateStackSet" -> createStackSet(params);
+            case "CreateStackSet" -> createStackSet(params, region);
             case "DescribeStackSet" -> describeStackSet(params);
             case "ListStackSets" -> listStackSets();
-            case "UpdateStackSet" -> updateStackSet(params);
+            case "UpdateStackSet" -> updateStackSet(params, region);
             case "DeleteStackSet" -> deleteStackSet(params);
             case "CreateStackInstances" -> createStackInstances(params, region);
             case "ListStackInstances" -> listStackInstances(params);
@@ -613,11 +613,11 @@ public class CloudFormationQueryHandler {
 
     // ── StackSets ─────────────────────────────────────────────────────────────
 
-    private Response createStackSet(MultivaluedMap<String, String> params) {
+    private Response createStackSet(MultivaluedMap<String, String> params, String region) {
         try {
             StackSet ss = stackSetService.createStackSet(
                     params.getFirst("StackSetName"),
-                    cfnService.resolveTemplateBody(params.getFirst("TemplateBody"), params.getFirst("TemplateURL")),
+                    cfnService.resolveTemplateBody(params.getFirst("TemplateBody"), params.getFirst("TemplateURL"), region),
                     extractParameters(params),
                     extractList(params, "Capabilities.member."),
                     extractTags(params),
@@ -679,11 +679,11 @@ public class CloudFormationQueryHandler {
         return Response.ok(xml.build()).type("text/xml").build();
     }
 
-    private Response updateStackSet(MultivaluedMap<String, String> params) {
+    private Response updateStackSet(MultivaluedMap<String, String> params, String region) {
         try {
             StackSetOperation op = stackSetService.updateStackSet(
                     params.getFirst("StackSetName"),
-                    cfnService.resolveTemplateBody(params.getFirst("TemplateBody"), params.getFirst("TemplateURL")),
+                    cfnService.resolveTemplateBody(params.getFirst("TemplateBody"), params.getFirst("TemplateURL"), region),
                     extractParameters(params),
                     extractList(params, "Capabilities.member."),
                     extractTags(params),

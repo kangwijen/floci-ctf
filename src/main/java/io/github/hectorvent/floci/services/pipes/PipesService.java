@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.common.TagHandler;
 import io.github.hectorvent.floci.core.storage.AccountAwareStorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.pipes.model.DesiredState;
 import io.github.hectorvent.floci.services.pipes.model.Pipe;
 import io.github.hectorvent.floci.services.pipes.model.PipeState;
@@ -30,13 +31,16 @@ public class PipesService implements TagHandler {
     private final StorageBackend<String, Pipe> storage;
     private final RegionResolver regionResolver;
     private final PipesPoller poller;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
-    public PipesService(StorageFactory storageFactory, RegionResolver regionResolver, PipesPoller poller) {
+    public PipesService(StorageFactory storageFactory, RegionResolver regionResolver, PipesPoller poller,
+                        InProcessIamAuthorizer iamAuthorizer) {
         this.storage = storageFactory.create("pipes", "pipes.json",
                 new TypeReference<Map<String, Pipe>>() {});
         this.regionResolver = regionResolver;
         this.poller = poller;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     public void startPersistedPollers() {
@@ -70,6 +74,9 @@ public class PipesService implements TagHandler {
         }
         if (roleArn == null || roleArn.isBlank()) {
             throw new AwsException("ValidationException", "RoleArn is required", 400);
+        }
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(roleArn, "pipes.amazonaws.com", region);
         }
 
         validateSourceConfiguration(source, sourceParameters);
@@ -128,6 +135,10 @@ public class PipesService implements TagHandler {
                         "Pipe " + name + " does not exist.", 404));
 
         validateSourceConfiguration(pipe.getSource(), sourceParameters != null ? sourceParameters : pipe.getSourceParameters());
+
+        if (roleArn != null && iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(roleArn, "pipes.amazonaws.com", region);
+        }
 
         if (target != null) pipe.setTarget(target);
         if (roleArn != null) pipe.setRoleArn(roleArn);

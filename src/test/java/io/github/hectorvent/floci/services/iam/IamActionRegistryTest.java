@@ -93,6 +93,110 @@ class IamActionRegistryTest {
     }
 
     @Test
+    void s3PostDeleteObjectsMapsToDeleteObject() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("delete", "");
+        ContainerRequestContext ctx = mockCtx("POST", "/my-bucket", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:DeleteObject", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PostInitiateMultipartUploadMapsToPutObject() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("uploads", "");
+        ContainerRequestContext ctx = mockCtx("POST", "/my-bucket/my-key", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutObject", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PostCompleteMultipartUploadMapsToPutObject() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("uploadId", "upload-123");
+        ContainerRequestContext ctx = mockCtx("POST", "/my-bucket/my-key", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutObject", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PostRestoreObjectMapsToRestoreObject() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("restore", "");
+        ContainerRequestContext ctx = mockCtx("POST", "/my-bucket/my-key", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:RestoreObject", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutBucketPolicyMapsToPutBucketPolicyNotCreateBucket() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("policy", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket", query, MediaType.APPLICATION_JSON_TYPE, "{}");
+        assertEquals("s3:PutBucketPolicy", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3DeleteBucketPolicyMapsToDeleteBucketPolicyNotDeleteBucket() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("policy", "");
+        ContainerRequestContext ctx = mockCtx("DELETE", "/my-bucket", query, null, "");
+        assertEquals("s3:DeleteBucketPolicy", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutBucketAclMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("acl", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutBucketAcl", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutBucketLifecycleMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("lifecycle", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutLifecycleConfiguration", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutBucketTaggingMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("tagging", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutBucketTagging", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutObjectTaggingMapsToObjectActionNotBucketAction() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("tagging", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket/my-key", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutObjectTagging", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3PutObjectAclMapsToObjectActionNotBucketAction() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("acl", "");
+        ContainerRequestContext ctx = mockCtx("PUT", "/my-bucket/my-key", query, MediaType.APPLICATION_XML_TYPE, "");
+        assertEquals("s3:PutObjectAcl", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3DeleteObjectTaggingMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("tagging", "");
+        ContainerRequestContext ctx = mockCtx("DELETE", "/my-bucket/my-key", query, null, "");
+        assertEquals("s3:DeleteObjectTagging", registry.resolve("s3", ctx));
+    }
+
+    @Test
+    void s3AbortMultipartUploadMapsCorrectly() {
+        MultivaluedMap<String, String> query = new MultivaluedHashMap<>();
+        query.add("uploadId", "upload-123");
+        ContainerRequestContext ctx = mockCtx("DELETE", "/my-bucket/my-key", query, null, "");
+        assertEquals("s3:AbortMultipartUpload", registry.resolve("s3", ctx));
+    }
+
+    @Test
     void formBodyIsRestoredForDownstreamConsumers() throws Exception {
         String body = "Action=ListUsers&Version=2010-05-08";
         AtomicReference<InputStream> streamRef = new AtomicReference<>(

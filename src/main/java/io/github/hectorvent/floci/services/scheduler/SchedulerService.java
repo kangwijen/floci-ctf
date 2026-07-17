@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.scheduler.model.Schedule;
 import io.github.hectorvent.floci.services.scheduler.model.ScheduleGroup;
 import io.github.hectorvent.floci.services.scheduler.model.ScheduleRequest;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -30,24 +31,29 @@ public class SchedulerService {
     private final StorageBackend<String, ScheduleGroup> groupStore;
     private final StorageBackend<String, Schedule> scheduleStore;
     private final RegionResolver regionResolver;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
-    public SchedulerService(StorageFactory storageFactory, RegionResolver regionResolver) {
+    public SchedulerService(StorageFactory storageFactory, RegionResolver regionResolver,
+                            InProcessIamAuthorizer iamAuthorizer) {
         this(
                 storageFactory.create("scheduler", "scheduler-groups.json",
                         new TypeReference<Map<String, ScheduleGroup>>() {}),
                 storageFactory.create("scheduler", "scheduler-schedules.json",
                         new TypeReference<Map<String, Schedule>>() {}),
-                regionResolver
+                regionResolver,
+                iamAuthorizer
         );
     }
 
     SchedulerService(StorageBackend<String, ScheduleGroup> groupStore,
                      StorageBackend<String, Schedule> scheduleStore,
-                     RegionResolver regionResolver) {
+                     RegionResolver regionResolver,
+                     InProcessIamAuthorizer iamAuthorizer) {
         this.groupStore = groupStore;
         this.scheduleStore = scheduleStore;
         this.regionResolver = regionResolver;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     // ──────────────────────────── Schedule Groups ────────────────────────────
@@ -174,6 +180,9 @@ public class SchedulerService {
     public Schedule createSchedule(ScheduleRequest req, String region) {
         validateName(req.getName());
         validateScheduleRequest(req);
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(req.getTarget().getRoleArn(), "scheduler.amazonaws.com", region);
+        }
         String effectiveGroup = resolveAndValidateGroup(req.getGroupName());
         getScheduleGroup(effectiveGroup, region); // verify group exists
 
@@ -218,6 +227,9 @@ public class SchedulerService {
     public Schedule updateSchedule(ScheduleRequest req, String region) {
         validateName(req.getName());
         validateScheduleRequest(req);
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(req.getTarget().getRoleArn(), "scheduler.amazonaws.com", region);
+        }
         String effectiveGroup = resolveAndValidateGroup(req.getGroupName());
         String key = scheduleKey(region, effectiveGroup, req.getName());
         Schedule existing = scheduleStore.get(key)

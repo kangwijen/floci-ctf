@@ -1,6 +1,12 @@
 package io.github.hectorvent.floci.services.iot;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
+import io.github.hectorvent.floci.services.iam.IamService;
+import io.github.hectorvent.floci.services.iam.model.CallerContext;
+import io.github.hectorvent.floci.services.iot.model.IotCertificate;
+import io.github.hectorvent.floci.services.iot.model.IotPolicy;
 import io.github.hectorvent.floci.services.iot.model.IotRetainedMessage;
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
 import io.netty.handler.codec.mqtt.MqttQoS;
@@ -39,15 +45,23 @@ public class IotMqttBrokerService {
     private final EmulatorConfig config;
     private final Vertx vertx;
     private final Instance<IotService> iotService;
+    private final IamService iamService;
+    private final IamPolicyEvaluator policyEvaluator;
+    private final RegionResolver regionResolver;
     private final Map<String, ClientSession> sessionsByClient = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Subscription>> subscriptionsByClient = new ConcurrentHashMap<>();
     private MqttServer server;
 
     @Inject
-    public IotMqttBrokerService(EmulatorConfig config, Vertx vertx, Instance<IotService> iotService) {
+    public IotMqttBrokerService(EmulatorConfig config, Vertx vertx, Instance<IotService> iotService,
+                                IamService iamService, IamPolicyEvaluator policyEvaluator,
+                                RegionResolver regionResolver) {
         this.config = config;
         this.vertx = vertx;
         this.iotService = iotService;
+        this.iamService = iamService;
+        this.policyEvaluator = policyEvaluator;
+        this.regionResolver = regionResolver;
     }
 
     void onStart(@Observes StartupEvent ignored) {
@@ -145,8 +159,10 @@ public class IotMqttBrokerService {
     }
 
     /**
-     * CTF MQTT CONNECT gate. When IAM enforcement is on, CONNECT without a username is rejected.
-     * Password and SigV4 credential validation are not performed here.
+     * Coarse CTF MQTT CONNECT gate. When IAM enforcement is on, CONNECT with a fully anonymous
+     * (null/blank) username is rejected outright. This is only the first layer — {@link
+     * #resolvePrincipal} performs the real credential check, since a merely non-blank username
+     * used to be treated as authenticated.
      */
     public static boolean allowMqttConnect(boolean enforcementEnabled, String username) {
         if (!enforcementEnabled) {
@@ -155,15 +171,92 @@ public class IotMqttBrokerService {
         return username != null && !username.isBlank();
     }
 
+    /**
+     * Resolves the CONNECT principal from the username/password fields.
+     *
+     * <p>CTF-safe simplification: full per-packet SigV4 signature verification (as real AWS IoT
+     * device SDKs perform over MQTT) is not implemented. Two credential shapes are accepted
+     * instead, and anything else — including a made-up but non-blank username — is rejected:
+     * <ul>
+     *   <li>the configured root access key, granted unrestricted access</li>
+     *   <li>username = a known IAM access key ID (with a non-blank password), authorized against
+     *       that identity's IAM policies exactly like the {@code iotdata} HTTP data plane</li>
+     *   <li>username = a known, ACTIVE IoT certificate ID or ARN, authorized against the IoT
+     *       policies attached to that certificate</li>
+     * </ul>
+     */
+    ConnectPrincipal resolvePrincipal(String username, String password) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        if (config.auth().rootAccessKeyId().filter(username::equals).isPresent()) {
+            return ConnectPrincipal.unrestricted("root:" + username);
+        }
+        if (password != null && !password.isBlank()) {
+            CallerContext caller = iamService.resolveCallerContext(username);
+            if (caller != null) {
+                return ConnectPrincipal.scoped("iam:" + username, caller.identityPolicies());
+            }
+        }
+        return resolveCertificatePrincipal(username);
+    }
+
+    private ConnectPrincipal resolveCertificatePrincipal(String certificateIdentifier) {
+        String certificateId = certificateIdentifier.contains(":cert/")
+                ? certificateIdentifier.substring(certificateIdentifier.indexOf(":cert/") + ":cert/".length())
+                : certificateIdentifier;
+        IotCertificate certificate;
+        try {
+            certificate = iotService.get().describeCertificate(certificateId, regionResolver.getDefaultRegion());
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (!"ACTIVE".equals(certificate.getStatus())) {
+            return null;
+        }
+        List<String> policies = iotService.get()
+                .listAttachedPolicies(certificate.getCertificateArn(), regionResolver.getDefaultRegion())
+                .stream()
+                .map(IotPolicy::getPolicyDocument)
+                .filter(doc -> doc != null && !doc.isBlank())
+                .toList();
+        return ConnectPrincipal.scoped("cert:" + certificateId, policies);
+    }
+
+    private boolean isAuthorized(ClientSession session, String action, String resourceArn) {
+        if (!config.services().iam().enforcementEnabled()) {
+            return true;
+        }
+        ConnectPrincipal principal = session.principal();
+        return principal != null && principal.isAuthorized(policyEvaluator, action, resourceArn);
+    }
+
+    private String topicArn(String resourceSuffix) {
+        return regionResolver.buildArn("iot", regionResolver.getDefaultRegion(), resourceSuffix);
+    }
+
     private void handleEndpoint(MqttEndpoint endpoint) {
         String clientId = endpoint.clientIdentifier();
         MqttAuth auth = endpoint.auth();
         String username = auth == null ? null : auth.getUsername();
-        if (!allowMqttConnect(config.services().iam().enforcementEnabled(), username)) {
+        String password = auth == null ? null : auth.getPassword();
+        boolean enforcementEnabled = config.services().iam().enforcementEnabled();
+        if (!allowMqttConnect(enforcementEnabled, username)) {
             LOG.warnv("IoT MQTT CONNECT rejected: missing username under IAM enforcement (clientId={0})",
                     clientId);
             endpoint.reject(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
             return;
+        }
+
+        ConnectPrincipal principal = null;
+        if (enforcementEnabled) {
+            principal = resolvePrincipal(username, password);
+            if (principal == null) {
+                LOG.warnv("IoT MQTT CONNECT rejected: username did not resolve to a known IAM "
+                        + "credential or an active IoT certificate (clientId={0})", clientId);
+                endpoint.reject(MqttConnectReturnCode.CONNECTION_REFUSED_BAD_USER_NAME_OR_PASSWORD);
+                return;
+            }
         }
 
         SocketAddress remoteAddress = endpoint.remoteAddress();
@@ -172,7 +265,8 @@ public class IotMqttBrokerService {
                 endpoint,
                 remoteAddress == null ? null : remoteAddress.host(),
                 remoteAddress == null ? -1 : remoteAddress.port(),
-                endpoint.isCleanSession());
+                endpoint.isCleanSession(),
+                principal);
 
         endpoint.subscriptionAutoAck(false);
         endpoint.publishAutoAck(false);
@@ -200,7 +294,8 @@ public class IotMqttBrokerService {
         for (io.vertx.mqtt.MqttTopicSubscription requested : message.topicSubscriptions()) {
             String topicFilter = requested.topicName();
             MqttQoS qos = requested.qualityOfService();
-            if (!isValidTopicFilter(topicFilter) || qos == MqttQoS.EXACTLY_ONCE) {
+            if (!isValidTopicFilter(topicFilter) || qos == MqttQoS.EXACTLY_ONCE
+                    || !isAuthorized(session, "iot:Subscribe", topicArn("topicfilter/" + topicFilter))) {
                 grantedQos.add(MqttQoS.FAILURE);
                 continue;
             }
@@ -240,6 +335,11 @@ public class IotMqttBrokerService {
         }
 
         String topic = message.topicName();
+        if (!isAuthorized(session, "iot:Publish", topicArn("topic/" + topic))) {
+            LOG.warnv("IoT MQTT PUBLISH denied: clientId={0} topic={1}", session.clientId(), topic);
+            return;
+        }
+
         if (topic.startsWith("$aws/")) {
             iotService.get().handleReservedMqttPublish(topic, payload, this::publish);
             return;
@@ -336,12 +436,34 @@ public class IotMqttBrokerService {
             MqttEndpoint endpoint,
             String sourceIp,
             int sourcePort,
-            boolean cleanSession) {
+            boolean cleanSession,
+            ConnectPrincipal principal) {
     }
 
     private record Subscription(String topicFilter, int qos) {
     }
 
     record ConnectionInfo(String clientId, String address, int port) {
+    }
+
+    /**
+     * The resolved identity behind an MQTT CONNECT: either the unrestricted operator root, an
+     * IAM identity's policies, or an IoT certificate's attached policies. {@code null} in a
+     * {@link ClientSession} means IAM enforcement was off when the connection was accepted.
+     */
+    record ConnectPrincipal(String descriptor, List<String> policyDocuments, boolean unrestricted) {
+
+        static ConnectPrincipal unrestricted(String descriptor) {
+            return new ConnectPrincipal(descriptor, List.of(), true);
+        }
+
+        static ConnectPrincipal scoped(String descriptor, List<String> policyDocuments) {
+            return new ConnectPrincipal(descriptor, policyDocuments == null ? List.of() : policyDocuments, false);
+        }
+
+        boolean isAuthorized(IamPolicyEvaluator evaluator, String action, String resourceArn) {
+            return unrestricted
+                    || evaluator.evaluate(policyDocuments, action, resourceArn) == IamPolicyEvaluator.Decision.ALLOW;
+        }
     }
 }
