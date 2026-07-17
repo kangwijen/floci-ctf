@@ -264,7 +264,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | STS `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` form post without SigV4 under strict IAM (filter bypass) | Closed | `SecurityBypassPathsTest` |
 | STS federated crypto required under IAM strict / Compose CTF (unsigned deny) | Closed | `StsWebIdentityStrictUnsignedIntegrationTest`, `AuthPostureTest` |
 | AuthPosture derives IAM/strict/SigV4/federated/egress flags (strict coerces federated + signatures) | Closed | `AuthPostureTest` |
-| `RequestContext.accessKeyId` for PassRole before SigV4/presign verify (O23) | Closed | When SigV4 validation is active, AKID is set only after verify (`RequestContextAkidGatingTest`). Residual: lab profiles with strict + `validate-signatures=false` still publish AKID early (unsigned Authorization helpers); Compose CTF sets SigV4 on |
+| CTF Quarkus profile (`application-ctf.yml` / `QUARKUS_PROFILE=ctf`) enables full AuthPosture without flipping main YAML | Closed | `CtfProfilePostureIntegrationTest`. Compose sets profile + matching `FLOCI_*`. Compat/lab escape hatch: omit profile (main YAML permissive) |
+| `RequestContext.accessKeyId` for PassRole before SigV4/presign verify (O23) | Closed | When SigV4 validation is active, AKID is set only after verify (`RequestContextAkidGatingTest`). Residual: lab profiles with strict + `validate-signatures=false` still publish AKID early (unsigned Authorization helpers); Compose CTF / profile `ctf` set SigV4 on |
 | SAML XSW: unsigned forged Assertion before signed Assertion | Closed | `SamlWrappedAssertionRejectedTest`, `SamlAssertionSignatureVerifierTest` |
 | STS `AssumeRole` missing role ASIA mint under IAM strict | Closed | `StsAssumeRoleMissingRoleStrictIntegrationTest` |
 | ECR repository policy on control-plane IAM (`DescribeRepositories` scoped ARN) | Closed | `EcrRepositoryPolicyControlPlaneIntegrationTest`, `ResourcePolicyResolverTest`, `ResourceArnBuilderTest` |
@@ -316,7 +317,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Secrets Manager `BatchGetSecretValue` multi-secret IAM | Closed | Each secret id evaluated (`ResourceArnBuilderTest`, Secrets Manager tests) |
 | WebSocket HTTP_PROXY after stage-var substitution | Closed | `OutboundUrlGuard` runs on the resolved URL (`WebSocketIntegrationInvokerSubstitutionTest`) |
 
-**Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings).
+**CTF profile vs lab defaults:** Main `application.yml` stays permissive for unit tests. Compose and CTF runs use `QUARKUS_PROFILE=ctf` (`application-ctf.yml`). Plain `docker run` without that profile or CTF `FLOCI_*` env is unsupported for CTF. Compat CI omits the profile on purpose.
+
+**Configuration reference:** [docs/configuration/environment-variables.md](./docs/configuration/environment-variables.md#ctf-hardening), [docs/configuration/advanced/application-yml.md](./docs/configuration/advanced/application-yml.md#ctf-fork-settings), [docs/configuration/docker-compose.md](./docs/configuration/docker-compose.md#ctf-security-profile).
 
 ---
 

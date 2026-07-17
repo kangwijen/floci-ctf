@@ -44,9 +44,9 @@ public record FederatedTokenValidationConfig(
     }
 
     /**
-     * Compose CTF sets {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true}. Under
-     * {@link AuthPosture#strict()}, federated crypto is also required even when the YAML default
-     * stays false. Does not flip {@code application.yml} global defaults (B.4 owns CTF profile).
+     * Profile {@code ctf} and Compose set {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true}. Under
+     * {@link AuthPosture#strict()}, federated crypto is also required even when the lab YAML default
+     * stays false. Main {@code application.yml} remains permissive for unit tests and compat.
      */
     public static FederatedTokenValidationConfig from(EmulatorConfig config) {
         EmulatorConfig.CtfConfig ctf = config.ctf();

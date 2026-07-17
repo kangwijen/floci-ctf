@@ -27,10 +27,13 @@ For service coverage, architecture, SDK examples, and general configuration, use
 
 | Area | Upstream Floci | This fork |
 |---|---|---|
-| IAM enforcement | Off by default | On in `docker-compose.yml` |
+| CTF Quarkus profile | N/A | `QUARKUS_PROFILE=ctf` loads `application-ctf.yml` (Compose default). Main `application.yml` stays permissive for unit tests / lab |
+| IAM enforcement | Off by default | On under profile `ctf` and in `docker-compose.yml` |
 | S3 `enforce-auth` (`FLOCI_SERVICES_S3_ENFORCE_AUTH`) | Off by default (public-ACL / bucket-policy path for unsigned reads) | Default remains `false` in YAML. Compose CTF relies on IAM + SigV4 (`IamEnforcementFilter`), not this flag |
-| Strict IAM mode | Off by default | On: denies unregistered keys and unknown action mappings |
-| SigV4 on API calls | Off by default | On: validates `Authorization` signatures |
+| Strict IAM mode | Off by default | On under profile `ctf`: denies unregistered keys and unknown action mappings |
+| SigV4 on API calls | Off by default | On under profile `ctf`: validates `Authorization` signatures |
+| Federated JWT/SAML crypto | Off by default | On under profile `ctf` (`validate-federated-tokens`) |
+| Private outbound URL block | Off by default | On under profile `ctf` (`block-private-outbound-urls`) |
 | Operator bypass | N/A | `FLOCI_AUTH_ROOT_*` pair bypasses enforcement for provisioning |
 | S3 pre-signed URLs | Default HMAC secret or 12-digit account id in credential | SigV4 query auth; **generated** URLs signed with operator root AKIA; **inbound** presigned requests resolve account from `X-Amz-Credential`; operator root secret takes precedence over IAM when AKID matches `FLOCI_AUTH_ROOT_*` |
 | Docker image defaults | `test`/`test` baked in; optional `floci`/`floci` deployer | No default credentials in `docker/Dockerfile`; deployer principal not seeded when IAM enforcement is on |
@@ -68,7 +71,7 @@ After each upstream merge, re-verify CTF hardening on conflict-prone files (`Sns
 
 ## Quick start (operators)
 
-Export operator secrets on the host, then start Compose:
+Export operator secrets on the host, then start Compose (`QUARKUS_PROFILE=ctf` is set in [docker-compose.yml](./docker-compose.yml)):
 
 ```bash
 export FLOCI_AUTH_ROOT_ACCESS_KEY_ID="AKIA..."
@@ -79,7 +82,7 @@ export AWS_SECRET_ACCESS_KEY="$FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY"
 docker compose up
 ```
 
-Compose mounts the host Docker socket (`/var/run/docker.sock`) so Lambda and EC2 container runtimes can start workloads. For a custom `docker run`, pass the same mount or set `DOCKER_HOST` (on Windows with Docker Desktop: `npipe:////./pipe/docker_engine`). Without Docker access, workloads that depend on container runtimes will not start.
+Compose mounts the host Docker socket (`/var/run/docker.sock`) so Lambda and EC2 container runtimes can start workloads. For a custom `docker run`, pass the same mount or set `DOCKER_HOST` (on Windows with Docker Desktop: `npipe:////./pipe/docker_engine`), and set `QUARKUS_PROFILE=ctf` (or the equivalent `FLOCI_*` CTF knobs). Plain `docker run` without the CTF profile or those env vars is unsupported for CTF (lab YAML defaults stay permissive). Without Docker access, workloads that depend on container runtimes will not start.
 
 All AWS services listen on `http://localhost:4566`. Root Compose publishes only that port. The Floci image (`docker/Dockerfile`) declares no `EXPOSE`. Challenge Compose owns any extra host mappings. Use the root credentials only for operator provisioning. Issue participant credentials via IAM (`CreateAccessKey`) and scoped policies.
 
@@ -87,6 +90,7 @@ All AWS services listen on `http://localhost:4566`. Root Compose publishes only 
 
 | Variable | Purpose |
 |---|---|
+| `QUARKUS_PROFILE` | `ctf` in repo Compose: load `application-ctf.yml` secure defaults |
 | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `true` in repo Compose: evaluate IAM on every call |
 | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `true`: no permissive fall-through for unknown actions or missing auth |
 | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true`: verify SigV4 on inbound API requests |

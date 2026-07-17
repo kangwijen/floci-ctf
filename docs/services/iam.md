@@ -494,7 +494,7 @@ docker compose up
 
 Compose enables federated token validation. Configure an HMAC secret or RSA public key for each lab issuer when you need cryptographic verification. A lab that intentionally needs unsigned web identity tokens must turn off IAM strict enforcement (or both enforcement and `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS`) explicitly. Setting only `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=false` while Compose keeps strict IAM on still requires federated crypto via `AuthPosture`. When validation is on, unsigned JWTs and `alg=none` are rejected.
 
-`AuthPosture` (`core/common/auth`) is the single derived reader for IAM enforcement, strict mode, SigV4 required, federated crypto required, and egress block. It does not flip main `application.yml` defaults (CTF profile is B.4). When `FLOCI_AUTH_VALIDATE_SIGNATURES=true`, `RequestContext.accessKeyId` used by in-process PassRole is set only after SigV4 or S3 presign verification succeeds.
+`AuthPosture` (`core/common/auth`) is the single derived reader for IAM enforcement, strict mode, SigV4 required, federated crypto required, and egress block. Main `application.yml` stays permissive; Quarkus profile `ctf` (`application-ctf.yml` / `QUARKUS_PROFILE=ctf`) and Compose turn full CTF posture on. When `FLOCI_AUTH_VALIDATE_SIGNATURES=true`, `RequestContext.accessKeyId` used by in-process PassRole is set only after SigV4 or S3 presign verification succeeds. Regression: `CtfProfilePostureIntegrationTest`.
 
 S3 presigned URLs use the same SigV4 query-string model as AWS. Sign with `aws s3 presign` using participant or operator IAM credentials, or use Floci's `PreSignedUrlGenerator` (requires `FLOCI_AUTH_ROOT_*` for built-in URL generation).
 

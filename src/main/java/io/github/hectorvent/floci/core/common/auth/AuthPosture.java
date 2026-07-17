@@ -7,10 +7,11 @@ import jakarta.inject.Inject;
 /**
  * Single derived view of CTF auth posture from existing config knobs.
  *
- * <p>Does not flip {@code application.yml} lab defaults. Under {@link #strict()}, federated
- * crypto and signatures are coerced on in this posture (Compose CTF already sets the YAML/env
- * knobs). {@link #signatureValidationActive()} follows the configured SigV4 knob so lab profiles
- * that keep unsigned Authorization headers under strict IAM continue to work until B.4.
+ * <p>Does not flip {@code application.yml} lab defaults. Activate Quarkus profile {@code ctf}
+ * ({@code application-ctf.yml} / {@code QUARKUS_PROFILE=ctf}) or Compose FLOCI_* env for full
+ * CTF posture. Under {@link #strict()}, federated crypto and signatures are coerced on in this
+ * posture. {@link #signatureValidationActive()} follows the configured SigV4 knob so lab profiles
+ * ({@code CtfLabIamEnforcementProfile}) that keep unsigned Authorization under strict IAM still work.
  */
 @ApplicationScoped
 public class AuthPosture {
@@ -80,7 +81,7 @@ public class AuthPosture {
 
     /**
      * Whether the SigV4 / presign filters will actually verify (configured knob only).
-     * Lab profiles may keep this false under strict until B.4 migrates them to signed requests.
+     * Lab profiles may keep this false under strict; CTF profile and Compose set the knob on.
      */
     public boolean signatureValidationActive() {
         return signatureValidationActive;
@@ -107,7 +108,7 @@ public class AuthPosture {
 
     /**
      * True when strict coerced signatures on but the SigV4 YAML/env knob is still off.
-     * Compose CTF sets both. Lab unsigned-header profiles hit this until B.4.
+     * Compose CTF and profile {@code ctf} set both. Lab unsigned-header profiles hit this on purpose.
      */
     public boolean signaturePostureMismatch() {
         return signaturesRequired && !signatureValidationActive;

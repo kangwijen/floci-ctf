@@ -243,12 +243,15 @@ jobs:
             -p 4566:4566 \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --group-add "$DOCKER_GID" \
+            -e QUARKUS_PROFILE=ctf \
             -e FLOCI_BASE_URL=http://floci-ctf:4566 \
             -e FLOCI_SERVICES_DOCKER_NETWORK=compat-ctf-net \
             -e FLOCI_HOSTNAME=floci-ctf \
             -e FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true \
             -e FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED=true \
             -e FLOCI_AUTH_VALIDATE_SIGNATURES=true \
+            -e FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true \
+            -e FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true \
             -e FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true \
             -e FLOCI_AUTH_ROOT_ACCESS_KEY_ID="$CTF_CI_ROOT_ACCESS_KEY_ID" \
             -e FLOCI_AUTH_ROOT_SECRET_ACCESS_KEY="$CTF_CI_ROOT_SECRET_ACCESS_KEY" \

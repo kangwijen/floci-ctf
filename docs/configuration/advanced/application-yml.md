@@ -32,7 +32,18 @@ See [Docker Compose — Multi-container networking](../docker-compose.md#multi-c
 
 ## CTF fork settings
 
-**floci-ctf** ships IAM enforcement, strict mode, and SigV4 off in `application.yml` for local dev; [docker-compose.yml](../../../docker-compose.yml) turns them on. See [README.md](../../../README.md) and [AGENTS.md](../../../AGENTS.md).
+**floci-ctf** keeps IAM enforcement, strict mode, SigV4, federated crypto, and egress block **off** in main `application.yml` so unit tests and lab/compat escape hatches stay permissive.
+
+Secure defaults live in Quarkus profile **`ctf`** (`src/main/resources/application-ctf.yml`). Activate with `QUARKUS_PROFILE=ctf`. Root [docker-compose.yml](../../../docker-compose.yml) sets that profile and mirrors the same knobs as `FLOCI_*` env vars (must not disagree). Plain `docker run` without the profile or those env vars is unsupported for CTF.
+
+| Path | Posture |
+|---|---|
+| Main `application.yml` (default / unit tests) | Permissive (IAM/SigV4/federated/egress off) |
+| `QUARKUS_PROFILE=ctf` / Compose | Enforced (IAM + strict + SigV4 + federated + egress) |
+| Compat CI `compat-test` | Permissive (no profile, no CTF env) |
+| Lab unsigned-header tests (`CtfLabIamEnforcementProfile`) | IAM + strict on, SigV4 off (intentional escape hatch) |
+
+See [README.md](../../../README.md) and [AGENTS.md](../../../AGENTS.md).
 
 ### `floci.ctf`
 
@@ -44,13 +55,13 @@ Maps to `FLOCI_CTF_*` environment variables.
 | `floci.ctf.container-credentials-bind-localhost` | `FLOCI_CTF_CONTAINER_CREDENTIALS_BIND_LOCALHOST` | `true` | Bind credential servers to `127.0.0.1` when link-local URI mode is off |
 | `floci.ctf.container-credentials-use-link-local-uri` | `FLOCI_CTF_CONTAINER_CREDENTIALS_USE_LINK_LOCAL_URI` | `true` | AWS link-local credential URIs; servers bind `0.0.0.0` |
 | `floci.ctf.container-credentials-link-local-host` | `FLOCI_CTF_CONTAINER_CREDENTIALS_LINK_LOCAL_HOST` | `169.254.170.2` | Host in link-local credential URIs |
-| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML Signature required with claims bound to the verified Assertion; crypto when keys configured. Compose sets `true`. Strict mode also requires federated crypto via `AuthPosture` without flipping this YAML default (B.4 owns CTF profile flip) |
+| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` (profile `ctf`: `true`) | Structural JWT/SAML checks, JWT `exp`, reject `alg=none`, SAML Signature required with claims bound to the verified Assertion; crypto when keys configured. Profile `ctf` / Compose set `true`. Strict mode also requires federated crypto via `AuthPosture` |
 | `floci.ctf.federated-jwt-hmac-secret` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRET` | _(none)_ | Shared HS256 HMAC secret for web identity JWT verification |
 | `floci.ctf.federated-jwt-hmac-secrets` | `FLOCI_CTF_FEDERATED_JWT_HMAC_SECRETS__*` | _(none)_ | Per OIDC provider host HS256 secrets |
 | `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
 | `floci.ctf.ecs-allow-host-volumes` | `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES` | `false` | Permit ECS host source paths only with an allowlist |
 | `floci.ctf.ecs-allowed-host-source-paths` | `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS` | _(none)_ | Allowed host-path roots for ECS volumes |
-| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` | Reject non-public outbound HTTP destinations (Compose sets `true`) |
+| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` (profile `ctf`: `true`) | Reject non-public outbound HTTP destinations |
 | `floci.ctf.outbound-url-host-allowlist` | `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` | _(none)_ | Optional outbound hostname allowlist |
 | `floci.ctf.outbound-allow-private-addresses` | `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES` | `false` | Operator override for private outbound addresses |
 | `floci.ctf.require-jwt-signature-verification` | `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` | `true` | Require HTTP API JWT authorizer signature verification |
@@ -93,13 +104,17 @@ floci:
 |---|---|---|---|
 | `floci.auth.trust-forwarded-headers` | `FLOCI_AUTH_TRUST_FORWARDED_HEADERS` | `false` | When `true`, `X-Forwarded-For` may set `aws:sourceip` in IAM conditions. Default ignores forwarded headers (CTF-safe) |
 
-### IAM enforcement (Compose profile)
+### IAM enforcement (profile `ctf` / Compose)
 
-| Setting | Env variable | Default in repo Compose |
-|---|---|---|
-| `floci.services.iam.enforcement-enabled` | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `true` |
-| `floci.services.iam.strict-enforcement-enabled` | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `true` |
-| `floci.auth.validate-signatures` | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `true` |
+| Setting | Env variable | Main YAML | Profile `ctf` / Compose |
+|---|---|---|---|
+| `floci.services.iam.enforcement-enabled` | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED` | `false` | `true` |
+| `floci.services.iam.strict-enforcement-enabled` | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED` | `false` | `true` |
+| `floci.auth.validate-signatures` | `FLOCI_AUTH_VALIDATE_SIGNATURES` | `false` | `true` |
+| `floci.ctf.validate-federated-tokens` | `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` | `false` | `true` |
+| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` | `true` |
+
+Regression: `CtfProfilePostureIntegrationTest`.
 
 ## Full Reference
 
