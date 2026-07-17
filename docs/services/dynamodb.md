@@ -171,6 +171,16 @@ When IAM enforcement is enabled, PartiQL statements map to scoped DynamoDB IAM a
 
 Policies must allow the action on every target table ARN (for example `arn:aws:dynamodb:us-east-1:000000000000:table/MyTable`). `ExecuteStatement` with a JOIN or other multi-table PartiQL evaluates IAM against each `FROM`/`JOIN`/`INTO`/`UPDATE` table reference; explicit Deny on any table denies the request. `BatchExecuteStatement` evaluates each statement in the batch independently (one table ARN per statement entry). Regression: `DynamoDbExecuteStatementScopedIntegrationTest`, `DynamoDbBatchExecuteStatementScopedIntegrationTest`, `ResourceArnBuilderTest`.
 
+### Batch, Transact, and Streams
+
+| API family | IAM resource scoping |
+|---|---|
+| `BatchWriteItem` / `BatchGetItem` | Every table name in the request map |
+| `TransactWriteItems` / `TransactGetItems` | Nested table names under each transact item |
+| Streams (`DescribeStream`, `GetShardIterator`, …) | `StreamArn` from the JSON body (when `TableName` is also present, TableName wins for table-scoped APIs) |
+
+Regression: `ResourceArnBuilderTest`, DynamoDB handler tests.
+
 ### CloudTrail audit (HTTP)
 
 When `FLOCI_SERVICES_CLOUDTRAIL_AUDIT_ENABLED=true` and a trail is logging, `dynamodb:PutItem` and related item APIs record management events unless a trail enables DynamoDB **data** event selectors (Floci indexes all HTTP audit as management events today; see [CloudTrail event delivery](./cloudtrail.md#event-delivery-and-s3-layout)):

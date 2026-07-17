@@ -7,10 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security (CTF fork)
+
+| Area | Change |
+|------|--------|
+| S3 IAM | POST (`DeleteObjects`, multipart) and bucket sub-resources (`?policy`, `?acl`, `?lifecycle`, …) map to correct `s3:*` actions |
+| S3 CopyObject | Destination `s3:PutObject` plus source `s3:GetObject` (or versioned Get) |
+| S3 Object Lock | `x-amz-bypass-governance-retention` requires `s3:BypassGovernanceRetention` |
+| IAM conditions | `aws:RequestedRegion`, `aws:CurrentTime`, `aws:EpochTime`, plus `ForAllValues:` / `ForAnyValue:` |
+| IAM credentials | Inactive access keys are rejected |
+| PassRole | Create paths for SFN, Scheduler, Pipes, and Lambda evaluate `iam:PassRole` |
+| Tagging | Non-ARN `ResourceARNList` entries are skipped (no `*` fallback) |
+| Cognito | Unknown `AuthFlow` rejected. userInfo honors revoked tokens |
+| API Gateway | JWT JWKS/OIDC fetches use `OutboundUrlGuard`. REST CUSTOM authorizer evaluates all Statements. WebSocket `$connect` requires SigV4/IAM. WebSocket HTTP_PROXY guarded after stage-var substitution |
+| EventBridge | Bus resource policies evaluated. `PutEvents` scopes per-entry bus ARNs |
+| Lambda ESM | `CreateEventSourceMapping` scopes to body `FunctionName` |
+| DynamoDB | Batch/Transact multi-table ARNs. Streams APIs use `StreamArn` |
+| Secrets Manager | `BatchGetSecretValue` evaluates each secret |
+| CloudWatch Logs | `StartQuery` evaluates each `logGroupNames` entry |
+| CloudFormation | TemplateURL S3 IAM. Provisioner gates privileged create APIs |
+| Scheduler | Universal targets authorize the concrete ARN |
+| Pipes | Kafka source and Lambda enrichment use in-process IAM |
+| IoT MQTT | CONNECT auth and topic publish/subscribe IAM when enforcement is on |
+
 ### Changed (CTF fork)
 
 - **sandbox:** constrain ECS host volumes, Lambda hot-reload paths, CodeBuild artifact collection, and S3 on-disk bucket paths to allowed roots
-- **outbound:** reject non-public HTTP destinations for SNS HTTP(S), API Gateway HTTP integrations, and ALB IP or hostname targets (`FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS`)
+- **outbound:** reject non-public HTTP destinations for SNS HTTP(S), API Gateway HTTP integrations, JWT JWKS/OIDC fetches, WebSocket HTTP_PROXY after substitution, and ALB IP or hostname targets (`FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS`)
 - **apigateway:** verify HTTP API JWT authorizer signatures and reject unsigned or `alg=none` tokens
 - **kms:** issue new symmetric ciphertext as authenticated AES-GCM envelopes while keeping legacy envelopes readable
 - **kms:** scope Decrypt IAM to the CiphertextBlob CMK and return IncorrectKeyException when KeyId does not match

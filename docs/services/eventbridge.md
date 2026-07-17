@@ -98,3 +98,15 @@ aws events put-events \
   --entries '[{"Source":"myapp","DetailType":"test","Detail":"{}"}]' \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Topic | Behavior |
+|---|---|
+| Bus resource policies | `PutPermission` / bus `Policy` documents are loaded by `ResourcePolicyResolver` for `events` and merge with identity policy (explicit Deny wins). |
+| `PutEvents` | Each distinct `EventBusName` in `Entries[]` becomes a resource ARN. Multi-bus batches evaluate every bus. |
+| `StartReplay` | Destination must be the same bus (cross-bus replay denied). |
+
+Regression: `ResourcePolicyResolverTest`, `ResourceArnBuilderTest`, `EventBridgeReplayIntegrationTest`, `EventBridgePermissionIntegrationTest`.

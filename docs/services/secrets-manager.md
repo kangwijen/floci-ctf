@@ -42,6 +42,7 @@ When IAM enforcement is enabled:
 - Data-plane calls require SigV4 from a registered IAM user or assumed role with `secretsmanager:*` (or scoped actions) on the secret ARN.
 - Resource policies merge with identity policies via `ResourcePolicyResolver` (same pattern as S3 bucket policies).
 - IAM evaluation uses the **stored secret ARN** including AWS six-character suffix when the secret exists.
+- `BatchGetSecretValue` evaluates IAM against each requested secret id (not only the first or a wildcard). Regression: `ResourceArnBuilderTest`.
 
 ### IAM resource patterns (AWS)
 

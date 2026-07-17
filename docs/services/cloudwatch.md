@@ -138,3 +138,9 @@ aws cloudwatch put-metric-alarm \
   --evaluation-periods 1 \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, CloudWatch Logs `StartQuery` (and related multi-group APIs) evaluate IAM against **each** entry in `logGroupNames` rather than a single `log-group:*` wildcard. Explicit Deny on any listed group denies the request.
+
+Regression: `ResourceArnBuilderTest`, CloudWatch Logs handler tests.

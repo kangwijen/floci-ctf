@@ -107,16 +107,19 @@ Notable CTF deltas on core services (full map in [AGENTS.md](../../AGENTS.md)):
 
 | Area | Behavior when enforcement is on |
 |---|---|
-| [IAM](iam.md#ctf-hardening) | Identity + resource policies; scoped `Resource` ARNs; operator `FLOCI_AUTH_ROOT_*` bypass |
-| [S3](s3.md) | SigV4 presigned GET/PUT and POST under strict enforcement; bucket policy merge after signature check |
+| [IAM](iam.md#ctf-hardening) | Identity + resource policies; scoped `Resource` ARNs; `PassRole` on create; condition keys; inactive keys rejected; operator `FLOCI_AUTH_ROOT_*` bypass |
+| [S3](s3.md) | SigV4 presigned GET/PUT and POST under strict enforcement; bucket policy merge after signature check; CopyObject source Get; POST/sub-resource action mapping; Object Lock bypass IAM |
 | [KMS](kms.md#ctf-fork) | Grant-based decrypt on HTTP when identity/key policy alone deny |
 | [STS](sts.md#ctf-fork) | `GetSessionToken` intersects session policy with parent user; WebIdentity/SAML trust conditions |
 | [Step Functions](step-functions.md#ctf-fork) | `aws-sdk` tasks for KMS, Secrets Manager, S3; `InProcessIamAuthorizer` on state machine role |
-| [DynamoDB](dynamodb.md#ctf-fork) | PartiQL maps to `dynamodb:PartiQL*` actions with table ARN from SQL |
+| [DynamoDB](dynamodb.md#ctf-fork) | PartiQL maps to `dynamodb:PartiQL*` actions with table ARN from SQL; Batch/Transact multi-table; Streams `StreamArn` |
 | [SQS](sqs.md#ctf-fork) | Scoped `ReceiveMessage`; resource-policy-only Allow; `ListQueues` IAM deny is `AccessDenied` (not `ServiceNotAvailableException`); regression: `SqsReceiveMessageScopedQueueIntegrationTest`, `SqsResourcePolicyOnlyAllowIntegrationTest`, `SqsListQueuesIamIntegrationTest` |
 | [SNS](sns.md#ctf-fork) | No default open topic policy; `:root` in topic policy does not authorize IAM users; regression: `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SnsSubscribeReceiveIamIntegrationTest` |
-| [Secrets Manager](secrets-manager.md#ctf-fork) | Path-prefix IAM uses `secret:path/*`; single-layer KMS `SecretBinary` envelopes; rotation `PutSecretValue` does not double-wrap; regression: `SecretsManagerRotationKmsIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest` |
-| Cognito OAuth | `/oauth2/*` uses client credentials; Bearer tokens do not bypass SigV4 on data plane |
+| [Secrets Manager](secrets-manager.md#ctf-fork) | Path-prefix IAM uses `secret:path/*`; single-layer KMS `SecretBinary` envelopes; rotation `PutSecretValue` does not double-wrap; `BatchGetSecretValue` multi-secret; regression: `SecretsManagerRotationKmsIntegrationTest`, `SecretsManagerKmsEnvelopeIntegrationTest` |
+| [EventBridge](eventbridge.md#ctf-fork) | Bus resource policies; `PutEvents` per-entry bus ARNs |
+| [API Gateway](api-gateway.md) | JWT JWKS/OIDC `OutboundUrlGuard`; WebSocket `$connect` SigV4/IAM; CUSTOM authorizer all Statements |
+| [IoT](iot.md#ctf-fork) | MQTT CONNECT auth and topic IAM when enforcement is on |
+| Cognito OAuth | `/oauth2/*` uses client credentials; Bearer tokens do not bypass SigV4 on data plane; unknown AuthFlow rejected; userInfo honors revocation |
 
 Lab author IAM patterns and verifier checklist: [IAM lab author patterns](iam.md#lab-author-iam-patterns-aws-aligned).
 

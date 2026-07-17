@@ -523,6 +523,14 @@ Under strict enforcement, the legacy `test`/`test` credential pair and other unr
 
 **Policy glob matching:** `IamPolicyEvaluator.globMatches` uses an `O(n*m)` dynamic-programming matcher for `*` and `?` so multi-wildcard Resource or Condition patterns cannot trigger exponential recursive backtracking against long literal ARNs. Regression: `IamPolicyEvaluatorTest.globMatchesPathologicalMultiWildcardCompletesInLinearTime`.
 
+**Condition keys and set operators:** `IamEnforcementFilter.buildConditionContext` populates `aws:RequestedRegion`, `aws:CurrentTime`, and `aws:EpochTime` in addition to principal/source keys. `IamPolicyEvaluator` supports `ForAllValues:` and `ForAnyValue:` multi-value condition operators. Regression: `IamEnforcementFilterTest`, `IamConditionContextResolverTest`, `IamPolicyEvaluatorTest`.
+
+**Inactive access keys:** `UpdateAccessKey` with `Status=Inactive` removes the key from SigV4 secret lookup. Inactive keys cannot authenticate. Regression: `IamServiceTest`.
+
+**`iam:PassRole`:** Creating Step Functions state machines, Scheduler schedules, EventBridge Pipes, and Lambda functions that reference a role evaluates `iam:PassRole` on that role ARN (in addition to the service create action).
+
+**Tagging multi-ARN:** `tagging:TagResources` / `UntagResources` evaluate each ARN in `ResourceARNList`. Non-ARN entries are skipped rather than falling back to `*`. Regression: `TaggingIamScopedIntegrationTest`.
+
 **Cognito OAuth routes:** `/cognito-idp/oauth2/token` and `/cognito-idp/oauth2/userInfo` are not SigV4 APIs. Real Cognito uses `client_secret_basic` (HTTP Basic with `client_id:client_secret`) or `client_secret_post` for the token endpoint, and a Bearer access token for userInfo ([token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)). Floci skips IAM policy evaluation on these paths and lets `CognitoOAuthController` / `CognitoUserInfoController` validate registered app-client credentials and access-token signatures. They are **not** listed in `SecurityBypassPaths` as health or internal routes. Under strict enforcement, unauthenticated calls to other paths are denied; OAuth routes still require client credentials or a verified Bearer access token at the controller. A Cognito-issued Bearer JWT does **not** satisfy SigV4 on S3, IAM, or other emulated services — `IamEnforcementFilter` rejects non-SigV4 `Authorization` headers on the data plane.
 
 ### AWS CLI version compatibility

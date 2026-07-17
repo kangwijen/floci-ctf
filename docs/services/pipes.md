@@ -107,3 +107,15 @@ response becomes the target input.
 - **Enrichment is currently applied only on the SQS source path.** Kinesis, DynamoDB Streams and
   Kafka sources deliver filtered records straight to the target; an enrichment configured on those
   sources is not yet applied.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Path | Behavior |
+|---|---|
+| Create / update pipe with `RoleArn` | Caller needs `iam:PassRole` on that role in addition to pipes create/update. |
+| Kafka (MSK / `smk://`) source poll | Pipe role (or delivery principal) is authorized via `InProcessTargetAuthorizer` before records are delivered. |
+| Lambda enrichment | Enrichment `lambda:InvokeFunction` is authorized in-process (`PipesTargetInvoker`). |
+
+Regression: `PipesPollerTest`, `PipesTargetInvokerTest`.

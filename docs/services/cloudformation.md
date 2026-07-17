@@ -255,3 +255,14 @@ aws cloudformation create-stack \
 !!! note "Dependency ordering"
     Use `!Ref MyFunction` (not a plain string) for `FunctionName` so CloudFormation
     provisions the function before the event source mapping.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Topic | Behavior |
+|---|---|
+| `TemplateURL` | Fetching a template from S3 evaluates the caller's S3 IAM (GetObject on the template object). |
+| Resource provisioner | Privileged create APIs for common resource types gate through in-process IAM as the stack role / caller. Residual: not every CloudFormation resource type is gated. |
+
+Regression: `CloudFormationResourceProvisionerIamGateTest`, `CloudFormationIntegrationTest`.

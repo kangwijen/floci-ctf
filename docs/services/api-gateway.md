@@ -66,7 +66,17 @@ Regression: `ApiGatewaySqsQueryIamBypassIntegrationTest`, `ApiGatewaySqsIntegrat
 
 JWT authorizers verify a signed token before reading its claims. Unsigned tokens, missing `alg`, and `alg=none` are rejected. `HS256` requires `FLOCI_CTF_API_GATEWAY_JWT_HMAC_SECRET`. `RS256` and `ES256` use the issuer's JWKS endpoint, first trying `/.well-known/jwks.json` and then OpenID discovery. Claims validation runs only after signature verification and checks `exp`, configured `iss`, and configured `aud` or `client_id`.
 
+JWKS and OpenID discovery HTTP fetches go through `OutboundUrlGuard` when `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` is enabled, matching SNS HTTP and HTTP_PROXY integrations. Regression: `JwtAuthorizerVerifierTest`.
+
 `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` defaults to `true`. If signature verification is required and no usable key is available, the authorizer denies the request.
+
+### REST CUSTOM authorizers
+
+When a REST method uses a CUSTOM Lambda authorizer, Floci evaluates **all** Statements in the authorizer policy document (not only the first Allow). Explicit Deny wins.
+
+### WebSocket APIs (CTF)
+
+Under IAM enforcement and SigV4 validation, the `$connect` route requires a valid SigV4 signature and IAM allow for `execute-api:Invoke` (AWS-shaped connect-time auth). Later routes use the established connection. WebSocket `HTTP_PROXY` integrations run `OutboundUrlGuard` on the URL **after** stage-variable substitution. Regression: `WebSocketConnectIamGateIntegrationTest`, `WebSocketIntegrationInvokerSubstitutionTest`.
 
 ### Examples
 

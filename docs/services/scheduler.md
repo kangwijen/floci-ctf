@@ -137,3 +137,14 @@ aws scheduler untag-resource \
 ## Default Schedule Group
 
 A `default` schedule group is automatically created on first access. Schedules created without specifying a group are placed in the default group. The default group cannot be deleted.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Topic | Behavior |
+|---|---|
+| Create schedule with `Target.RoleArn` | Caller needs `iam:PassRole` on that role. |
+| Universal targets | Delivery authorizes the concrete target ARN (not a service-wide wildcard) via `InProcessTargetAuthorizer`. |
+
+Regression: `ScheduleInvokerTest`.

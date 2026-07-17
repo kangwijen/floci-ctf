@@ -20,7 +20,7 @@ Supported MVP 1 behavior:
 Current MVP 1 limitations:
 
 - Certificate CSR handling creates emulator-local certificates; it does not perform real CA signing.
-- MQTT auth remains permissive; certificate and policy resources are modeled for provisioning compatibility, not enforced as broker authorization yet.
+- MQTT certificate/policy authorizer (IoT policy documents attached to principals) is not fully modeled. When IAM enforcement is on, CONNECT uses SigV4-style credentials and topic publish/subscribe is gated by IAM (see [CTF fork](#ctf-fork)).
 - Rules support basic topic filter extraction and action dispatch only; SQL projection, WHERE evaluation, substitutions, and error actions remain follow-up scope.
 
 ## MVP 2 Coverage
@@ -60,9 +60,21 @@ Broker scope:
 - Support MQTT v3 and MQTT 5 CONNECT handling used by local compatibility tests.
 - Support QoS 0 and QoS 1 publish/subscribe behavior for the local AWS IoT slice.
 - Keep MQTT plaintext-only for this phase; TLS and mTLS are out of scope.
-- Keep MQTT authorization permissive for now, but leave room for a later pluggable IoT certificate and policy authorizer.
+- Under CTF IAM enforcement, CONNECT and topic IAM apply (see [CTF fork](#ctf-fork)). IoT certificate policy documents remain a follow-up authorizer.
 - Keep MQTT broker logging minimal.
 - Validate the relevant IoT compatibility tests against the native binary before considering the phase complete.
+
+## CTF fork {#ctf-fork}
+
+When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`:
+
+| Surface | Behavior |
+|---|---|
+| MQTT CONNECT | Requires authenticated credentials (blank username rejected). Identity is resolved for subsequent IAM checks. |
+| Publish / subscribe | Topic ARNs evaluated with `iot:Publish` / `iot:Subscribe` (and related) against the caller identity. |
+| REST control / data | Existing HTTP IAM/SigV4 mapping via `IamActionRegistry` / `ResourceArnBuilder`. |
+
+Regression: `IotMqttBrokerServiceTest`, `IotMqttConnectAuthPolicyTest`, `IotIamScopedIntegrationTest`.
 
 ## Reserved Topics
 

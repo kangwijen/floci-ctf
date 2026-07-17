@@ -472,6 +472,8 @@ When IAM enforcement is enabled:
 - `ContainerEnvHardening` removes static AWS keys and operator bypass variables from the runtime environment.
 - Function resource policies feed `IamAuthorizationService` for `lambda:InvokeFunction` and related actions.
 - Control-plane Lambda API calls require SigV4 from registered IAM principals.
+- `CreateEventSourceMapping` (HTTP `POST /2015-03-31/event-source-mappings/`) scopes IAM to the `FunctionName` in the JSON body (not `function:*`). Regression: `ResourceArnBuilderTest`.
+- Creating a function with a `Role` evaluates `iam:PassRole` on that role when IAM enforcement is on.
 
 ### Function URLs and anonymous invoke
 

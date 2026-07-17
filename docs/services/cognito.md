@@ -254,3 +254,7 @@ When IAM enforcement is enabled:
 - Attach `cognito-idp:*` (or scoped) policies to participant IAM users for admin-style pool operations.
 
 Token revocation (upstream post-1.5.32): issued access and ID tokens carry `jti` and `origin_jti`. `AdminUserGlobalSignOut`, self-service `GlobalSignOut`, and `RevokeToken` mark tokens revoked so later user-pool API use and refresh fail. CTF keeps `InProcessTargetAuthorizer` on Cognito delivery paths (for example Lambda invoke from Cognito triggers) when IAM enforcement is on.
+
+**Auth flows:** Unrecognized `AuthFlow` values on `InitiateAuth` / `AdminInitiateAuth` are rejected (`InvalidParameterException`). The default branch no longer issues tokens after a mere user-existence check. Regression: `CognitoAuthFlowHandlerTest`.
+
+**userInfo revocation:** `CognitoUserInfoController` rejects revoked access tokens. Regression: `CognitoUserInfoIntegrationTest`.
