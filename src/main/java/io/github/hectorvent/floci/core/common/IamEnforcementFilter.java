@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.auth.ResourceRef;
 import io.github.hectorvent.floci.services.iam.IamActionRegistry;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
@@ -102,6 +103,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
+        // Same knob as AuthPosture.strict() (B.1). UNRESOLVED / bare-* gates use this CTF posture.
         boolean strict = config.services().iam().strictEnforcementEnabled();
         String path = ctx.getUriInfo().getPath();
 
@@ -217,9 +219,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String action = actionRegistry.resolve("s3", ctx);
         if (action == null) {
-            if (strict) {
-                ctx.abortWith(accessDeniedResponse("s3:*", "s3", ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, "s3", "presigned");
             return;
         }
 
@@ -233,6 +233,9 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         String resource = arnBuilder.build("s3", ctx, region, accountId);
+        if (denyUnresolvedResource(ctx, resource, action, "s3", akid, strict)) {
+            return;
+        }
         List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "s3", action, ctx, region);
 
@@ -320,12 +323,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: unmapped action scope={0} path={1}",
-                        credentialScope, ctx.getUriInfo().getPath());
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, "action path=" + ctx.getUriInfo().getPath());
             return;
         }
 
@@ -342,6 +340,9 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         String serviceScope = routeScope != null ? routeScope : credentialScope;
         String resource = arnBuilder.build(serviceScope, ctx, region, accountId);
+        if (denyUnresolvedResource(ctx, resource, action, credentialScope, akid, strict)) {
+            return;
+        }
         List<String> resourcePolicies = resourcePolicyResolver.resolve(serviceScope, resource, region);
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, serviceScope, action, ctx, region);
 
@@ -571,11 +572,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                                        String reason) {
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: unmapped {0} scope={1}", reason, credentialScope);
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, reason);
             return;
         }
 
@@ -592,7 +589,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
 
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
         for (String resource : resources) {
-            if ("*".equals(resource)) {
+            MultiResourceGate gate = gateMultiResourceEntry(resource, strict);
+            if (gate == MultiResourceGate.DENIED) {
+                LOG.infov("IAM enforcement DENY: unresolved resource akid={0} action={1} {2}",
+                        akid, action, reason);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+            if (gate == MultiResourceGate.SKIP) {
                 continue;
             }
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
@@ -614,11 +618,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                                                   boolean strict) {
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: unmapped ExecuteStatement scope={0}", credentialScope);
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, "ExecuteStatement");
             return;
         }
 
@@ -637,6 +637,16 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
 
         for (String resource : resources) {
+            MultiResourceGate gate = gateMultiResourceEntry(resource, strict);
+            if (gate == MultiResourceGate.DENIED) {
+                LOG.infov("IAM enforcement DENY: unresolved resource akid={0} action={1} partiqlMultiTable",
+                        akid, action);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+            if (gate == MultiResourceGate.SKIP) {
+                continue;
+            }
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
             Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
             if (decision == Decision.DENY
@@ -668,11 +678,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         List<String> resources = arnBuilder.buildAllDynamoDbPartiQLResources(ctx, region, accountId);
 
         if (actions.isEmpty()) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: empty BatchExecuteStatement scope={0}", credentialScope);
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, "empty BatchExecuteStatement");
             return;
         }
 
@@ -688,12 +694,8 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         for (int i = 0; i < count; i++) {
             String action = actions.get(i);
             if (action == null) {
-                if (strict) {
-                    String unknownAction = credentialScope + ":*";
-                    LOG.infov("IAM strict enforcement DENY: unmapped PartiQL statement index={0}", i);
-                    ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-                }
-                continue;
+                denyUnmappedAction(ctx, credentialScope, "PartiQL statement index=" + i);
+                return;
             }
 
             if (IamUnrestrictedActions.isExemptFromPolicyEvaluation(action)) {
@@ -701,6 +703,15 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             }
 
             String resource = resources.get(i);
+            MultiResourceGate gate = gateMultiResourceEntry(resource, strict);
+            if (gate == MultiResourceGate.DENIED) {
+                LOG.infov("IAM enforcement DENY: unresolved resource akid={0} batchIndex={1}", akid, i);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+            if (gate == MultiResourceGate.SKIP) {
+                continue;
+            }
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
             Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
             Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
@@ -754,11 +765,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                                        boolean strict) {
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: unmapped EMR multi-cluster scope={0}", credentialScope);
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, "EMR multi-cluster");
             return;
         }
 
@@ -777,7 +784,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
 
         for (String resource : resources) {
-            if ("*".equals(resource)) {
+            MultiResourceGate gate = gateMultiResourceEntry(resource, strict);
+            if (gate == MultiResourceGate.DENIED) {
+                LOG.infov("IAM enforcement DENY: unresolved resource akid={0} action={1} emrMultiCluster",
+                        akid, action);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+            if (gate == MultiResourceGate.SKIP) {
                 continue;
             }
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
@@ -904,11 +918,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                                                               boolean strict) {
         String action = actionRegistry.resolve(credentialScope, ctx);
         if (action == null) {
-            if (strict) {
-                String unknownAction = credentialScope + ":*";
-                LOG.infov("IAM strict enforcement DENY: unmapped tagging scope={0}", credentialScope);
-                ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
-            }
+            denyUnmappedAction(ctx, credentialScope, "tagging");
             return;
         }
 
@@ -926,10 +936,22 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         List<String> resources = arnBuilder.buildAllTaggingResources(ctx);
         Map<String, String> conditionCtx = buildConditionContext(akid, accountId, credentialScope, action, ctx, region);
 
+        if (resources.size() == 1 && ResourceRef.isUnresolvedToken(resources.getFirst())) {
+            if (denyUnresolvedResource(ctx, resources.getFirst(), action, credentialScope, akid, strict)) {
+                return;
+            }
+            // Non-strict lab: evaluate as intentional Resource:* (historical tagging fallback).
+            List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, "*", region);
+            Decision decision = evaluator.evaluate(caller, resourcePolicies, action, "*", conditionCtx);
+            if (decision == Decision.DENY) {
+                LOG.infov("IAM enforcement DENY: akid={0} action={1} resource=* taggingUnresolved", akid, action);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+            }
+            return;
+        }
+
         if (resources.size() == 1 && "*".equals(resources.getFirst())) {
-            // ResourceARNList had multiple entries but none were ARN-prefixed, so
-            // buildAllTaggingResources could not extract a real resource. Evaluate IAM
-            // against the wildcard resource instead of skipping evaluation entirely.
+            // Intentional tagging wildcard (GetTagKeys/GetTagValues).
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, "*", region);
             Decision decision = evaluator.evaluate(caller, resourcePolicies, action, "*", conditionCtx);
             if (decision == Decision.DENY) {
@@ -940,7 +962,14 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         for (String resource : resources) {
-            if ("*".equals(resource)) {
+            MultiResourceGate gate = gateMultiResourceEntry(resource, strict);
+            if (gate == MultiResourceGate.DENIED) {
+                LOG.infov("IAM enforcement DENY: unresolved resource akid={0} action={1} taggingMultiArn",
+                        akid, action);
+                ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+                return;
+            }
+            if (gate == MultiResourceGate.SKIP) {
                 continue;
             }
             List<String> resourcePolicies = resourcePolicyResolver.resolve(credentialScope, resource, region);
@@ -951,6 +980,50 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
                 return;
             }
         }
+    }
+
+    private void denyUnmappedAction(ContainerRequestContext ctx, String credentialScope, String reason) {
+        String unknownAction = credentialScope + ":*";
+        LOG.infov("IAM enforcement DENY: unmapped {0} scope={1}", reason, credentialScope);
+        ctx.abortWith(accessDeniedResponse(unknownAction, credentialScope, ctx.getMediaType()));
+    }
+
+    private boolean denyUnresolvedResource(ContainerRequestContext ctx,
+                                           String resource,
+                                           String action,
+                                           String credentialScope,
+                                           String akid,
+                                           boolean strict) {
+        if (!ResourceRef.isUnresolvedToken(resource)) {
+            return false;
+        }
+        if (!strict) {
+            return false;
+        }
+        LOG.infov("IAM enforcement DENY: unresolved resource akid={0} action={1} resource={2}",
+                akid, action, resource);
+        ctx.abortWith(accessDeniedResponse(action, credentialScope, ctx.getMediaType()));
+        return true;
+    }
+
+    /**
+     * Under CTF/strict, UNRESOLVED denies and bare {@code *} is evaluated (not skipped).
+     * Non-strict keeps the historical skip for bare {@code *} / unresolved tokens.
+     */
+    private static MultiResourceGate gateMultiResourceEntry(String resource, boolean strict) {
+        if (ResourceRef.isUnresolvedToken(resource)) {
+            return strict ? MultiResourceGate.DENIED : MultiResourceGate.SKIP;
+        }
+        if ("*".equals(resource) && !strict) {
+            return MultiResourceGate.SKIP;
+        }
+        return MultiResourceGate.EVALUATE;
+    }
+
+    private enum MultiResourceGate {
+        EVALUATE,
+        SKIP,
+        DENIED
     }
 
     private Map<String, String> buildConditionContext(String accessKeyId,

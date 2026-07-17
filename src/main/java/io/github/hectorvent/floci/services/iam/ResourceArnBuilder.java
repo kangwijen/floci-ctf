@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.core.common.RequestBodyBuffer;
 import io.github.hectorvent.floci.core.common.SecurityBypassPaths;
+import io.github.hectorvent.floci.core.common.auth.ResourceRef;
 import io.github.hectorvent.floci.services.lambda.LambdaAliasStore;
 import io.github.hectorvent.floci.services.lambda.LambdaFunctionStore;
 import io.github.hectorvent.floci.services.lambda.model.LambdaAlias;
@@ -42,10 +43,15 @@ import java.util.regex.Pattern;
  * <a href="https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html">AWS Service Authorization Reference</a>.
  * When a specific resource cannot be determined, returns a service-scoped wildcard
  * (for example {@code table/*}) so explicit {@code *} in policies still matches, but
- * scoped ARNs do not.
+ * scoped ARNs do not. Extraction failures that previously returned bare {@code *} now
+ * return a {@link ResourceRef} UNRESOLVED token so CTF/strict enforcement can deny.
  */
 @ApplicationScoped
 public class ResourceArnBuilder {
+
+    /** Catalog scopes with no per-resource ARN arm (intentional IAM {@code Resource:*}). */
+    private static final Set<String> INTENTIONAL_WILDCARD_SCOPES = Set.of(
+            "ce", "pricing", "api.pricing", "ec2messages", "cloudcontrolapi");
 
     private static final Pattern API_GW_REST_API = Pattern.compile("/restapis/([^/]+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern EXECUTE_API = Pattern.compile("/([^/]+)/([^/]+)/", Pattern.CASE_INSENSITIVE);
@@ -172,8 +178,16 @@ public class ResourceArnBuilder {
             case "codepipeline"         -> buildCodePipelineArn(ctx, region, accountId);
             case "elasticbeanstalk"     -> buildElasticBeanstalkArn(ctx, region, accountId);
             case "s3vectors"            -> buildS3VectorsArn(ctx, region, accountId);
-            default                    -> "*";
+            default                    -> intentionalOrUnresolved(credentialScope, "unknown-scope");
         };
+    }
+
+    /**
+     * Typed view of {@link #build} for callers that distinguish UNRESOLVED from intentional {@code *}.
+     */
+    public ResourceRef buildRef(String credentialScope, ContainerRequestContext ctx,
+                                String region, String accountId) {
+        return ResourceRef.fromBuilt(build(credentialScope, ctx, region, accountId));
     }
 
     public String buildFromQueryParams(String credentialScope,
@@ -183,7 +197,7 @@ public class ResourceArnBuilder {
         if ("sqs".equals(credentialScope)) {
             return sqsArnFromParams(params, region, accountId);
         }
-        return "*";
+        return intentionalOrUnresolved(credentialScope, "query-params");
     }
 
     /**
@@ -198,7 +212,7 @@ public class ResourceArnBuilder {
         JsonNode node = readJsonBodyNode(ctx);
         JsonNode arnList = node.get("ResourceARNList");
         if (arnList == null || !arnList.isArray() || arnList.isEmpty()) {
-            return List.of("*");
+            return List.of(ResourceRef.unresolvedToken("tagging-empty-ResourceARNList"));
         }
         List<String> out = new ArrayList<>(arnList.size());
         for (JsonNode entry : arnList) {
@@ -209,12 +223,23 @@ public class ResourceArnBuilder {
                 }
             }
         }
-        return out.isEmpty() ? List.of("*") : Collections.unmodifiableList(out);
+        return out.isEmpty()
+                ? List.of(ResourceRef.unresolvedToken("tagging-no-arn-entries"))
+                : Collections.unmodifiableList(out);
     }
 
     private String buildTaggingArn(ContainerRequestContext ctx) {
         List<String> arns = buildAllTaggingResources(ctx);
-        return arns.isEmpty() ? "*" : arns.getFirst();
+        return arns.isEmpty()
+                ? ResourceRef.unresolvedToken("tagging-empty")
+                : arns.getFirst();
+    }
+
+    private static String intentionalOrUnresolved(String credentialScope, String reason) {
+        if (INTENTIONAL_WILDCARD_SCOPES.contains(credentialScope)) {
+            return "*";
+        }
+        return ResourceRef.unresolvedToken(reason + ":" + credentialScope);
     }
 
     /**
@@ -244,7 +269,7 @@ public class ResourceArnBuilder {
             case "codepipeline" -> buildCodePipelineArnFromJson(node, region, accountId);
             case "s3vectors" -> buildS3VectorsArnFromJson(node, region, accountId);
             case "lightsail" -> buildLightsailArnFromJson(node, region, accountId);
-            default -> "*";
+            default -> intentionalOrUnresolved(credentialScope, "json-body");
         };
     }
 
@@ -540,6 +565,9 @@ public class ResourceArnBuilder {
         if (functionUrlArn != null) {
             return functionUrlArn;
         }
+        if (extractLambdaUrlId(path) != null) {
+            return ResourceRef.unresolvedToken("lambda-url-unknown-urlId");
+        }
         String name = extractSegmentAfter(path, "functions");
         if (name == null) {
             // The event-source-mappings endpoints carry no /functions/{name} path segment; the
@@ -560,7 +588,7 @@ public class ResourceArnBuilder {
     /**
      * Resolves {@code /lambda-url/{urlId}} to the concrete function (or alias) ARN via the Lambda
      * store. Returns {@code null} when the path is not a Function URL invoke or the urlId is unknown
-     * (caller keeps the historical {@code function:*} fallback until Phase B UNRESOLVED).
+     * ({@link #buildLambdaArn} maps unknown urlId to a {@link ResourceRef} UNRESOLVED token).
      */
     private String functionUrlArnFromPath(String path, String region, String accountId) {
         String urlId = extractLambdaUrlId(path);
@@ -1970,7 +1998,7 @@ public class ResourceArnBuilder {
     private String buildElasticMapReduceArn(ContainerRequestContext ctx, String region, String accountId) {
         List<String> all = buildAllEmrClusterResources(ctx, region, accountId);
         if (all.isEmpty()) {
-            return "*";
+            return ResourceRef.unresolvedToken("emr-empty-cluster-list");
         }
         return all.getFirst();
     }
