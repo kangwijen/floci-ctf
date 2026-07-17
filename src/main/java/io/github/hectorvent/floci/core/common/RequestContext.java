@@ -36,6 +36,9 @@ public class RequestContext {
      * authorization checks (e.g. {@code iam:PassRole}) that need the caller's identity outside
      * the JAX-RS filter chain, including background CloudFormation provisioning threads that run
      * under a synthetic request scope.
+     *
+     * <p>When SigV4 validation is active, this is set only after
+     * {@link SigV4ValidationFilter} or {@code PreSignedUrlFilter} verifies the request (O23).
      */
     public String getAccessKeyId() {
         return accessKeyId;

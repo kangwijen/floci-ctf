@@ -1,9 +1,11 @@
 package io.github.hectorvent.floci.services.s3;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.RequestContext;
 import io.github.hectorvent.floci.core.common.SigV4RequestValidator;
 import io.github.hectorvent.floci.core.common.SigV4aPublicKeyResolver;
 import io.github.hectorvent.floci.core.common.XmlBuilder;
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 import io.github.hectorvent.floci.services.iam.IamService;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -34,16 +36,22 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
     private final EmulatorConfig config;
     private final IamService iamService;
     private final SigV4aPublicKeyResolver sigV4aPublicKeyResolver;
+    private final AuthPosture authPosture;
+    private final RequestContext flociRequestContext;
 
     @Inject
     public PreSignedUrlFilter(PreSignedUrlGenerator presignGenerator,
                               EmulatorConfig config,
                               IamService iamService,
-                              SigV4aPublicKeyResolver sigV4aPublicKeyResolver) {
+                              SigV4aPublicKeyResolver sigV4aPublicKeyResolver,
+                              AuthPosture authPosture,
+                              RequestContext flociRequestContext) {
         this.presignGenerator = presignGenerator;
         this.config = config;
         this.iamService = iamService;
         this.sigV4aPublicKeyResolver = sigV4aPublicKeyResolver;
+        this.authPosture = authPosture;
+        this.flociRequestContext = flociRequestContext;
     }
 
     @Override
@@ -146,7 +154,7 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             }
         }
 
-        requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+        markPresignVerified(requestContext, credential);
     }
 
     private void handleSigV4aPresignedUrl(ContainerRequestContext requestContext,
@@ -185,7 +193,7 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
         }
 
         if (!presignGenerator.shouldValidateSignatures()) {
-            requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+            markPresignVerified(requestContext, credential);
             return;
         }
 
@@ -224,7 +232,17 @@ public class PreSignedUrlFilter implements ContainerRequestFilter {
             return;
         }
 
+        markPresignVerified(requestContext, credential);
+    }
+
+    private void markPresignVerified(ContainerRequestContext requestContext, String credential) {
         requestContext.setProperty(PRESIGN_VERIFIED_PROPERTY, Boolean.TRUE);
+        if (authPosture.deferCallerAccessKeyUntilVerified() && credential != null && !credential.isBlank()) {
+            String accessKeyId = SigV4RequestValidator.parseAccessKeyIdFromCredential(credential);
+            if (accessKeyId != null && !accessKeyId.isBlank()) {
+                flociRequestContext.setAccessKeyId(accessKeyId);
+            }
+        }
     }
 
     private static Map<String, String> collectRequestHeaders(ContainerRequestContext requestContext) {

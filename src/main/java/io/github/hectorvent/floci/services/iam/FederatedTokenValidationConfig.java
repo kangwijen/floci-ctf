@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.iam;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 
 import java.util.Collections;
 import java.util.List;
@@ -43,17 +44,15 @@ public record FederatedTokenValidationConfig(
     }
 
     /**
-     * Compose CTF sets {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true}. Under IAM enforcement
-     * plus strict mode, federated crypto is also required even when the YAML default stays false.
-     * Does not flip {@code application.yml} global defaults (Phase B AuthPosture).
+     * Compose CTF sets {@code FLOCI_CTF_VALIDATE_FEDERATED_TOKENS=true}. Under
+     * {@link AuthPosture#strict()}, federated crypto is also required even when the YAML default
+     * stays false. Does not flip {@code application.yml} global defaults (B.4 owns CTF profile).
      */
     public static FederatedTokenValidationConfig from(EmulatorConfig config) {
         EmulatorConfig.CtfConfig ctf = config.ctf();
-        boolean strictIam = config.services().iam().enforcementEnabled()
-                && config.services().iam().strictEnforcementEnabled();
-        boolean validate = ctf.validateFederatedTokens() || strictIam;
+        AuthPosture posture = AuthPosture.from(config);
         return new FederatedTokenValidationConfig(
-                validate,
+                posture.federatedCryptoRequired(),
                 ctf.federatedJwtHmacSecret(),
                 ctf.federatedJwtHmacSecrets() == null ? Map.of() : ctf.federatedJwtHmacSecrets(),
                 ctf.federatedJwtRs256PublicKeyPem(),

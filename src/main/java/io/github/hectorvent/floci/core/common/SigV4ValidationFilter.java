@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 import io.github.hectorvent.floci.services.iam.IamService;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,10 +21,11 @@ import java.util.regex.Pattern;
 
 /**
  * Validates SigV4 {@code Authorization} headers on inbound AWS API requests when
- * {@code floci.auth.validate-signatures = true}.
+ * {@link AuthPosture#signatureValidationActive()} is true.
  *
  * <p>Runs at {@link Priorities#AUTHENTICATION} so signature verification happens
- * before {@link IamEnforcementFilter} policy checks.
+ * before {@link IamEnforcementFilter} policy checks. On successful verification,
+ * publishes {@link RequestContext#setAccessKeyId(String)} for PassRole (O23).
  */
 @Provider
 @ApplicationScoped
@@ -43,19 +45,25 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
     private final EmulatorConfig config;
     private final AccountResolver accountResolver;
     private final IamService iamService;
+    private final AuthPosture authPosture;
+    private final RequestContext requestContext;
 
     @Inject
     public SigV4ValidationFilter(EmulatorConfig config,
                                  AccountResolver accountResolver,
-                                 IamService iamService) {
+                                 IamService iamService,
+                                 AuthPosture authPosture,
+                                 RequestContext requestContext) {
         this.config = config;
         this.accountResolver = accountResolver;
         this.iamService = iamService;
+        this.authPosture = authPosture;
+        this.requestContext = requestContext;
     }
 
     @Override
     public void filter(ContainerRequestContext ctx) {
-        if (!config.auth().validateSignatures()) {
+        if (!authPosture.signatureValidationActive()) {
             return;
         }
 
@@ -135,7 +143,10 @@ public class SigV4ValidationFilter implements ContainerRequestFilter {
                 body);
 
         switch (result) {
-            case VALID -> ctx.setProperty(SIGV4_VERIFIED_PROPERTY, Boolean.TRUE);
+            case VALID -> {
+                ctx.setProperty(SIGV4_VERIFIED_PROPERTY, Boolean.TRUE);
+                requestContext.setAccessKeyId(akid);
+            }
             case EXPIRED -> ctx.abortWith(errorResponse("RequestExpired",
                     "Request is expired.",
                     extractService(trimmedAuth),

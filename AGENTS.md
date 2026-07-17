@@ -262,7 +262,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | STS federated `InvalidIdentityToken`, SAML response fidelity, trust Deny, SAML expiry | Closed | `StsWebIdentityTrustIntegrationTest`, `FederatedTokenParserTest`, `AssumeRoleTrustPolicyEvaluatorTest` |
 | IoT / iotdata IAM action mapping (strict mode unmapped-action deny) | Closed | `IotIamScopedIntegrationTest`, `LambdaContainerCredentialsIamIntegrationTest`, `IamActionRegistryTest`, `ResourceArnBuilderTest` |
 | STS `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` form post without SigV4 under strict IAM (filter bypass) | Closed | `SecurityBypassPathsTest` |
-| STS federated crypto required under IAM strict / Compose CTF (unsigned deny) | Closed | `StsWebIdentityStrictUnsignedIntegrationTest` |
+| STS federated crypto required under IAM strict / Compose CTF (unsigned deny) | Closed | `StsWebIdentityStrictUnsignedIntegrationTest`, `AuthPostureTest` |
+| AuthPosture derives IAM/strict/SigV4/federated/egress flags (strict coerces federated + signatures) | Closed | `AuthPostureTest` |
+| `RequestContext.accessKeyId` for PassRole before SigV4/presign verify (O23) | Closed | When SigV4 validation is active, AKID is set only after verify (`RequestContextAkidGatingTest`). Residual: lab profiles with strict + `validate-signatures=false` still publish AKID early (unsigned Authorization helpers); Compose CTF sets SigV4 on |
 | SAML XSW: unsigned forged Assertion before signed Assertion | Closed | `SamlWrappedAssertionRejectedTest`, `SamlAssertionSignatureVerifierTest` |
 | STS `AssumeRole` missing role ASIA mint under IAM strict | Closed | `StsAssumeRoleMissingRoleStrictIntegrationTest` |
 | ECR repository policy on control-plane IAM (`DescribeRepositories` scoped ARN) | Closed | `EcrRepositoryPolicyControlPlaneIntegrationTest`, `ResourcePolicyResolverTest`, `ResourceArnBuilderTest` |

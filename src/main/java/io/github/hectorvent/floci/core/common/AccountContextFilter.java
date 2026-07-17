@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.core.common;
 
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -20,6 +21,10 @@ import java.util.Optional;
  * the account; otherwise temporary credentials (e.g. assumed-role {@code ASIA...}
  * keys) are looked up in the session store via {@link SessionAccountLookup}; if
  * neither matches, the configured default account applies.
+ *
+ * <p>When {@link AuthPosture#deferCallerAccessKeyUntilVerified()} is true (SigV4
+ * validation active), {@link RequestContext#setAccessKeyId(String)} is deferred to
+ * {@link SigV4ValidationFilter} / {@code PreSignedUrlFilter} after verification (O23).
  */
 @Provider
 @ApplicationScoped
@@ -30,16 +35,19 @@ public class AccountContextFilter implements ContainerRequestFilter {
     private final RegionResolver regionResolver;
     private final RequestContext requestContext;
     private final SessionAccountLookup sessionAccountLookup;
+    private final AuthPosture authPosture;
 
     @Inject
     public AccountContextFilter(AccountResolver accountResolver,
                                 RegionResolver regionResolver,
                                 RequestContext requestContext,
-                                SessionAccountLookup sessionAccountLookup) {
+                                SessionAccountLookup sessionAccountLookup,
+                                AuthPosture authPosture) {
         this.accountResolver = accountResolver;
         this.regionResolver = regionResolver;
         this.requestContext = requestContext;
         this.sessionAccountLookup = sessionAccountLookup;
+        this.authPosture = authPosture;
     }
 
     @Override
@@ -49,7 +57,7 @@ public class AccountContextFilter implements ContainerRequestFilter {
             String akid = accountResolver.extractAccessKeyId(auth);
             requestContext.setAccountId(resolveAccount(akid, accountResolver.resolve(auth)));
             requestContext.setRegion(regionResolver.resolveRegionFromAuth(auth));
-            requestContext.setAccessKeyId(akid);
+            publishAccessKeyId(akid);
         } else {
             String credential = ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
             if (credential != null && !credential.isEmpty()) {
@@ -57,13 +65,21 @@ public class AccountContextFilter implements ContainerRequestFilter {
                 requestContext.setAccountId(
                         resolveAccount(akid, accountResolver.resolveFromPresignedCredential(credential)));
                 requestContext.setRegion(regionResolver.resolveRegionFromPresignedCredential(credential));
-                requestContext.setAccessKeyId(akid);
+                publishAccessKeyId(akid);
             } else {
                 requestContext.setAccountId(accountResolver.resolve(null));
                 requestContext.setRegion(regionResolver.resolveRegionFromAuth(null));
                 requestContext.setAccessKeyId(null);
             }
         }
+    }
+
+    private void publishAccessKeyId(String akid) {
+        if (authPosture.deferCallerAccessKeyUntilVerified()) {
+            requestContext.setAccessKeyId(null);
+            return;
+        }
+        requestContext.setAccessKeyId(akid);
     }
 
     /**
