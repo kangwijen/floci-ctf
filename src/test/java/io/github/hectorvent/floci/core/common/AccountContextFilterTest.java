@@ -1,5 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -32,7 +34,26 @@ class AccountContextFilterTest {
         requestContext = new RequestContext();
         sessionAccounts = new java.util.HashMap<>();
         SessionAccountLookup sessionLookup = akid -> Optional.ofNullable(sessionAccounts.get(akid));
-        filter = new AccountContextFilter(accountResolver, regionResolver, requestContext, sessionLookup);
+        filter = new AccountContextFilter(
+                accountResolver, regionResolver, requestContext, sessionLookup, labAuthPosture());
+    }
+
+    private static AuthPosture labAuthPosture() {
+        EmulatorConfig config = mock(EmulatorConfig.class);
+        EmulatorConfig.ServicesConfig services = mock(EmulatorConfig.ServicesConfig.class);
+        EmulatorConfig.IamServiceConfig iam = mock(EmulatorConfig.IamServiceConfig.class);
+        EmulatorConfig.AuthConfig auth = mock(EmulatorConfig.AuthConfig.class);
+        EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
+        when(config.services()).thenReturn(services);
+        when(services.iam()).thenReturn(iam);
+        when(iam.enforcementEnabled()).thenReturn(false);
+        when(iam.strictEnforcementEnabled()).thenReturn(false);
+        when(config.auth()).thenReturn(auth);
+        when(auth.validateSignatures()).thenReturn(false);
+        when(config.ctf()).thenReturn(ctf);
+        when(ctf.validateFederatedTokens()).thenReturn(false);
+        when(ctf.blockPrivateOutboundUrls()).thenReturn(false);
+        return AuthPosture.from(config);
     }
 
     @Test
