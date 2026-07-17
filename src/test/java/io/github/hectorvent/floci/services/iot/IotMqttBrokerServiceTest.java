@@ -43,6 +43,8 @@ class IotMqttBrokerServiceTest {
         authConfig = mock(EmulatorConfig.AuthConfig.class);
         when(config.auth()).thenReturn(authConfig);
         when(authConfig.rootAccessKeyId()).thenReturn(Optional.of("AKIAROOTACCESSKEY"));
+        when(authConfig.rootSecretAccessKey()).thenReturn(Optional.of("root-secret-access-key"));
+        when(authConfig.resolveRootSecretAccessKey()).thenReturn(Optional.of("root-secret-access-key"));
 
         iamService = mock(IamService.class);
         iotService = mock(IotService.class);
@@ -73,29 +75,28 @@ class IotMqttBrokerServiceTest {
     @Test
     void resolvePrincipalGrantsUnrestrictedAccessForRootAccessKey() {
         service = newService();
-        var principal = service.resolvePrincipal("AKIAROOTACCESSKEY", "any-password");
+        var principal = service.resolvePrincipal("AKIAROOTACCESSKEY", "root-secret-access-key");
         assertTrue(principal.unrestricted());
         assertTrue(principal.isAuthorized(new IamPolicyEvaluator(new ObjectMapper()),
                 "iot:Subscribe", "arn:aws:iot:us-east-1:000000000000:topicfilter/anything"));
     }
 
     @Test
-    void resolvePrincipalGrantsUnrestrictedAccessForRootEvenWithBlankPassword() {
-        // Root is the operator credential — CONNECT still requires SOME password field
-        // upstream via SigV4, but resolvePrincipal itself does not gate root on password.
+    void resolvePrincipalRejectsRootWhenPasswordDoesNotMatchRootSecret() {
         service = newService();
-        var principal = service.resolvePrincipal("AKIAROOTACCESSKEY", "");
-        assertTrue(principal.unrestricted());
+        assertNull(service.resolvePrincipal("AKIAROOTACCESSKEY", ""));
+        assertNull(service.resolvePrincipal("AKIAROOTACCESSKEY", "wrong-secret"));
     }
 
     @Test
-    void resolvePrincipalResolvesIamAccessKeyWithNonBlankPassword() {
+    void resolvePrincipalResolvesIamAccessKeyWithMatchingSecret() {
         service = newService();
         when(iamService.resolveCallerContext("AKIAUSERKEY")).thenReturn(
                 CallerContext.of(List.of("""
                         {"Version":"2012-10-17","Statement":[
                           {"Effect":"Allow","Action":"iot:Subscribe","Resource":"*"}
                         ]}""")));
+        when(iamService.findSecretKey("AKIAUSERKEY")).thenReturn(Optional.of("s3cr3t"));
 
         var principal = service.resolvePrincipal("AKIAUSERKEY", "s3cr3t");
 

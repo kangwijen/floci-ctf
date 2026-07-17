@@ -70,11 +70,13 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`:
 
 | Surface | Behavior |
 |---|---|
-| MQTT CONNECT | Requires authenticated credentials (blank username rejected). Identity is resolved for subsequent IAM checks. |
+| MQTT CONNECT | Requires authenticated credentials (blank username rejected). IAM access key usernames must supply a password that matches the stored secret access key (root uses the configured root secret). Missing or mismatched secrets fail closed. |
 | Publish / subscribe | Topic ARNs evaluated with `iot:Publish` / `iot:Subscribe` (and related) against the caller identity. |
 | REST control / data | Existing HTTP IAM/SigV4 mapping via `IamActionRegistry` / `ResourceArnBuilder`. |
 
-Regression: `IotMqttBrokerServiceTest`, `IotMqttConnectAuthPolicyTest`, `IotIamScopedIntegrationTest`.
+**Residual:** Full AWS IoT MQTT SigV4 / `iot:Connect` parity is not implemented. Password-to-secret bind is the CTF gate for AKID principals.
+
+Regression: `MqttPasswordMustMatchSecretTest`, `IotMqttBrokerServiceTest`, `IotMqttConnectAuthPolicyTest`, `IotIamScopedIntegrationTest`.
 
 ## Reserved Topics
 
