@@ -76,7 +76,8 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/participant-use
 | Image `EXPOSE` | Upstream may declare API / proxy ports | None. Challenge Compose publishes host ports |
 | IAM enforcement | Off by default | On in `docker-compose.yml` |
 | SigV4 | Off by default | On with Compose profile |
-| Strict mode | N/A | Denies missing auth, unmapped actions, bad presign |
+| Strict mode | N/A | Denies missing auth, UNRESOLVED resources, bare-`*` multi-resource skips, bad presign. Unmapped actions deny whenever enforcement is on |
+| ResourceRef | Bare `*` used for extraction failure | UNRESOLVED token distinct from intentional `*` (`ResourceRef`, `UnresolvedResourceStrictModeTest`) |
 | Internal routes | Open | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS` returns 404 on `/_floci/*`, `/_localstack/*`, `/_aws/*` |
 | ASIA session token | Optional header | `x-amz-security-token` stored and validated for temporary creds when SigV4 is on |
 | `aws:sourceip` | Client `X-Forwarded-For` | Default ignores forwarded headers; set `FLOCI_AUTH_TRUST_FORWARDED_HEADERS=true` behind a real proxy |
@@ -285,9 +286,12 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | S3 POST and bucket sub-resource IAM mapping | Closed | `IamActionRegistry` maps `DeleteObjects`, multipart POST, and `?policy`/`?acl`/`?lifecycle` (and related) to the correct `s3:*` actions (`IamActionRegistryTest`) |
 | HTTP API JWT JWKS / OIDC fetch SSRF | Closed | `JwtAuthorizerVerifier` calls `OutboundUrlGuard` before JWKS and discovery GETs (`JwtAuthorizerVerifierTest`) |
 | IAM `ForAllValues:` / `ForAnyValue:` set operators | Closed | `IamPolicyEvaluator` evaluates multi-value condition operators (`IamPolicyEvaluatorTest`) |
-| TagResources non-ARN entries treated as `*` | Closed | Tagging path skips non-ARN `ResourceARNList` entries instead of falling back to `*` (`TaggingIamScopedIntegrationTest`, `IamEnforcementFilterTest`) |
+| TagResources non-ARN entries treated as `*` | Closed | Empty or non-ARN `ResourceARNList` becomes UNRESOLVED and denies under strict (`TaggingIamScopedIntegrationTest`, `UnresolvedResourceStrictModeTest`) |
+| Multi-resource bare `*` skip (O11) | Closed | Under strict, bare `*` entries are evaluated instead of skipped (`UnresolvedResourceStrictModeTest`) |
+| Unmapped action allow when non-strict (O12) | Closed | Unmapped actions deny whenever enforcement is on (`UnresolvedResourceStrictModeTest`) |
 | Scheduler universal target ARN under-scope | Closed | `ScheduleInvoker` authorizes the concrete target ARN; missing TopicArn/QueueUrl is deny with no pseudo-ARN fallback (`ScheduleInvokerTest`) |
-| Lambda Function URL IAM resource `function:*` | Closed | `/lambda-url/{urlId}` resolves via store (`LambdaUrlArnNotWildcardTest`); `AuthType=AWS_IAM` requires Authorization even when non-strict (`LambdaUrlAwsIamAuthTypeTest`) |
+| Lambda Function URL IAM resource `function:*` | Closed | Known urlId resolves via store. Unknown urlId is UNRESOLVED under strict (`LambdaUrlArnNotWildcardTest`, `UnresolvedResourceStrictModeTest`). `AuthType=AWS_IAM` requires Authorization even when non-strict (`LambdaUrlAwsIamAuthTypeTest`) |
+| ResourceRef / UNRESOLVED extraction sentinel | Closed | `ResourceRef` distinct from intentional `*`. Strict denies UNRESOLVED (`ResourceRefTest`, `UnresolvedResourceStrictModeTest`) |
 | API Gateway execute-plane authorizer fail-open (null authType, CUSTOM misconfig, Cognito silent allow, Statement[0]-only on HTTP/WS) | Closed | Shared `ExecuteAuthzGate` on REST, HTTP API REQUEST, and WebSocket `$connect` (`ExecuteAuthzGateTest`, `ApiGatewayExecuteControllerTest`). Residual: `COGNITO_USER_POOLS` rejected (not implemented); AppSync GraphQL serve remains disabled |
 | Cognito userInfo ignores revoked tokens | Closed | `CognitoUserInfoController` rejects revoked access tokens (`CognitoUserInfoIntegrationTest`) |
 | Inactive IAM access keys still authenticate | Closed | `IamService.findSecretKey` ignores inactive keys (`IamServiceTest`) |

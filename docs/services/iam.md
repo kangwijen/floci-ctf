@@ -271,9 +271,19 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 | `textract` | `JobId` on async job APIs (JSON) |
 | `tagging` | `ResourceARNList[]` (multi-ARN evaluation for Tag/Untag/GetResources; `GetTagKeys`/`GetTagValues` stay `*`) |
 
-**Intentionally unscoped per AWS SAR:** `pricing`, `api.pricing`, `ce` (query APIs in Floci), `ec2messages`.
+**Intentionally unscoped per AWS SAR:** `pricing`, `api.pricing`, `ce` (query APIs in Floci), `ec2messages`, `cloudcontrolapi`.
 
-When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not.
+When a specific resource cannot be determined, the builder returns a service-scoped wildcard (for example `table/*`) so broad `*` in policies still matches, but narrowly scoped ARNs do not. Extraction failures that previously returned bare `*` now return a `ResourceRef` UNRESOLVED token (`arn:floci:unresolved:::reason`). Under IAM strict enforcement, UNRESOLVED is denied. Intentional bare `*` (catalog scopes above, tagging `GetTagKeys`/`GetTagValues`, EMR list/create ops) stays `*`.
+
+| Case | Behaviour when enforcement is on |
+|---|---|
+| Unmapped IAM action (registry miss) | Denied (HTTP 403), not only under strict |
+| UNRESOLVED resource under strict | Denied (HTTP 403) |
+| Bare `*` in multi-resource loops under strict | Evaluated (no longer skipped) |
+| Unknown Lambda Function URL `urlId` | UNRESOLVED (not `function:*`) |
+| Tagging `ResourceARNList` with no ARN-prefixed entries | UNRESOLVED under strict |
+
+Regression: `UnresolvedResourceStrictModeTest`, `ResourceRefTest`, `TaggingIamScopedIntegrationTest`, `LambdaUrlArnNotWildcardTest`.
 
 ### Lab author IAM patterns (AWS-aligned)
 
@@ -378,7 +388,8 @@ Under strict enforcement:
 | Temporary credentials (`ASIA*`) with SigV4 on | `x-amz-security-token` must match the token issued with the session (HTTP headers and S3 presigned query URLs via `X-Amz-Security-Token`) |
 | No `Authorization` header on any other path | Denied (HTTP 403) |
 | `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` with token in form body (no SigV4) | Allowed through IAM filter; trust evaluated in `StsQueryHandler` (`SecurityBypassPaths.isFederatedStsAssumeRequest`) |
-| Unresolvable IAM action for the request | Denied (HTTP 403) |
+| Unresolvable IAM action for the request | Denied (HTTP 403). Same deny applies whenever enforcement is on (not only strict) |
+| UNRESOLVED resource ARN (`ResourceRef`) | Denied (HTTP 403). Bare `*` in multi-resource loops is evaluated, not skipped |
 
 **Anonymous-access exceptions (`AnonymousAccessGate`):** {#anonymous-access-exceptions} Under strict enforcement, unsigned requests are still allowed only on AWS-intentional public invoke paths. Each surface has an explicit gate: resource policy evaluation for S3 and Lambda function URLs, and method `authorizationType` for API Gateway. Methods with `authorizationType=AWS_IAM` (or any non-`NONE` value) do not qualify; unsigned invoke is denied like any other unsigned path.
 
@@ -531,7 +542,7 @@ Under strict enforcement, the legacy `test`/`test` credential pair and other unr
 
 **`iam:PassRole`:** Creating Step Functions state machines, Scheduler schedules, EventBridge Pipes, ECS task definitions (task + execution roles), EC2 instances with an instance profile, and Lambda functions (`CreateFunction` / `UpdateFunctionConfiguration` Role) evaluates `iam:PassRole` on the role ARN (in addition to the service create action), with `iam:PassedToService` set to the target service principal. Under IAM enforcement, a missing or unresolved caller is denied (fail-closed), matching `authorizeCallerAction`. The configured root access key skips PassRole evaluation. Role trust-policy checks at PassRole time are not implemented yet. Regressions: `PassRoleFailsClosedWithoutCallerTest`, `EcsTaskRoleRequiresPassRoleTest`, `Ec2InstanceProfilePassRoleTest`, `LambdaCreateFunctionPassRoleTest`, `ComputePassRoleGateTest`.
 
-**Tagging multi-ARN:** `tagging:TagResources` / `UntagResources` evaluate each ARN in `ResourceARNList`. Non-ARN entries are skipped rather than falling back to `*`. Regression: `TaggingIamScopedIntegrationTest`.
+**Tagging multi-ARN:** `tagging:TagResources` / `UntagResources` evaluate each ARN in `ResourceARNList`. When no ARN-prefixed entries remain, the builder returns UNRESOLVED (denied under strict). Regression: `TaggingIamScopedIntegrationTest`, `UnresolvedResourceStrictModeTest`.
 
 **Cognito OAuth routes:** `/cognito-idp/oauth2/token` and `/cognito-idp/oauth2/userInfo` are not SigV4 APIs. Real Cognito uses `client_secret_basic` (HTTP Basic with `client_id:client_secret`) or `client_secret_post` for the token endpoint, and a Bearer access token for userInfo ([token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)). Floci skips IAM policy evaluation on these paths and lets `CognitoOAuthController` / `CognitoUserInfoController` validate registered app-client credentials and access-token signatures. They are **not** listed in `SecurityBypassPaths` as health or internal routes. Under strict enforcement, unauthenticated calls to other paths are denied; OAuth routes still require client credentials or a verified Bearer access token at the controller. A Cognito-issued Bearer JWT does **not** satisfy SigV4 on S3, IAM, or other emulated services — `IamEnforcementFilter` rejects non-SigV4 `Authorization` headers on the data plane.
 
