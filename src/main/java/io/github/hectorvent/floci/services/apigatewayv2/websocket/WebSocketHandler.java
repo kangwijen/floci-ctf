@@ -197,7 +197,8 @@ public class WebSocketHandler {
             }
 
             // Check if the $connect route has a Lambda REQUEST authorizer configured
-            if ("CUSTOM".equals(connectAuthType)) {
+            // Must match ExecuteAuthzGate.classify (case-insensitive); equals("CUSTOM") silent-allows.
+            if (executeAuthzGate.classify(connectAuthType) == ExecuteAuthzGate.MethodAuthKind.CUSTOM) {
                 ExecuteAuthzGate.AuthzDecision customId =
                         executeAuthzGate.checkCustomMisconfig(connectRoute.getAuthorizerId(), "pending");
                 if (customId.isDenied()) {

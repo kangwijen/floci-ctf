@@ -381,7 +381,8 @@ public class ApiGatewayExecuteController {
             return forbiddenAuthorizerResult();
         }
 
-        if ("CUSTOM".equals(method.getAuthorizationType())) {
+        if (executeAuthzGate.classify(method.getAuthorizationType())
+                == ExecuteAuthzGate.MethodAuthKind.CUSTOM) {
             String authorizerId = method.getAuthorizerId();
             ExecuteAuthzGate.AuthzDecision idCheck = executeAuthzGate.checkCustomMisconfig(authorizerId, "pending");
             if (idCheck.isDenied()) {

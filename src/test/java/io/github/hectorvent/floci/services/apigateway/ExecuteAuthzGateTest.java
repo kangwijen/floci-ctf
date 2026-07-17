@@ -97,6 +97,15 @@ class ExecuteAuthzGateTest {
     }
 
     @Test
+    void classifyTreatsNonCanonicalCustomAsCustom() {
+        assertEquals(ExecuteAuthzGate.MethodAuthKind.CUSTOM, gate.classify("custom"));
+        assertEquals(ExecuteAuthzGate.MethodAuthKind.CUSTOM, gate.classify("Custom"));
+        assertEquals(ExecuteAuthzGate.MethodAuthKind.CUSTOM, gate.classify("CuStOm"));
+        assertFalse(gate.checkUnsupportedMethodAuth("custom").blocks());
+        assertFalse(gate.checkUnsupportedMethodAuth("Custom").blocks());
+    }
+
+    @Test
     void customUnresolvableLambdaUriFailsClosed() {
         ExecuteAuthzGate.AuthzDecision decision = gate.checkCustomMisconfig("auth-1", null);
         assertTrue(decision.isError());
