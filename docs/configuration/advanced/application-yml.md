@@ -61,7 +61,7 @@ Maps to `FLOCI_CTF_*` environment variables.
 | `floci.ctf.federated-jwt-rs256-public-key-pem` | `FLOCI_CTF_FEDERATED_JWT_RS256_PUBLIC_KEY_PEM` | _(none)_ | PEM RSA public key for RS256 web identity JWT verification |
 | `floci.ctf.ecs-allow-host-volumes` | `FLOCI_CTF_ECS_ALLOW_HOST_VOLUMES` | `false` | Permit ECS host source paths only with an allowlist |
 | `floci.ctf.ecs-allowed-host-source-paths` | `FLOCI_CTF_ECS_ALLOWED_HOST_SOURCE_PATHS` | _(none)_ | Allowed host-path roots for ECS volumes |
-| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` (profile `ctf`: `true`) | Reject non-public outbound HTTP destinations |
+| `floci.ctf.block-private-outbound-urls` | `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS` | `false` (profile `ctf`: `true`) | `AuthPosture.egressBlock`. Reject non-public outbound HTTP destinations and enable pin-connect egress |
 | `floci.ctf.outbound-url-host-allowlist` | `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` | _(none)_ | Optional outbound hostname allowlist |
 | `floci.ctf.outbound-allow-private-addresses` | `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES` | `false` | Operator override for private outbound addresses |
 | `floci.ctf.require-jwt-signature-verification` | `FLOCI_CTF_REQUIRE_JWT_SIGNATURE_VERIFICATION` | `true` | Require HTTP API JWT authorizer signature verification |

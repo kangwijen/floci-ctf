@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
+import io.github.hectorvent.floci.core.common.PinnedHttpResponse;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -12,9 +13,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigInteger;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.AlgorithmParameters;
 import java.security.KeyFactory;
@@ -44,19 +42,12 @@ public class JwtAuthorizerVerifier {
 
     private final EmulatorConfig config;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
     private final OutboundUrlGuard outboundUrlGuard;
 
     @Inject
     public JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper, OutboundUrlGuard outboundUrlGuard) {
-        this(config, objectMapper, HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build(), outboundUrlGuard);
-    }
-
-    JwtAuthorizerVerifier(EmulatorConfig config, ObjectMapper objectMapper, HttpClient httpClient,
-                          OutboundUrlGuard outboundUrlGuard) {
         this.config = config;
         this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
         this.outboundUrlGuard = outboundUrlGuard;
     }
 
@@ -143,13 +134,20 @@ public class JwtAuthorizerVerifier {
     }
 
     private Map<String, Object> readJson(URI uri) throws Exception {
-        outboundUrlGuard.validateHttpUrl(uri.toString());
-        HttpRequest request = HttpRequest.newBuilder(uri).GET().timeout(HTTP_TIMEOUT).build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        PinnedHttpResponse response = outboundUrlGuard.sendPinned(
+                uri.toString(),
+                "GET",
+                null,
+                Map.of(),
+                HTTP_TIMEOUT,
+                HTTP_TIMEOUT);
         if (response.statusCode() != 200) {
             throw new IllegalArgumentException("JWKS endpoint returned HTTP " + response.statusCode());
         }
-        return objectMapper.readValue(response.body(), MAP_TYPE);
+        String body = response.body() == null
+                ? ""
+                : new String(response.body(), StandardCharsets.UTF_8);
+        return objectMapper.readValue(body, MAP_TYPE);
     }
 
     private Map<String, Object> parseJson(String encoded) throws Exception {

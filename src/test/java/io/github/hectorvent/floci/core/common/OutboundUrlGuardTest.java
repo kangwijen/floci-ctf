@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.core.common;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetAddress;
@@ -10,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("security-regression")
 class OutboundUrlGuardTest {
 
     private final OutboundUrlGuard guard = new OutboundUrlGuard(true, List.of(), false);

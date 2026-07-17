@@ -3,11 +3,11 @@ package io.github.hectorvent.floci.services.apigatewayv2;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.OutboundUrlGuard;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("security-regression")
 class JwtAuthorizerVerifierTest {
 
     private static final String SECRET = "jwt-authorizer-test-secret";
@@ -51,8 +52,7 @@ class JwtAuthorizerVerifierTest {
         EmulatorConfig.CtfConfig ctf = mock(EmulatorConfig.CtfConfig.class);
         when(config.ctf()).thenReturn(ctf);
         OutboundUrlGuard blockingGuard = new OutboundUrlGuard(true, List.of(), false);
-        JwtAuthorizerVerifier verifier = new JwtAuthorizerVerifier(
-                config, new ObjectMapper(), HttpClient.newHttpClient(), blockingGuard);
+        JwtAuthorizerVerifier verifier = new JwtAuthorizerVerifier(config, new ObjectMapper(), blockingGuard);
         String signingInput = base64Url("{\"alg\":\"RS256\",\"kid\":\"test-kid\"}") + "." + base64Url("{\"sub\":\"user\"}");
         String token = signingInput + "." + base64Url("ignored-signature");
 
@@ -65,7 +65,7 @@ class JwtAuthorizerVerifierTest {
         when(config.ctf()).thenReturn(ctf);
         when(ctf.apiGatewayJwtHmacSecret()).thenReturn(Optional.of(SECRET));
         OutboundUrlGuard permissiveGuard = new OutboundUrlGuard(false, List.of(), false);
-        return new JwtAuthorizerVerifier(config, new ObjectMapper(), HttpClient.newHttpClient(), permissiveGuard);
+        return new JwtAuthorizerVerifier(config, new ObjectMapper(), permissiveGuard);
     }
 
     private static String hs256Jwt(String payload) throws Exception {
