@@ -5,11 +5,11 @@ services:
       dockerfile: docker/Dockerfile
     tty: true
     ports:
+      # Challenge Compose publishes host ports. Floci image (docker/Dockerfile) has no EXPOSE.
+      # Default: AWS API only. Do not map Lambda Runtime API (9200-9299).
+      # Add 5100 / 6379-6399 / 7001-7099 only when a challenge needs host ECR or Redis/RDS wire.
+      # See docs/configuration/ports.md.
       - "4566:4566"
-      - "5100:5100"
-      - "6379-6399:6379-6399"
-      - "7001-7099:7001-7099"
-      - "9200-9299:9200-9299"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data

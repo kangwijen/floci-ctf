@@ -56,7 +56,7 @@ COPY --chmod=755 docker/localstack-parity.sh /usr/local/bin/localstack-parity.sh
 
 VOLUME /app/data
 
-EXPOSE 4566 6379-6399
+# No EXPOSE: challenge Compose/images publish host ports. Floci image stays closed.
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
     CMD wget -q --spider http://localhost:4566/health || exit 1

@@ -99,6 +99,9 @@ The root `docker-compose.yml` enables a hardened profile by default:
 | Strict IAM | `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED=true` |
 | SigV4 validation | `FLOCI_AUTH_VALIDATE_SIGNATURES=true` |
 | Internal routes hidden | `FLOCI_CTF_HIDE_INTERNAL_ENDPOINTS=true` |
+| Published ports | `4566:4566` only (Floci image has no `EXPOSE`) |
+
+Host publishing is owned by challenge Compose. Extra ranges (`5100`, Redis/RDS proxies) are challenge overrides. See [Ports Reference](../configuration/ports.md#ctf-fork-this-repository).
 
 Notable CTF deltas on core services (full map in [AGENTS.md](../../AGENTS.md)):
 

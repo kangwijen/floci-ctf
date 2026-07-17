@@ -93,7 +93,9 @@ Override any of them at runtime via `docker run -e` or the Compose `environment`
 
 ## Local Development
 
-The project ships a `docker-compose.yml` at the repository root configured for local development. By default it uses `docker/Dockerfile` (a fast JVM build suited for iteration). Switch the `dockerfile` entry to test the native image locally:
+The project ships a `docker-compose.yml` at the repository root configured for CTF local development. By default it builds [`docker/Dockerfile`](../../docker/Dockerfile) (JVM). That Dockerfile declares **no `EXPOSE`**. Challenge Compose publishes host ports (default `4566:4566` only). See [Ports Reference](./ports.md#ctf-fork-this-repository).
+
+Switch the `dockerfile` entry to test the native image locally:
 
 ```yaml title="docker-compose.yml"
 build:

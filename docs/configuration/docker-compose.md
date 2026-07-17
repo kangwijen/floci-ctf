@@ -45,18 +45,18 @@ volumes:
   floci-data:
 ```
 
-### With ElastiCache and RDS
+### With ElastiCache and RDS (challenge override)
 
-ElastiCache and RDS proxy TCP connections to real Docker containers. Those containers' ports must be reachable from your host, so additional port ranges are exposed. The Docker socket is required for Floci to manage those containers:
+ElastiCache and RDS proxy TCP connections to real Docker containers. When a challenge needs those wire protocols from the host, publish the proxy ranges in **challenge** Compose. Root CTF Compose maps only `4566`. The Floci image declares no `EXPOSE`. The Docker socket is required for Floci to manage those containers:
 
 ```yaml title="docker-compose.yml"
 services:
   floci:
-    image: floci/floci:latest
+    image: floci:local
     ports:
       - "4566:4566"
-      - "6379-6399:6379-6399"  # ElastiCache proxy ports
-      - "7001-7099:7001-7099"  # RDS proxy ports
+      - "6379-6399:6379-6399"  # challenge override: ElastiCache proxy
+      - "7001-7099:7001-7099"  # challenge override: RDS proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - floci-data:/app/data
@@ -74,7 +74,7 @@ volumes:
     Lambda, ElastiCache, RDS, OpenSearch, and MSK require access to the Docker socket (`/var/run/docker.sock`) to spawn and manage containers. If you don't use these services, you can omit that volume.
 
 !!! note "ECR port"
-    ECR is backed by a `registry:2` sidecar container (`floci-ecr-registry`) that Floci starts and manages. That container binds its own host port (default `5100`) directly — do not add `5100-5199` to the Floci service's `ports` list. See [Ports Reference → ECR](./ports.md#ports-51005199--ecr-registry).
+    With CTF IAM registry auth, publish `5100` from challenge Compose when host `docker push`/`pull` is required. Without the auth proxy, the `registry:2` sidecar binds its own host port — do not add `5100-5199` to the Floci service. See [Ports Reference](./ports.md#ctf-fork-this-repository).
 
 ## Multi-container Networking
 
@@ -163,7 +163,9 @@ steps:
 
 ## CTF security profile
 
-The repository root `docker-compose.yml` enables a CTF hardening profile by default:
+The repository root `docker-compose.yml` enables a CTF hardening profile by default.
+
+**Ports:** Challenge Compose publishes host ports. The Floci image from `docker/Dockerfile` declares **no `EXPOSE`**. Root Compose maps only `4566:4566` (AWS API). Do not map Lambda Runtime API (`9200-9299`). Add `5100`, `6379-6399`, or `7001-7099` only in challenge Compose when host ECR push/pull or Redis/RDS wire access is required. See [Ports Reference](./ports.md).
 
 | Variable | Compose value | Purpose |
 |---|---|---|

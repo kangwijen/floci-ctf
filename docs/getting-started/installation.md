@@ -3,9 +3,9 @@
 Floci can be run three ways: as a Docker image, as a pre-built native binary, or built from source.
 
 !!! warning "CTF fork (this repository)"
-    **floci-ctf** builds `floci:local` with no baked-in `test`/`test` credentials. Root `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation. Export operator `FLOCI_AUTH_ROOT_*` on the host before `docker compose up`.
+    **floci-ctf** builds `floci:local` with no baked-in `test`/`test` credentials and **no `EXPOSE`** in `docker/Dockerfile`. Root `docker-compose.yml` enables IAM enforcement, strict mode, and SigV4 validation, and publishes only `4566:4566`. Challenge Compose owns any extra host ports. Export operator `FLOCI_AUTH_ROOT_*` on the host before `docker compose up`.
 
-    Fork docs: [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
+    Fork docs: [README.md](../../README.md), [AGENTS.md](../../AGENTS.md), and [Ports Reference](../configuration/ports.md#ctf-fork-this-repository).
 
 ## Docker (Recommended)
 

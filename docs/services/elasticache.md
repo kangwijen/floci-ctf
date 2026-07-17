@@ -38,15 +38,15 @@ Floci manages real Valkey/Redis Docker containers and proxies TCP connections to
 
 ### Docker Compose
 
-ElastiCache requires the Docker socket and port range exposure. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
+ElastiCache requires the Docker socket. Host Redis wire access also needs the proxy port range in **challenge** Compose. Root CTF Compose publishes only `4566` and the Floci image has no `EXPOSE`. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
 
 ```yaml
 services:
   floci:
-    image: floci/floci:latest
+    image: floci:local
     ports:
       - "4566:4566"
-      - "6379-6399:6379-6399"   # ElastiCache proxy ports
+      - "6379-6399:6379-6399"   # challenge override: ElastiCache proxy ports
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

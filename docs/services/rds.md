@@ -59,15 +59,15 @@ RDS Data API (`rds-data`) is documented separately because it uses REST JSON rou
 
 ### Docker Compose
 
-RDS requires the Docker socket and port range exposure. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
+RDS requires the Docker socket. Host Postgres/MySQL wire access also needs the proxy port range in **challenge** Compose. Root CTF Compose publishes only `4566` and the Floci image has no `EXPOSE`. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
 
 ```yaml
 services:
   floci:
-    image: floci/floci:latest
+    image: floci:local
     ports:
       - "4566:4566"
-      - "7001-7099:7001-7099"   # RDS proxy ports
+      - "7001-7099:7001-7099"   # challenge override: RDS proxy ports
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

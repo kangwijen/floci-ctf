@@ -81,7 +81,7 @@ docker compose up
 
 Compose mounts the host Docker socket (`/var/run/docker.sock`) so Lambda and EC2 container runtimes can start workloads. For a custom `docker run`, pass the same mount or set `DOCKER_HOST` (on Windows with Docker Desktop: `npipe:////./pipe/docker_engine`). Without Docker access, workloads that depend on container runtimes will not start.
 
-All AWS services listen on `http://localhost:4566`. Use the root credentials only for operator provisioning. Issue participant credentials via IAM (`CreateAccessKey`) and scoped policies.
+All AWS services listen on `http://localhost:4566`. Root Compose publishes only that port. The Floci image (`docker/Dockerfile`) declares no `EXPOSE`. Challenge Compose owns any extra host mappings. Use the root credentials only for operator provisioning. Issue participant credentials via IAM (`CreateAccessKey`) and scoped policies.
 
 ## Required environment variables
 

@@ -13,7 +13,7 @@ Human-readable fork summary: [README.md](./README.md). IAM detail: [docs/service
 | Language | Java 25 |
 | Framework | Quarkus 3.36.0 |
 | Latest upstream merge | 1.5.33 + tip `fba4d8f5` (2026-07-15) |
-| Port | 4566 (HTTP API) |
+| Port | 4566 (HTTP API). Image has no `EXPOSE`. Challenge Compose publishes (default `4566` only). |
 | Config prefix | `floci.*` / `FLOCI_*` |
 | Image tag (local) | `floci:local` |
 
@@ -38,6 +38,8 @@ Build from this repo (not upstream `floci/floci:latest`):
 ```bash
 docker build -f docker/Dockerfile -t floci:local .
 ```
+
+`docker/Dockerfile` declares no `EXPOSE`. Publish ports from challenge Compose (or `docker run -p`), not from image metadata. Root Compose maps `4566:4566` only. See [docs/configuration/ports.md](./docs/configuration/ports.md#ctf-fork-this-repository).
 
 Set operator env on the **host**, then start Compose:
 
@@ -71,6 +73,7 @@ aws sts get-caller-identity   # expect arn:aws:iam::ACCOUNT:user/participant-use
 | Topic | Upstream | This fork |
 |-------|----------|-----------|
 | Default creds | `test`/`test` baked in; optional `floci`/`floci` deployer | None in `docker/Dockerfile`; `floci`/`floci` deployer not seeded when IAM enforcement is on (`seed-deployer-principal` gated) |
+| Image `EXPOSE` | Upstream may declare API / proxy ports | None. Challenge Compose publishes host ports |
 | IAM enforcement | Off by default | On in `docker-compose.yml` |
 | SigV4 | Off by default | On with Compose profile |
 | Strict mode | N/A | Denies missing auth, unmapped actions, bad presign |
