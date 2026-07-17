@@ -77,10 +77,11 @@ public class InProcessIamAuthorizer {
      * for the direct HTTP creation path (JAX-RS request scope) and for CloudFormation-driven
      * creation, where {@link io.github.hectorvent.floci.services.cloudformation.CloudFormationService}
      * activates a synthetic request scope carrying the stack-creator's access key on the background
-     * provisioning thread. When no caller can be resolved (root credentials, unauthenticated
-     * internal callers, or no active request scope) the check is skipped rather than denied, matching
-     * the "unknown key — bypass" behavior {@link IamService#resolveCallerContext} already uses
-     * elsewhere in this class.
+     * provisioning thread.
+     *
+     * <p>Under enforcement this matches {@link #authorizeCallerAction} fail-closed semantics: a
+     * missing or unresolved caller is denied. The only skip is the configured root access key
+     * (present only after SigV4 validation accepts that key when signature checks are on).
      *
      * @param roleArn         the role being attached; a blank value is a no-op (the caller's own
      *                        validation is responsible for rejecting a missing role)
@@ -97,6 +98,7 @@ public class InProcessIamAuthorizer {
         }
         String akid = regionResolver.getCallerAccessKeyId();
         if (akid == null || akid.isBlank()) {
+            denyCallerAction("iam:PassRole", roleArn, "unknown", "no caller identity");
             return;
         }
         if (config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
@@ -104,6 +106,7 @@ public class InProcessIamAuthorizer {
         }
         CallerContext caller = iamService.resolveCallerContext(akid);
         if (caller == null) {
+            denyCallerAction("iam:PassRole", roleArn, akid, "unknown access key");
             return;
         }
 

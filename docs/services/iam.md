@@ -527,7 +527,7 @@ Under strict enforcement, the legacy `test`/`test` credential pair and other unr
 
 **Inactive access keys:** `UpdateAccessKey` with `Status=Inactive` removes the key from SigV4 secret lookup. Inactive keys cannot authenticate. Regression: `IamServiceTest`.
 
-**`iam:PassRole`:** Creating Step Functions state machines, Scheduler schedules, EventBridge Pipes, and Lambda functions that reference a role evaluates `iam:PassRole` on that role ARN (in addition to the service create action).
+**`iam:PassRole`:** Creating Step Functions state machines, Scheduler schedules, EventBridge Pipes, ECS task definitions (task + execution roles), EC2 instances with an instance profile, and Lambda functions (`CreateFunction` / `UpdateFunctionConfiguration` Role) evaluates `iam:PassRole` on the role ARN (in addition to the service create action), with `iam:PassedToService` set to the target service principal. Under IAM enforcement, a missing or unresolved caller is denied (fail-closed), matching `authorizeCallerAction`. The configured root access key skips PassRole evaluation. Role trust-policy checks at PassRole time are not implemented yet. Regressions: `PassRoleFailsClosedWithoutCallerTest`, `EcsTaskRoleRequiresPassRoleTest`, `Ec2InstanceProfilePassRoleTest`, `LambdaCreateFunctionPassRoleTest`, `ComputePassRoleGateTest`.
 
 **Tagging multi-ARN:** `tagging:TagResources` / `UntagResources` evaluate each ARN in `ResourceARNList`. Non-ARN entries are skipped rather than falling back to `*`. Regression: `TaggingIamScopedIntegrationTest`.
 

@@ -260,7 +260,7 @@ class LambdaImageConfigTest {
                     credentialsServer, reachableEndpoint,
                     mock(io.github.hectorvent.floci.core.common.docker.ContainerDetector.class),
                     mock(io.github.hectorvent.floci.core.common.docker.CurrentContainerNetworkResolver.class),
-                    awsEnv, null);
+                    awsEnv);
 
             lenient().when(credentialsServer.registerFunction(any(), any(), any())).thenReturn(null);
 
