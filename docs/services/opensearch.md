@@ -14,9 +14,9 @@ Domain metadata is stored in-process. No Docker containers are started. Domains 
 
 ### Real mode (`mock: false`, default)
 
-Floci starts an **OpenSearch** Docker container per domain, choosing the image based on the requested `EngineVersion` (e.g. `OpenSearch_3.6` → `opensearchproject/opensearch:3.6.0`, `Elasticsearch_7.10` → `docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2`). The container is exposed on a host port from the configured range (`9400–9499`). Once `/_cluster/health` returns `green` or `yellow`, the domain transitions to `Created: true` and the `Endpoint` field is populated with the container's address.
+Floci starts an **OpenSearch** Docker container per domain, choosing the image based on the requested `EngineVersion` (e.g. `OpenSearch_3.6` → `opensearchproject/opensearch:3.6.0`, `Elasticsearch_7.10` → `docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2`). The container backend is not published as an ungated host bind. Host HTTP goes through `OpenSearchDataPlane` (AuthProxy) on a port from the configured range (`9400–9499`). Once `/_cluster/health` returns `green` or `yellow`, the domain transitions to `Created: true` and the `Endpoint` field is populated with the AuthProxy address.
 
-OpenSearch 2.12+ requires an initial admin password even when the security plugin is disabled; Floci sets `OPENSEARCH_INITIAL_ADMIN_PASSWORD=FlociAdmin1!` automatically for those versions. The security plugin itself stays disabled.
+OpenSearch 2.12+ requires an initial admin password even when the security plugin is disabled; Floci sets `OPENSEARCH_INITIAL_ADMIN_PASSWORD=FlociAdmin1!` automatically for those versions. The security plugin itself stays disabled inside the container. Identity and FGAC checks run on the AuthProxy before side effects are forwarded.
 
 !!! note "Docker socket required"
     Real mode starts Docker containers. Mount the Docker socket and set the Docker network so containers can reach each other. For private registry authentication and other Docker settings see [Docker Configuration](../configuration/docker.md).
@@ -104,6 +104,17 @@ services:
     environment:
       FLOCI_SERVICES_OPENSEARCH_MOCK: "true"
 ```
+
+## Data-plane AuthProxy (CTF)
+
+Real-mode domain HTTP is fronted by `OpenSearchDataPlane`:
+
+| Gate | When | Behavior |
+|------|------|----------|
+| IAM data-plane | `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true` | Require SigV4. Evaluate `es:ESHttp*` against the domain ARN before forwarding. |
+| FGAC | `AdvancedSecurityOptions.Enabled=true` | Reject anonymous. Accept FGAC Basic (master username) or SigV4. |
+
+When both IAM enforcement and FGAC are off (lab YAML), the AuthProxy still fronts the endpoint but does not require identity. Compose CTF turns IAM enforcement on. Regressions: `OpenSearchDomainAuthProxyBindTest`, `OpenSearchDataPlaneGateTest`.
 
 ## Emulation Behaviour
 
@@ -236,6 +247,6 @@ os_client.delete_domain(DomainName="my-search")
 
 - In mock mode, no data-plane endpoints (`/_search`, `/_index`, etc.) are served — only the management API is emulated.
 - No Elasticsearch-compatible management endpoints (`/2015-01-01/es/domain/...`).
-- `VPCOptions`, `AdvancedSecurityOptions`, `EncryptionAtRestOptions`, `NodeToNodeEncryptionOptions`, and `DomainEndpointOptions` round-trip on `CreateDomain` / `UpdateDomainConfig` / `DescribeDomain` / `DescribeDomainConfig`, but are not enforced by the running container — Floci serves the domain over plain HTTP with the security plugin disabled regardless. Round-tripping is enough for SDK clients (Terraform, CDK, Pulumi) to detect drift correctly.
+- `VPCOptions`, `AdvancedSecurityOptions`, `EncryptionAtRestOptions`, `NodeToNodeEncryptionOptions`, and `DomainEndpointOptions` round-trip on `CreateDomain` / `UpdateDomainConfig` / `DescribeDomain` / `DescribeDomainConfig`. The container still runs with the security plugin disabled. When FGAC is enabled on the domain, or IAM enforcement is on, `OpenSearchDataPlane` gates host HTTP before forwarding. Round-tripping remains enough for SDK clients (Terraform, CDK, Pulumi) to detect drift correctly.
 - Master passwords for `AdvancedSecurityOptions.MasterUserOptions` are accepted but never echoed back, matching AWS behavior.
 - Cross-cluster connections, VPC endpoints, packages, applications, and data sources are not supported and return `UnsupportedOperationException`.

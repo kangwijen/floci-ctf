@@ -2,17 +2,28 @@
 
 **Protocol:** Query (XML) for the management API
 **Management Endpoint:** `POST http://localhost:4566/` with `Action=` param
-**Data Endpoint:** the `Endpoint` and `Port` returned by `DescribeDBClusters` (MongoDB wire protocol)
+**Data Endpoint:** the `Endpoint` and `Port` returned by `DescribeDBClusters` (MongoDB wire protocol via AuthProxy)
 
 Floci emulates Amazon DocumentDB by managing real [MongoDB](https://www.mongodb.com/) Docker containers behind an RDS-shaped control plane. DocumentDB is MongoDB-compatible, so the cluster endpoint returned by `DescribeDBClusters` speaks the MongoDB wire protocol and works with any standard MongoDB driver.
 
-> **Always read the host and port from `DescribeDBClusters`** rather than assuming a fixed port. MongoDB listens on `27017` *inside* the container, but the port you connect to depends on how Floci runs:
+> **Always read the host and port from `DescribeDBClusters`** rather than assuming a fixed port. MongoDB listens on `27017` *inside* the container. The port you connect to is the **AuthProxy** port (default range `27018–27117`), not the raw Docker-mapped backend port.
 >
-> - **Real mode, Floci on the host** (default): the container's `27017` is published on a **dynamically assigned host port**. `DescribeDBClusters.Port` returns that mapped port.
-> - **Real mode, Floci itself in a container** (shared Docker network): the endpoint is the container host on `27017`.
+> - **Real mode, Floci on the host** (default): AuthProxy listens on an allocated host port from `FLOCI_SERVICES_DOCDB_PROXY_*`. `DescribeDBClusters.Port` returns that proxy port.
+> - **Real mode, Floci itself in a container** (shared Docker network): the endpoint host is Floci's advertised hostname on the AuthProxy port.
 > - **Mock mode** (`FLOCI_SERVICES_DOCDB_MOCK=true`): no container is started; the cluster reports `localhost:27017`.
 
 The management API shares the RDS Query endpoint (`POST /` with an `Action=` parameter). Requests are routed to DocumentDB when `Engine=docdb` is supplied, or when the referenced cluster/instance is a known DocumentDB resource.
+
+## AuthProxy (CTF)
+
+Real-mode clusters always publish the Mongo wire endpoint through `DocDbAuthProxy` (same pattern as RDS / ElastiCache / MemoryDB):
+
+| `EnableIAMDatabaseAuthentication` | AuthProxy behavior |
+|-----------------------------------|--------------------|
+| `false` | Transparent TCP relay. MongoDB SCRAM password auth is enforced by the container. |
+| `true` | Proxy terminates Mongo `hello` / PLAIN auth. Accepts a SigV4 generate-db-auth-token (RDS-shaped, validated by `RdsSigV4Validator`) or the master password via `authMechanism=PLAIN`, then bridges to the backend as the master user. |
+
+**Residual:** Full `MONGODB-AWS` SASL and TLS-enforced DocumentDB product parity are not implemented. Prefer PLAIN + SigV4 token when IAM auth is enabled. Regression: `DocDbAuthProxyBindTest`, `DocDbAuthProxyIamGateTest`.
 
 ## Supported Actions
 
@@ -37,13 +48,15 @@ The management API shares the RDS Query endpoint (`POST /` with an `Action=` par
 | `FLOCI_SERVICES_DOCDB_ENABLED` | `true` | Enable or disable DocumentDB |
 | `FLOCI_SERVICES_DOCDB_MOCK` | `false` | Mock mode: skip the container and return a placeholder endpoint |
 | `FLOCI_SERVICES_DOCDB_DEFAULT_IMAGE` | `mongo:7.0` | MongoDB Docker image |
+| `FLOCI_SERVICES_DOCDB_PROXY_BASE_PORT` | `27018` | AuthProxy port range start |
+| `FLOCI_SERVICES_DOCDB_PROXY_MAX_PORT` | `27117` | AuthProxy port range end |
 | `FLOCI_SERVICES_DOCDB_DOCKER_NETWORK` | _(host default)_ | Docker network for container connectivity |
 
 Mock mode is useful for control-plane tests that do not need a live database; the cluster reports `localhost:27017` and no container is started.
 
 ### Docker Compose
 
-DocumentDB needs the Docker socket so it can launch MongoDB containers. Each cluster's container is published on a dynamically assigned host port, returned by `DescribeDBClusters`.
+DocumentDB needs the Docker socket so it can launch MongoDB containers. Each cluster's AuthProxy is published on a port from the configured range, returned by `DescribeDBClusters`.
 
 ```yaml
 services:
@@ -137,8 +150,7 @@ print(cluster["DBCluster"]["Endpoint"])
 
 ## Out of Scope
 
-- IAM database authentication for MongoDB connections (the flag is stored and echoed back, but connections are not SigV4-proxied).
-- TLS / `--tls` enforced connections.
+- Full `MONGODB-AWS` SASL and TLS-enforced DocumentDB product parity (IAM path uses PLAIN + SigV4 token via AuthProxy).
 - Snapshot creation and restore (`DescribeDBClusterSnapshots` returns an empty stub result; snapshots are not modeled).
 - Global clusters, replicas, and read-scaling beyond a single MongoDB container per cluster.
 - Parameter groups, subnet groups, and maintenance windows.

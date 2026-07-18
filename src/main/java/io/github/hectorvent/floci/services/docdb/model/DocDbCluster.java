@@ -1,5 +1,6 @@
 package io.github.hectorvent.floci.services.docdb.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.time.Instant;
@@ -26,6 +27,10 @@ public class DocDbCluster {
     private String containerId;
     private String containerHost;
     private int containerPort;
+    private int proxyPort;
+    /** Master password kept for AuthProxy backend re-auth. Never returned on Describe. */
+    @JsonIgnore
+    private String masterPassword;
 
     public DocDbCluster (){}
 
@@ -78,5 +83,10 @@ public class DocDbCluster {
     public int getContainerPort() { return containerPort; }
     public void setContainerPort(int containerPort) { this.containerPort = containerPort; }
 
+    public int getProxyPort() { return proxyPort; }
+    public void setProxyPort(int proxyPort) { this.proxyPort = proxyPort; }
+
+    public String getMasterPassword() { return masterPassword; }
+    public void setMasterPassword(String masterPassword) { this.masterPassword = masterPassword; }
 
 }

@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.core.common.docker.ContainerSpec;
 import io.github.hectorvent.floci.core.common.docker.ContainerStorageHelper;
 import io.github.hectorvent.floci.core.common.docker.PortAllocator;
 import io.github.hectorvent.floci.services.opensearch.model.Domain;
+import io.github.hectorvent.floci.services.opensearch.proxy.OpenSearchDataPlane;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -19,7 +20,8 @@ import java.nio.file.Path;
 
 /**
  * Manages the Docker lifecycle of OpenSearch containers for real-mode domains.
- * Not used when {@code floci.services.opensearch.mock=true}.
+ * Host HTTP is published through {@link OpenSearchDataPlane} (AuthProxy), not as an
+ * ungated container port bind.
  */
 @ApplicationScoped
 public class OpenSearchDomainManager {
@@ -32,18 +34,21 @@ public class OpenSearchDomainManager {
     private final ContainerDetector containerDetector;
     private final PortAllocator portAllocator;
     private final EmulatorConfig config;
+    private final OpenSearchDataPlane dataPlane;
 
     @Inject
     public OpenSearchDomainManager(ContainerBuilder containerBuilder,
                                    ContainerLifecycleManager lifecycleManager,
                                    ContainerDetector containerDetector,
                                    PortAllocator portAllocator,
-                                   EmulatorConfig config) {
+                                   EmulatorConfig config,
+                                   OpenSearchDataPlane dataPlane) {
         this.containerBuilder = containerBuilder;
         this.lifecycleManager = lifecycleManager;
         this.containerDetector = containerDetector;
         this.portAllocator = portAllocator;
         this.config = config;
+        this.dataPlane = dataPlane;
     }
 
     public void startDomain(Domain domain) {
@@ -62,9 +67,14 @@ public class OpenSearchDomainManager {
         ContainerBuilder.Builder specBuilder = containerBuilder.newContainer(image)
                 .withName(containerName)
                 .withEnv("discovery.type", "single-node")
-                .withPortBinding(OPENSEARCH_PORT, hostPort)
                 .withDockerNetwork(config.services().dockerNetwork())
                 .withLogRotation();
+
+        if (!containerDetector.isRunningInContainer()) {
+            specBuilder.withDynamicPort(OPENSEARCH_PORT);
+        } else {
+            specBuilder.withExposedPort(OPENSEARCH_PORT);
+        }
 
         applyEngineEnv(specBuilder, domain.getEngineVersion());
 
@@ -73,7 +83,6 @@ public class OpenSearchDomainManager {
                     "opensearch", domain.getVolumeId(), domain.getDomainName(),
                     "/usr/share/opensearch/data");
         } else {
-            // Legacy host-path mode: host-persistent-path is an absolute path
             Path dataPath = ContainerStorageHelper.hostResourcePath(config, "opensearch", domain.getDomainName());
             if (!containerDetector.isRunningInContainer()) {
                 ContainerStorageHelper.ensureHostDir(dataPath.toString());
@@ -89,14 +98,23 @@ public class OpenSearchDomainManager {
         ContainerInfo info = lifecycleManager.createAndStart(spec);
         domain.setContainerId(info.containerId());
 
+        var endpoint = info.getEndpoint(OPENSEARCH_PORT);
+        String backendBaseUrl = "http://" + endpoint.host() + ":" + endpoint.port();
         if (containerDetector.isRunningInContainer()) {
-            domain.setEndpoint("http://" + containerName + ":" + OPENSEARCH_PORT);
+            backendBaseUrl = "http://" + containerName + ":" + OPENSEARCH_PORT;
+        }
+
+        dataPlane.start(domain.getDomainName(), hostPort, backendBaseUrl,
+                domain.getArn(), domain.getAdvancedSecurityOptions());
+
+        if (containerDetector.isRunningInContainer()) {
+            domain.setEndpoint("http://" + containerName + ":" + hostPort);
         } else {
             domain.setEndpoint("http://localhost:" + hostPort);
         }
 
-        LOG.infov("OpenSearch container {0} started for domain {1} on port {2}",
-                info.containerId(), domain.getDomainName(), String.valueOf(hostPort));
+        LOG.infov("OpenSearch AuthProxy for domain {0} on port {1} → {2}",
+                domain.getDomainName(), String.valueOf(hostPort), backendBaseUrl);
     }
 
     public boolean isReady(Domain domain) {
@@ -117,7 +135,6 @@ public class OpenSearchDomainManager {
             }
             return false;
         } catch (Exception e) {
-            // Silently ignore during polling
             return false;
         }
     }
@@ -126,6 +143,7 @@ public class OpenSearchDomainManager {
         if (domain.getContainerId() == null) {
             return;
         }
+        dataPlane.stop(domain.getDomainName());
         if (config.services().opensearch().keepRunningOnShutdown()) {
             LOG.infov("Leaving OpenSearch container for domain {0} running", domain.getDomainName());
             return;
@@ -148,25 +166,11 @@ public class OpenSearchDomainManager {
         return ContainerStorageHelper.resourceName(config, "opensearch", null, domain.getDomainName());
     }
 
-    /**
-     * Engine env that differs between OpenSearch lines and Elasticsearch. Both
-     * the security-plugin disable flag and the v2.12+ initial admin password
-     * are baked here rather than the call site so the {@link #startDomain}
-     * builder chain stays linear.
-     */
     private void applyEngineEnv(ContainerBuilder.Builder specBuilder, String engineVersion) {
         if (engineVersion != null && engineVersion.startsWith("Elasticsearch")) {
-            // The OSS distribution of Elasticsearch ships without x-pack, so
-            // any xpack.* setting is rejected as unknown and the node refuses
-            // to boot. The default OSS build has no security plugin to disable
-            // — leave the env empty and let the image use its bare defaults.
             return;
         }
         specBuilder.withEnv("DISABLE_SECURITY_PLUGIN", "true");
-        // OpenSearch 2.12+ refuses to start without an initial admin password
-        // even when the security plugin is disabled (the bootstrap check fires
-        // before plugin config). Provide a fixed value — the security plugin
-        // is off so this isn't a real credential.
         if (requiresInitialAdminPassword(engineVersion)) {
             specBuilder.withEnv("OPENSEARCH_INITIAL_ADMIN_PASSWORD", "FlociAdmin1!");
         }
