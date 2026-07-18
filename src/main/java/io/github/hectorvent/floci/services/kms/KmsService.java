@@ -730,6 +730,7 @@ public class KmsService {
 
     public byte[] encrypt(String keyId, byte[] plaintext, Map<String, String> encryptionContext, String region) {
         KmsKey kmsKey = resolveKey(keyId, region);
+        requireKeyUsableForCrypto(kmsKey);
         try {
             byte[] nonce = new byte[GCM_NONCE_BYTES];
             secureRandom.nextBytes(nonce);
@@ -753,6 +754,7 @@ public class KmsService {
 
     public byte[] decrypt(byte[] ciphertext, Map<String, String> encryptionContext, String region) {
         ParsedBlob parsed = parseBlob(ciphertext);
+        requireKeyUsableForCrypto(resolveKey(parsed.keyId, region));
         if (parsed.version != 3 && !parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
         }
@@ -798,18 +800,15 @@ public class KmsService {
                                                String region, String requestedKeyId, int depthRemaining) {
         ParsedBlob parsed = parseBlob(ciphertext);
         assertRequestedKeyMatchesBlob(requestedKeyId, parsed.keyId, region);
+        KmsKey sourceKey = resolveKey(parsed.keyId, region);
+        requireKeyUsableForCrypto(sourceKey);
         if (parsed.version != 3 && !parsed.contextFingerprint.equals(contextFingerprint(encryptionContext))) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
         }
         byte[] plaintext = parsed.version == 3
                 ? decryptV3(parsed, encryptionContext, region)
                 : Base64.getDecoder().decode(parsed.payload);
-        String keyArn;
-        try {
-            keyArn = resolveKey(parsed.keyId, region).getArn();
-        } catch (AwsException e) {
-            keyArn = null;
-        }
+        String keyArn = sourceKey.getArn();
         if (depthRemaining > 0 && looksLikeKmsEnvelope(plaintext)) {
             DecryptResult inner = decryptAndResolveKey(plaintext, encryptionContext, region, null, depthRemaining - 1);
             return new DecryptResult(inner.plaintext(), keyArn != null ? keyArn : inner.keyArn());
@@ -902,12 +901,14 @@ public class KmsService {
 
     private byte[] decryptV3(ParsedBlob parsed, Map<String, String> encryptionContext, String region) {
         try {
+            KmsKey key = resolveKey(parsed.keyId, region);
+            requireKeyUsableForCrypto(key);
             byte[] nonce = Base64.getUrlDecoder().decode(parsed.nonce);
             if (nonce.length != GCM_NONCE_BYTES) {
                 throw new IllegalArgumentException("Invalid nonce length");
             }
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, encryptionKey(resolveKey(parsed.keyId, region)),
+            cipher.init(Cipher.DECRYPT_MODE, encryptionKey(key),
                     new GCMParameterSpec(GCM_TAG_BITS, nonce));
             cipher.updateAAD(contextAad(encryptionContext));
             return cipher.doFinal(Base64.getUrlDecoder().decode(parsed.payload));
@@ -915,6 +916,22 @@ public class KmsService {
             throw e;
         } catch (Exception e) {
             throw new AwsException("InvalidCiphertextException", "The ciphertext is invalid.", 400);
+        }
+    }
+
+    /**
+     * Rejects cryptographic operations when the CMK is Disabled or PendingDeletion
+     * ([AWS KMS key states](https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)).
+     */
+    private static void requireKeyUsableForCrypto(KmsKey key) {
+        String state = key.getKeyState();
+        if ("PendingDeletion".equals(state)) {
+            throw new AwsException("KMSInvalidStateException",
+                    "KMS key " + key.getKeyId() + " is pending deletion.", 400);
+        }
+        if ("Disabled".equals(state) || !key.isEnabled()) {
+            throw new AwsException("DisabledException",
+                    "KMS key " + key.getKeyId() + " is disabled.", 400);
         }
     }
 

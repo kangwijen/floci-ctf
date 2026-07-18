@@ -3,6 +3,7 @@ package io.github.hectorvent.floci.services.iam;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.AwsArnUtils;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.iam.model.PolicyStatement;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -31,7 +32,9 @@ import java.util.Map;
  * <p>Evaluation algorithm (AWS order of precedence):
  * <ol>
  *   <li>Explicit Deny in ANY policy → DENY</li>
- *   <li>identityAllow OR resourceAllow</li>
+ *   <li>identityAllow OR resourceAllow (default)</li>
+ *   <li>Same-account KMS with a loaded key policy: key-policy path (direct Allow or
+ *       account-root IAM delegation plus identityAllow)</li>
  *   <li>AND (no session policy OR sessionAllow)</li>
  *   <li>AND (no boundary OR boundaryAllow)</li>
  *   <li>→ ALLOW</li>
@@ -118,14 +121,28 @@ public class IamPolicyEvaluator {
             return Decision.DENY;
         }
 
-        // 2. Base grant: identity OR resource-based policy must allow
+        // 2. Base grant: identity OR resource-based policy must allow.
+        // Same-account KMS with a loaded key policy: direct principal Allow on the key
+        // policy is enough; account-root EnableIAMUserPermissions requires identity Allow.
+        // Other services keep OR.
         boolean identityAllow = anyExplicitAllow(identityStmts, action, resource, ctx);
         boolean resourceAllow = anyExplicitAllowResource(resourceStmts, action, resource, ctx,
                 callerArn, callerAccount);
         boolean sessionAllow = sessionStmts != null
                 && anyExplicitAllow(sessionStmts, action, resource, ctx);
 
-        boolean baseAllow = identityAllow || resourceAllow;
+        boolean baseAllow;
+        if (requiresKmsKeyPolicyAndIdentity(action, resourcePolicies, resource, callerAccount)) {
+            if (resourceAllow) {
+                baseAllow = true;
+            } else if (keyPolicyEnablesAccountIam(resourceStmts, action, resource, ctx, callerAccount)) {
+                baseAllow = identityAllow;
+            } else {
+                baseAllow = false;
+            }
+        } else {
+            baseAllow = identityAllow || resourceAllow;
+        }
 
         if (sessionStmts != null) {
             if (!sessionAllow || !baseAllow) {
@@ -141,6 +158,89 @@ public class IamPolicyEvaluator {
         }
 
         return Decision.ALLOW;
+    }
+
+    /**
+     * Same-account KMS: when a key policy document is loaded, AWS requires the key policy
+     * to authorize the call (direct principal or account-root IAM delegation).
+     */
+    private static boolean requiresKmsKeyPolicyAndIdentity(String action,
+                                                           List<String> resourcePolicies,
+                                                           String resource,
+                                                           String callerAccount) {
+        if (action == null || !action.startsWith("kms:")) {
+            return false;
+        }
+        if (resourcePolicies == null || resourcePolicies.isEmpty()) {
+            return false;
+        }
+        if (callerAccount == null || callerAccount.isBlank() || resource == null || resource.isBlank()) {
+            return false;
+        }
+        try {
+            String resourceAccount = AwsArnUtils.parse(resource).accountId();
+            return callerAccount.equals(resourceAccount);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * True when a key-policy Allow for the action names the account (or {@code :root}),
+     * which on AWS enables IAM identity policies for principals in that account.
+     */
+    private boolean keyPolicyEnablesAccountIam(List<PolicyStatement> stmts,
+                                               String action,
+                                               String resource,
+                                               Map<String, String> ctx,
+                                               String callerAccount) {
+        if (stmts == null || stmts.isEmpty() || callerAccount == null || callerAccount.isBlank()) {
+            return false;
+        }
+        for (PolicyStatement stmt : stmts) {
+            if (!stmt.isAllow() || !matchesStatement(stmt, action, resource, ctx)) {
+                continue;
+            }
+            if (principalDelegatesAccountIam(stmt.getPrincipal(), callerAccount)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean principalDelegatesAccountIam(JsonNode principal, String callerAccount) {
+        if (principal == null || principal.isNull()) {
+            return false;
+        }
+        if (principal.isTextual()) {
+            return isAccountRootOrId(principal.asText(), callerAccount);
+        }
+        JsonNode aws = principal.get("AWS");
+        if (aws == null || aws.isNull()) {
+            return false;
+        }
+        if (aws.isTextual()) {
+            return isAccountRootOrId(aws.asText(), callerAccount);
+        }
+        if (aws.isArray()) {
+            for (JsonNode entry : aws) {
+                if (entry != null && entry.isTextual()
+                        && isAccountRootOrId(entry.asText(), callerAccount)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAccountRootOrId(String principal, String callerAccount) {
+        if (principal == null || principal.isBlank()) {
+            return false;
+        }
+        if (callerAccount.equals(principal)) {
+            return true;
+        }
+        return ("arn:aws:iam::" + callerAccount + ":root").equalsIgnoreCase(principal);
     }
 
     /**
