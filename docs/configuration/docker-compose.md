@@ -73,6 +73,25 @@ volumes:
 !!! warning "Docker socket"
     Lambda, ElastiCache, RDS, OpenSearch, and MSK require access to the Docker socket (`/var/run/docker.sock`) to spawn and manage containers. If you don't use these services, you can omit that volume. A RW socket mount still means Floci can drive the host Docker Engine. Non-operator container specs cannot request privileged mode or bind-mount the socket (`ContainerSpecHardening`). An optional socket proxy (Phase D.2) further limits Engine API surface. LAN or internet exposure of port `4566` with a RW sock remains host-root equivalent until both gates are in place.
 
+!!! danger "Host boundary: RW socket equals host root on LAN exposure"
+    Default root Compose mounts the host Docker socket read-write into the Floci container. Anyone who can reach the Floci API (or escape into that container) can drive the Docker daemon: privileged containers, host path binds, and full host takeover. Treat LAN or internet exposure of that path as **host root**. The optional socket-proxy override below reduces Docker **API surface** only. It does not replace container-spec hardening for privileged or host-path binds in create bodies.
+
+### Optional Docker socket proxy (API allowlist)
+
+To keep the host socket out of the Floci container and allowlist create / start / stop / inspect (plus image pull and network attach that Floci needs), stack the override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.socket-proxy.yml up
+```
+
+| Piece | Behavior |
+|-------|----------|
+| `docker-socket-proxy` | Mounts `/var/run/docker.sock`; `CONTAINERS` + `POST` + `ALLOW_START` + `ALLOW_STOP` (+ `IMAGES` / `NETWORKS` for Floci pull/attach). No host port publish. |
+| `floci` override | Sets `FLOCI_DOCKER_DOCKER_HOST=tcp://docker-socket-proxy:2375` and drops the direct sock volume. |
+| Still denied by default | `BUILD`, `AUTH`, `SECRETS`, `SWARM`, `VOLUMES`, `EXEC`, `SYSTEM`, and other proxy sections left at `0`. |
+
+Regression: `DockerSocketProxyComposeTest` (`@Tag("security-regression")`).
+
 !!! note "ECR port"
     With CTF IAM registry auth, publish `5100` from challenge Compose when host `docker push`/`pull` is required. Without the auth proxy, the `registry:2` sidecar binds its own host port — do not add `5100-5199` to the Floci service. See [Ports Reference](./ports.md#ctf-fork-this-repository).
 

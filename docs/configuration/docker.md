@@ -25,6 +25,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
+**Host-root residual:** a read-write socket mount is equivalent to root on the Docker host. If Floci (or the socket) is reachable from a LAN or the internet, treat that as host takeover risk. For an optional allowlisted path that mounts the socket only into `tecnativa/docker-socket-proxy` and points Floci at `FLOCI_DOCKER_DOCKER_HOST=tcp://docker-socket-proxy:2375`, use `docker-compose.socket-proxy.yml` as documented in [Docker Compose](./docker-compose.md#optional-docker-socket-proxy-api-allowlist).
+
 ## Private Registry Authentication
 
 Any service that pulls a container image from a private registry (Lambda image functions, custom OpenSearch images, private Postgres images, etc.) needs Docker credentials. Two approaches are supported and can be combined.

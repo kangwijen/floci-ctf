@@ -1,0 +1,56 @@
+# Optional Docker socket proxy (Task D.2 / O19 mitigation path).
+#
+# Usage (with root CTF Compose):
+#   docker compose -f docker-compose.yml -f docker-compose.socket-proxy.yml up
+#
+# Effect:
+#   - Host docker.sock is mounted only into docker-socket-proxy (not into floci).
+#   - Floci talks to the daemon via tcp://docker-socket-proxy:2375.
+#   - Allowlist covers create / start / stop / inspect (plus IMAGES + NETWORKS
+#     so Floci can pull and attach FLOCI_SERVICES_DOCKER_NETWORK).
+#   - Proxy port is NOT published to the host.
+#
+# Residual: default docker-compose.yml still mounts RW docker.sock into floci.
+# LAN or internet exposure of that path remains host-root equivalent. Prefer this
+# override when operators need API-surface reduction without a full Docker broker.
+#
+# Image: https://github.com/Tecnativa/docker-socket-proxy
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # create + inspect (and container delete used on teardown)
+      CONTAINERS: "1"
+      POST: "1"
+      # start / stop subset
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
+      # required for Floci ensureImageExists + network attach after start
+      IMAGES: "1"
+      NETWORKS: "1"
+      # Explicit denials (defaults are already 0; listed for operator clarity)
+      BUILD: "0"
+      AUTH: "0"
+      SECRETS: "0"
+      SWARM: "0"
+      SERVICES: "0"
+      NODES: "0"
+      VOLUMES: "0"
+      EXEC: "0"
+      SYSTEM: "0"
+    networks:
+      - floci_default
+
+  floci:
+    depends_on:
+      - docker-socket-proxy
+    volumes:
+      # Replace default sock mount: data only. Docker API via proxy TCP.
+      - ./data:/app/data
+    environment:
+      FLOCI_DOCKER_DOCKER_HOST: tcp://docker-socket-proxy:2375
