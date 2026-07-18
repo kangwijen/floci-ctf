@@ -159,7 +159,11 @@ print(cluster["DBCluster"]["Endpoint"])
 
 ## Out of Scope
 
-- IAM database authentication for Gremlin connections.
+- Full cryptographic re-signing of every Gremlin WebSocket frame after the upgrade handshake.
 - Neptune Analytics (vector search, graph analytics).
 - Neptune Serverless auto-pause/resume.
 - Snapshot and restore operations.
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is on, the Gremlin proxy requires an AWS4 `Authorization` header on the WebSocket upgrade whose `Credential=` access key is known to Floci (IAM key or operator root). Missing or unknown credentials get HTTP 403 and no backend relay. Lab defaults (enforcement off) keep transparent relay. Regression: `NeptuneHandshakeAuthenticatorTest`.

@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.services.neptune.proxy;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
@@ -14,10 +15,18 @@ public class NeptuneProxyManager {
 
     private static final Logger LOG = Logger.getLogger(NeptuneProxyManager.class);
 
+    private final NeptuneHandshakeAuthenticator handshakeAuthenticator;
     private final ConcurrentHashMap<String, NeptuneGremlinProxy> proxies = new ConcurrentHashMap<>();
 
+    @Inject
+    public NeptuneProxyManager(NeptuneHandshakeAuthenticator handshakeAuthenticator) {
+        this.handshakeAuthenticator = handshakeAuthenticator;
+    }
+
     public void startProxy(String clusterId, int proxyPort, String backendHost, int backendPort) {
-        NeptuneGremlinProxy proxy = new NeptuneGremlinProxy(clusterId, backendHost, backendPort);
+        NeptuneGremlinProxy.HandshakeAuthenticator auth =
+                handshakeAuthenticator.isRequired() ? handshakeAuthenticator : null;
+        NeptuneGremlinProxy proxy = new NeptuneGremlinProxy(clusterId, backendHost, backendPort, auth);
         try {
             proxy.start(proxyPort);
             proxies.put(clusterId, proxy);
