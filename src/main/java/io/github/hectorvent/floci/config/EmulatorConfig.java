@@ -1135,6 +1135,12 @@ public interface EmulatorConfig {
         @WithDefault("mongo:7.0")
         String defaultImage();
 
+        @WithDefault("27018")
+        int proxyBasePort();
+
+        @WithDefault("27117")
+        int proxyMaxPort();
+
         Optional<String> dockerNetwork();
     }
 

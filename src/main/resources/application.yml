@@ -318,6 +318,12 @@ floci:
       db-type: "gremlin"
       default-image: "tinkerpop/gremlin-server:3.7.3"
       default-neo4j-image: "neo4j:5-community"
+    docdb:
+      enabled: true
+      mock: false
+      proxy-base-port: 27018
+      proxy-max-port: 27117
+      default-image: "mongo:7.0"
     eventbridge:
       enabled: true
     cloudmap:

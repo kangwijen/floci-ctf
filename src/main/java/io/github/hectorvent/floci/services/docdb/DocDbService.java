@@ -4,12 +4,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.core.common.AwsException;
 import io.github.hectorvent.floci.core.common.RegionResolver;
+import io.github.hectorvent.floci.core.common.port.PortAllocator;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.docdb.container.DocDbContainerHandle;
 import io.github.hectorvent.floci.services.docdb.container.DocDbContainerManager;
 import io.github.hectorvent.floci.services.docdb.model.DocDbCluster;
 import io.github.hectorvent.floci.services.docdb.model.DocDbInstance;
+import io.github.hectorvent.floci.services.docdb.proxy.DocDbProxyManager;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -18,7 +20,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class DocDbService {
@@ -32,15 +36,19 @@ public class DocDbService {
     private final EmulatorConfig config;
     private final RegionResolver regionResolver;
     private final DocDbContainerManager containerManager;
+    private final DocDbProxyManager proxyManager;
+    private final Set<Integer> usedPorts = ConcurrentHashMap.newKeySet();
 
     @Inject
     public DocDbService(EmulatorConfig config,
                         RegionResolver regionResolver,
                         DocDbContainerManager containerManager,
+                        DocDbProxyManager proxyManager,
                         StorageFactory storageFactory) {
         this.config = config;
         this.regionResolver = regionResolver;
         this.containerManager = containerManager;
+        this.proxyManager = proxyManager;
         this.clusters = storageFactory.create("docdb", "docdb-clusters.json",
                 new TypeReference<Map<String, DocDbCluster>>() {});
         this.instances = storageFactory.create("docdb", "docdb-instances.json",
@@ -64,6 +72,7 @@ public class DocDbService {
         cluster.setStatus("available");
         cluster.setEngineVersion(engineVersion != null ? engineVersion : ENGINE_VERSION_DEFAULT);
         cluster.setMasterUsername(masterUsername);
+        cluster.setMasterPassword(masterPassword);
         cluster.setIamDatabaseAuthenticationEnabled(iamEnabled);
         cluster.setDbClusterArn(regionResolver.buildArn("rds", region, "cluster:" + id));
         cluster.setDbClusterResourceId("cluster-" + UUID.randomUUID().toString()
@@ -77,21 +86,72 @@ public class DocDbService {
             cluster.setReaderEndpoint("localhost");
             cluster.setPort(MONGO_PORT);
         } else {
-            String image = config.services().docdb().defaultImage();
-            LOG.infov("Creating DocDB cluster {0}, image={1}", id, image);
-            DocDbContainerHandle handle = containerManager.start(id, image, masterUsername, masterPassword);
-            cluster.setEndpoint(handle.getHost());
-            cluster.setReaderEndpoint(handle.getHost());
-            cluster.setPort(handle.getPort());
-            cluster.setContainerId(handle.getContainerId());
-            cluster.setContainerHost(handle.getHost());
-            cluster.setContainerPort(handle.getPort());
+            DocDbContainerHandle handle = null;
+            int proxyPort = -1;
+            boolean provisioned = false;
+            try {
+                String image = config.services().docdb().defaultImage();
+                proxyPort = allocateProxyPort();
+                String endpointHost = resolveEndpointHost();
+                LOG.infov("Creating DocDB cluster {0} on AuthProxy port {1}, image={2}",
+                        id, String.valueOf(proxyPort), image);
+                handle = containerManager.start(id, image, masterUsername, masterPassword);
+
+                cluster.setEndpoint(endpointHost);
+                cluster.setReaderEndpoint(endpointHost);
+                cluster.setPort(proxyPort);
+                cluster.setProxyPort(proxyPort);
+                cluster.setContainerId(handle.getContainerId());
+                cluster.setContainerHost(handle.getHost());
+                cluster.setContainerPort(handle.getPort());
+
+                proxyManager.startProxy(id, iamEnabled, proxyPort,
+                        handle.getHost(), handle.getPort(),
+                        masterUsername, masterPassword);
+
+                clusters.put(id, cluster);
+                provisioned = true;
+                LOG.infov("DocDB cluster {0} created, endpoint={1}:{2}",
+                        id, endpointHost, String.valueOf(proxyPort));
+                return cluster;
+            } catch (RuntimeException e) {
+                LOG.warnv("DocDB cluster {0} provisioning failed, rolling back: {1}",
+                        id, e.getMessage());
+                throw e;
+            } finally {
+                if (!provisioned) {
+                    rollbackDbCluster(id, handle, proxyPort);
+                }
+            }
         }
 
         clusters.put(id, cluster);
         LOG.infov("DocDB cluster {0} created, endpoint={1}:{2}",
                 id, cluster.getEndpoint(), String.valueOf(cluster.getPort()));
         return cluster;
+    }
+
+    private void rollbackDbCluster(String id, DocDbContainerHandle handle, int proxyPort) {
+        try {
+            try {
+                if (handle != null) {
+                    proxyManager.stopProxy(id);
+                }
+            } catch (RuntimeException e) {
+                LOG.warnv("Error stopping AuthProxy for DocDB cluster {0}: {1}", id, e.getMessage());
+            }
+            try {
+                if (handle != null) {
+                    containerManager.stop(handle);
+                }
+            } catch (RuntimeException e) {
+                LOG.warnv("Error stopping container for DocDB cluster {0}: {1}", id, e.getMessage());
+            }
+        } finally {
+            if (proxyPort >= 0) {
+                releaseProxyPort(proxyPort);
+            }
+        }
     }
 
     public DocDbCluster getDbCluster(String id) {
@@ -147,12 +207,15 @@ public class DocDbService {
         cluster.setStatus("deleting");
         clusters.put(id, cluster);
 
+        proxyManager.stopProxy(id);
+
         if (cluster.getContainerId() != null) {
             containerManager.stop(new DocDbContainerHandle(
                     cluster.getContainerId(), id,
                     cluster.getContainerHost(), cluster.getContainerPort()));
         }
 
+        releaseProxyPort(cluster.getProxyPort());
         clusters.delete(id);
         LOG.infov("DocDB cluster {0} deleted", id);
     }
@@ -238,5 +301,22 @@ public class DocDbService {
 
     private String resolveEndpointHost() {
         return config.hostname().orElse("localhost");
+    }
+
+    private int allocateProxyPort() {
+        int base = config.services().docdb().proxyBasePort();
+        int max = config.services().docdb().proxyMaxPort();
+        int port = PortAllocator.allocateFromRange(base, max, usedPorts, true);
+        if (port < 0) {
+            throw new AwsException("InsufficientDBClusterCapacityFault",
+                    "No available DocDB AuthProxy ports in range " + base + "-" + max, 503);
+        }
+        return port;
+    }
+
+    private void releaseProxyPort(int port) {
+        if (port > 0) {
+            usedPorts.remove(port);
+        }
     }
 }

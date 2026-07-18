@@ -7,6 +7,7 @@ import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.docdb.container.DocDbContainerManager;
 import io.github.hectorvent.floci.services.docdb.model.DocDbCluster;
 import io.github.hectorvent.floci.services.docdb.model.DocDbInstance;
+import io.github.hectorvent.floci.services.docdb.proxy.DocDbProxyManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -39,8 +40,9 @@ class DocDbServiceTest {
         when(docdbConfig.mock()).thenReturn(true);
 
         containerManager = Mockito.mock(DocDbContainerManager.class);
+        DocDbProxyManager proxyManager = Mockito.mock(DocDbProxyManager.class);
         RegionResolver regionResolver = new RegionResolver("us-east-1", "000000000000");
-        docDbService = new DocDbService(config, regionResolver, containerManager, storageFactory);
+        docDbService = new DocDbService(config, regionResolver, containerManager, proxyManager, storageFactory);
     }
 
     @Test
