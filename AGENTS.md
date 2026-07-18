@@ -330,6 +330,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | CloudFormation non-IAM registry split (SSM Parameter) | Closed | `AWS::SSM::Parameter` on registry path (`SsmCfnProvisionerTest`), not IAM create arms |
 | EventBridge bus resource policies ignored | Closed | `ResourcePolicyResolver` loads `events` bus policies (`ResourcePolicyResolverTest`) |
 | EventBridge `PutEvents` bus ARN under-scope | Closed | Per-entry `EventBusName` ARNs via `ResourceArnBuilder` (`ResourceArnBuilderTest`) |
+| Scheduler ECS `RunTask` target mapping | Closed | `authorizeSchedulerTarget` / `authorizeRoleTarget` maps `:ecs:` to `ecs:RunTask` (`InProcessTargetAuthorizerTest#schedulerTargetMapsEcsClusterToRunTask`) |
+| EventBridge Batch / Firehose no-role service principal | Closed | `authorizeServiceTarget` maps Batch `SubmitJob` and Firehose `PutRecord` for `events.amazonaws.com` (`InProcessTargetAuthorizerTest` Batch/Firehose no-role cases) |
 | Lambda `CreateEventSourceMapping` function ARN under-scope | Closed | `FunctionName` from JSON body scopes IAM (`ResourceArnBuilderTest`) |
 | CloudWatch Logs `StartQuery` multi-group under-scope | Closed | Each `logGroupNames` entry is evaluated (`ResourceArnBuilderTest`, Logs handler tests) |
 | DynamoDB Streams `StreamArn` under-scope | Closed | Streams APIs use `StreamArn` (TableName still preferred when both present) (`ResourceArnBuilderTest`) |
@@ -455,8 +457,8 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | OpenSearch domain HTTP | Yes when IAM enforcement or FGAC enabled (`OpenSearchDataPlane` SigV4 / Basic gate). `OpenSearchDomainAuthProxyBindTest`, `OpenSearchDataPlaneGateTest` |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
 | SFN / APIGW AWS integrations in-process | Yes when enforcement on (`InProcessIamAuthorizer` on JSON-body calls); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
-| Pipes / Scheduler in-process | Yes (`InProcessTargetAuthorizer`: pipe/schedule `roleArn` on source poll with extended SQS/Kinesis/DynamoDB Streams actions, target delivery, SQS `DeleteMessage` on ack) |
-| EventBridge rule targets / archive replay | Yes (`InProcessTargetAuthorizer`: rule `roleArn` or `events.amazonaws.com` destination policy; replay uses `events:PutEvents` on destination bus) |
+| Pipes / Scheduler in-process | Yes (`InProcessTargetAuthorizer`: pipe/schedule `roleArn` on source poll with extended SQS/Kinesis/DynamoDB Streams actions, target delivery including ECS `RunTask`, SQS `DeleteMessage` on ack) |
+| EventBridge rule targets / archive replay | Yes (`InProcessTargetAuthorizer`: rule `roleArn` or `events.amazonaws.com` destination policy including Lambda/SQS/SNS/Kinesis/SFN/bus/Batch/Firehose; replay uses `events:PutEvents` on destination bus) |
 | SNS / S3 / SES notification delivery | Yes (`InProcessTargetAuthorizer`: `sns.amazonaws.com`, `s3.amazonaws.com`, `ses.amazonaws.com` on destination resource policies) |
 | Lambda ESM pollers (SQS/Kinesis/DynamoDB Streams) | Yes (function execution role on `ReceiveMessage` / `GetQueueAttributes` / `GetRecords` / `DescribeStream` / `DeleteMessage`) |
 | CloudWatch Logs subscriptions | Yes (`logs.amazonaws.com` on Lambda; filter `roleArn` required for Kinesis/Firehose) |

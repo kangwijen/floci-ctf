@@ -180,3 +180,7 @@ FLOCI_STORAGE_HOST_PERSISTENT_PATH=/absolute/host/path/data
 The RDS auth proxy validates the master username and password at the proxy layer. All other database users are passed through directly to the backend engine — create them with standard SQL (`CREATE USER`) and connect as normal.
 
 IAM database authentication is also supported. Set `--enable-iam-database-authentication` at instance creation time and use `aws rds generate-db-auth-token` to obtain a token.
+
+## CTF fork {#ctf-fork}
+
+SQL AuthProxy accepts IAM database auth tokens validated by `RdsSigV4Validator` (token SigV4, not per-query IAM). Regression: `RdsSigV4ValidatorTest`.

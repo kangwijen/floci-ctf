@@ -6,6 +6,10 @@
 
 Floci manages real Valkey/Redis Docker containers and proxies TCP connections to them, so any Redis client works — including IAM-style authentication. MemoryDB is Redis wire-compatible, so it reuses Floci's ElastiCache RESP proxy and SigV4 validator.
 
+## CTF fork {#ctf-fork}
+
+RESP AuthProxy token auth uses the shared ElastiCache `SigV4Validator` (token SigV4, not per-query IAM). Regression: `SigV4ValidatorTest`.
+
 ## Mock Mode
 
 Set `FLOCI_SERVICES_MEMORYDB_MOCK=true` to manage clusters as control-plane-only resources — no Redis container is started. The management API (`CreateCluster`, `DescribeClusters`, tagging, etc.) behaves normally and returns a `ClusterEndpoint` of `<hostname>:6379` (defaults to `localhost:6379`, controlled by `FLOCI_HOSTNAME`), but there is no live data plane to connect to. This is intended for Infrastructure-as-Code tools like Terraform and OpenTofu running in environments without a Docker socket, where you only need the AWS resources to exist and return consistent attributes.

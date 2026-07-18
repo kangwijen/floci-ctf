@@ -4,6 +4,7 @@ import io.github.hectorvent.floci.config.EmulatorConfig;
 import io.github.hectorvent.floci.services.iam.IamService;
 import io.github.hectorvent.floci.testutil.IamServiceTestHelper;
 import io.github.hectorvent.floci.testutil.SigV4TokenTestHelper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -25,6 +26,7 @@ class RdsSigV4ValidatorTest {
     }
 
     @Test
+    @Tag("security-regression")
     void validateAcceptsTokenSignedByStandardSigV4() throws Exception {
         String accessKeyId = "AKIAORACLETEST";
         String secretAccessKey = "oracle-secret-key-value";
