@@ -55,6 +55,23 @@ class ComputePassRoleGateTest {
     }
 
     @Test
+    void authorizeBatchServiceRolePassesBatchPrincipal() {
+        gate.authorizeBatchServiceRole(ROLE_ARN, REGION);
+        verify(iamAuthorizer).authorizePassRole(ROLE_ARN, ComputePassRoleGate.BATCH_SERVICE, REGION);
+    }
+
+    @Test
+    void authorizeBatchJobRolesPassesEcsTasksPrincipal() {
+        gate.authorizeBatchJobRoles("arn:aws:iam::000000000000:role/job",
+                "arn:aws:iam::000000000000:role/exec", REGION);
+
+        verify(iamAuthorizer).authorizePassRole(
+                "arn:aws:iam::000000000000:role/job", ComputePassRoleGate.ECS_TASKS_SERVICE, REGION);
+        verify(iamAuthorizer).authorizePassRole(
+                "arn:aws:iam::000000000000:role/exec", ComputePassRoleGate.ECS_TASKS_SERVICE, REGION);
+    }
+
+    @Test
     void authorizeEc2InstanceProfilePassesAttachedRoles() {
         InstanceProfile profile = new InstanceProfile("AIPA", "my-profile", "/", PROFILE_ARN);
         profile.setRoleNames(List.of("ec2-role"));

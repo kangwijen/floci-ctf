@@ -96,9 +96,19 @@ IAM roles, VPC fields, Fargate declarations, log configuration, storage, and res
 
 ## Limitations
 
-- No IAM enforcement.
 - No VPC/subnet/security-group simulation.
 - No AWS-faithful capacity scheduling.
 - No array job fan-out or multi-node jobs.
 - `CancelJob` and `TerminateJob` are not implemented.
 - EventBridge input transformers work through the existing EventBridge target input path; full Batch-specific input-transformer parity is not implemented.
+
+## IAM PassRole
+
+Under IAM enforcement, create paths require `iam:PassRole`:
+
+| Operation | Role fields | Passed-to service |
+|---|---|---|
+| `CreateComputeEnvironment` | `serviceRole` | `batch.amazonaws.com` |
+| `RegisterJobDefinition` | `containerProperties.jobRoleArn`, `containerProperties.executionRoleArn` | `ecs-tasks.amazonaws.com` |
+
+Blank role fields are skipped. Regression: `BatchPassRoleTest`, `ComputePassRoleGateTest`.
