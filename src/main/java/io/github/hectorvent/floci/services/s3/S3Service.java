@@ -573,6 +573,33 @@ public class S3Service implements Resettable {
                 .orElse(false);
     }
 
+    /**
+     * Unsigned GetObject / HeadObject under IAM strict mode: public bucket policy Allow,
+     * else public object ACL. Explicit bucket-policy Deny wins over ACL.
+     */
+    public boolean allowsAnonymousPublicRead(String bucketName, String key, String action) {
+        if (!"s3:GetObject".equals(action) && !"s3:HeadObject".equals(action)) {
+            return false;
+        }
+        if (bucketName == null || bucketName.isBlank() || key == null || key.isBlank()) {
+            return false;
+        }
+        Bucket bucket = bucketStore.get(bucketName).orElse(null);
+        if (bucket == null) {
+            return false;
+        }
+        String resourceArn = S3PublicAccessEvaluator.objectArn(bucketName, key);
+        S3PublicAccessEvaluator.PublicAccessDecision policyDecision =
+                S3PublicAccessEvaluator.publicPolicyDecision(objectMapper, bucket.getPolicy(), action, resourceArn);
+        if (policyDecision == S3PublicAccessEvaluator.PublicAccessDecision.DENY) {
+            return false;
+        }
+        if (policyDecision == S3PublicAccessEvaluator.PublicAccessDecision.ALLOW) {
+            return true;
+        }
+        return publicObjectAclAllowsRead(bucketName, key, null);
+    }
+
     private void applyObjectLock(S3Object object, Bucket bucket,
                                  String objectLockMode, Instant retainUntilDate, String legalHoldStatus) {
         if (objectLockMode != null) {

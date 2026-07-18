@@ -169,7 +169,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager, and EventBridge bus policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
-**Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
+**Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST is verified by `PreSignedPostFilter`, then identity + bucket policy run in `IamEnforcementFilter` (same class as verified presigned GET). `S3Controller` still validates policy conditions.
 
 **In-process IAM:** When `floci.services.iam.enforcement-enabled=true`, `InProcessIamAuthorizer` always denies SFN/APIGW JSON-body calls without an execution role (state machine `roleArn` or integration `credentials`). `InProcessTargetAuthorizer` covers delivery paths: Pipes/Scheduler/EventBridge, SNS/S3/SES notifications, Lambda ESM pollers, Logs subscriptions (filter `roleArn` for Kinesis/Firehose), ELB/API Gateway/Cognito/CodeDeploy Lambda invoke, service S3 delivery (CloudTrail, Config, Firehose, VPC flow logs), and CUR/BCM Parquet emit. Strict mode is not required for the missing-role check; when a role or service principal is present, identity and resource policies are evaluated like HTTP.
 
@@ -233,6 +233,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `GetCallerIdentity` caller ARN (IAM user, assumed role, operator root) | Closed | `StsGetCallerIdentityIntegrationTest` |
 | Presigned S3 GET identity-policy deny after signature verification | Closed | `IamEnforcementPresignedS3DenyIntegrationTest` |
 | Presigned S3 GET bucket-policy deny after signature verification | Closed | `S3PresignedBucketPolicyDenyIntegrationTest` |
+| Presigned S3 POST identity + bucket policy after signature verification | Closed | `IamEnforcementPresignedPostDenyIntegrationTest`, `S3PresignedPostBucketPolicyDenyIntegrationTest` |
+| Anonymous S3 GetObject via public object ACL (union bucket policy) | Closed | `S3PublicAclAnonymousGetIntegrationTest`, `S3PublicBucketPolicyAnonymousGetIntegrationTest` |
+| SNS JSON ARN parity (`SubscriptionArn` / `EndpointArn` / `Name`) | Closed | `ResourceArnBuilderTest` (`snsJsonUses*`) |
 | SNS no default topic policy when IAM enforcement is on | Closed | `SnsTopicNoDefaultPolicyIntegrationTest` |
 | SNS topic `:root` principal does not authorize arbitrary IAM users | Closed | `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest` |
 | SQS resource-policy-only Allow (no identity policy) | Closed | `SqsResourcePolicyOnlyAllowIntegrationTest` |
@@ -245,7 +248,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | SQS `ReceiveMessage` scoped IAM (JSON 1.0 `QueueUrl`) | Closed | `SqsReceiveMessageScopedQueueIntegrationTest` |
 | Secrets Manager path-prefix IAM wildcards (`secret:path/*`) | Closed | `SecretsManagerGetSecretValueScopedArnIntegrationTest`, `ResourceArnBuilderTest` |
 | Secrets Manager single-layer KMS `SecretBinary` envelope | Closed | `SecretsManagerKmsEnvelopeIntegrationTest`, `SecretsManagerKmsSupportTest` |
-| S3 / APIGW / Lambda anonymous access under strict IAM | Closed | `S3PublicBucketPolicyAnonymousGetIntegrationTest`, `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`, `LambdaFunctionUrlNoneAuthIntegrationTest` |
+| S3 / APIGW / Lambda anonymous access under strict IAM | Closed | `S3PublicBucketPolicyAnonymousGetIntegrationTest`, `S3PublicAclAnonymousGetIntegrationTest`, `ApiGatewayNoneAuthAnonymousInvokeIntegrationTest`, `LambdaFunctionUrlNoneAuthIntegrationTest` |
 | `AnonymousAccessGate` bypass regressions (private S3, `AWS_IAM` APIGW/Lambda URL, `NONE` URL without resource policy) | Closed | `AnonymousAccessGateBypassIntegrationTest` |
 | API Gateway deploy + stage lifecycle | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |
 | API Gateway `TestInvokeMethod` without stage deploy | Closed | `ApiGatewayDeploymentAndTestInvokeIntegrationTest` |

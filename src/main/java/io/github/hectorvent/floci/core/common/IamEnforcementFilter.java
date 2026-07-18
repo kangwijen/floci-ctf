@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.iam.ResourcePolicyResolver;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.iam.model.CallerIdentity;
+import io.github.hectorvent.floci.services.s3.PreSignedPostFilter;
 import io.github.hectorvent.floci.services.s3.PreSignedUrlFilter;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -45,6 +46,8 @@ import java.util.regex.Pattern;
  *
  * <p>Pre-signed S3 URLs: after {@link PreSignedUrlFilter} validates SigV4 query auth,
  * bucket and identity policies are evaluated for the credential access key.
+ * Verified browser-based (presigned) POST uploads follow the same identity + bucket policy path
+ * after {@link PreSignedPostFilter} validates the policy signature.
  */
 @Provider
 @ApplicationScoped
@@ -119,6 +122,13 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         }
 
         if (SecurityBypassPaths.isPresignedPostRequest(ctx)) {
+            if (Boolean.TRUE.equals(ctx.getProperty(PreSignedPostFilter.PRESIGN_POST_VERIFIED_PROPERTY))) {
+                enforcePresignedS3(ctx, strict);
+            } else if (!SecurityBypassPaths.isInternalHealthOrInfoPath(
+                    path, config.ctf().hideInternalEndpointsMode())) {
+                LOG.infov("IAM enforcement DENY: unverified pre-signed POST on {0}", path);
+                ctx.abortWith(accessDeniedResponse("s3:PutObject", "s3", ctx.getMediaType()));
+            }
             return;
         }
 
@@ -197,7 +207,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
     }
 
     private void enforcePresignedS3(ContainerRequestContext ctx, boolean strict) {
-        String credential = ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
+        boolean presignedPost = SecurityBypassPaths.isPresignedPostRequest(ctx);
+        String credential = presignedPost
+                ? stringProperty(ctx, PreSignedPostFilter.PRESIGN_POST_CREDENTIAL_PROPERTY)
+                : ctx.getUriInfo().getQueryParameters().getFirst("X-Amz-Credential");
         String akid = accountResolver.extractAccessKeyIdFromCredential(credential);
         if (akid != null && config.auth().rootAccessKeyId().filter(akid::equals).isPresent()) {
             return;
@@ -206,9 +219,6 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         String region = regionResolver.getDefaultRegion();
         if (credential != null) {
             String[] parts = credential.split("/");
-            if (parts.length >= 2 && parts[1].length() == 8) {
-                // region segment present in credential scope
-            }
             if (parts.length >= 3 && !parts[2].isBlank()) {
                 region = parts[2];
             }
@@ -217,7 +227,7 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         String accountId = resolveEnforcementAccountId(
                 akid, accountResolver.resolveFromPresignedCredential(credential));
 
-        String action = actionRegistry.resolve("s3", ctx);
+        String action = presignedPost ? "s3:PutObject" : actionRegistry.resolve("s3", ctx);
         if (action == null) {
             denyUnmappedAction(ctx, "s3", "presigned");
             return;
@@ -232,7 +242,9 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             return;
         }
 
-        String resource = arnBuilder.build("s3", ctx, region, accountId);
+        String resource = presignedPost
+                ? buildPresignedPostObjectArn(ctx)
+                : arnBuilder.build("s3", ctx, region, accountId);
         if (denyUnresolvedResource(ctx, resource, action, "s3", akid, strict)) {
             return;
         }
@@ -243,6 +255,25 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             LOG.infov("IAM presign DENY: akid={0} action={1} resource={2}", akid, action, resource);
             ctx.abortWith(accessDeniedResponse(action, "s3", ctx.getMediaType()));
         }
+    }
+
+    private static String buildPresignedPostObjectArn(ContainerRequestContext ctx) {
+        String key = stringProperty(ctx, PreSignedPostFilter.PRESIGN_POST_KEY_PROPERTY);
+        String path = ctx.getUriInfo().getPath();
+        String bucket = path == null ? "" : (path.startsWith("/") ? path.substring(1) : path);
+        int slash = bucket.indexOf('/');
+        if (slash >= 0) {
+            bucket = bucket.substring(0, slash);
+        }
+        if (bucket.isBlank() || key == null || key.isBlank()) {
+            return ResourceRef.unresolvedToken("s3-presigned-post");
+        }
+        return AwsArnUtils.Arn.of("s3", "", "", bucket + "/" + key).toString();
+    }
+
+    private static String stringProperty(ContainerRequestContext ctx, String name) {
+        Object value = ctx.getProperty(name);
+        return value instanceof String s ? s : null;
     }
 
     /**

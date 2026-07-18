@@ -6,6 +6,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.UriInfo;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -649,6 +650,34 @@ class ResourceArnBuilderTest {
                 "Action=ConfirmSubscription&TopicArn=" + topicArn + "&Token=abc123");
         String arn = builder.build("sns", ctx, REGION, ACCOUNT);
         assertEquals(topicArn, arn);
+    }
+
+    @Test
+    @Tag("security-regression")
+    void snsJsonUsesSubscriptionArnWhenTopicArnAbsent() throws Exception {
+        String subscriptionArn = "arn:aws:sns:us-east-1:222222222222:alerts:sub-id";
+        var node = new ObjectMapper().readTree(
+                "{\"SubscriptionArn\":\"" + subscriptionArn + "\"}");
+        String arn = builder.buildFromJsonBody("sns", node, REGION, ACCOUNT);
+        assertEquals(subscriptionArn, arn);
+    }
+
+    @Test
+    @Tag("security-regression")
+    void snsJsonUsesEndpointArnWhenTopicArnAbsent() throws Exception {
+        String endpointArn = "arn:aws:sns:us-east-1:222222222222:app/GCM/myapp/endpoint-id";
+        var node = new ObjectMapper().readTree(
+                "{\"EndpointArn\":\"" + endpointArn + "\"}");
+        String arn = builder.buildFromJsonBody("sns", node, REGION, ACCOUNT);
+        assertEquals(endpointArn, arn);
+    }
+
+    @Test
+    @Tag("security-regression")
+    void snsJsonUsesNameWhenNoArnFieldsPresent() throws Exception {
+        var node = new ObjectMapper().readTree("{\"Name\":\"json-topic\"}");
+        String arn = builder.buildFromJsonBody("sns", node, REGION, ACCOUNT);
+        assertEquals("arn:aws:sns:us-east-1:222222222222:json-topic", arn);
     }
 
     // ── Logs / Events / States ────────────────────────────────────────────────
