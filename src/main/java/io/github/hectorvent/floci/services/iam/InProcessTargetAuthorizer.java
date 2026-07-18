@@ -117,8 +117,16 @@ public class InProcessTargetAuthorizer {
         }
     }
 
+    /**
+     * Archive replay re-injects events onto the destination bus. Authorize as
+     * {@code events.amazonaws.com} {@code events:PutEvents} against the bus resource policy
+     * (same service-principal path as rule targets without RoleArn).
+     */
     public void authorizeEventBridgeReplay(String destinationBusArn, String region) {
-        // AWS replays archived events internally; no destination bus resource policy gate.
+        if (destinationBusArn == null || destinationBusArn.isBlank()) {
+            return;
+        }
+        authorizeServiceTarget(EVENTS_SERVICE, destinationBusArn, region);
     }
 
     public void authorizeSnsDelivery(String endpointArn, String protocol, String region) {
@@ -512,6 +520,18 @@ public class InProcessTargetAuthorizer {
         iamAuthorizer.authorizeServicePrincipal(
                 CLOUDFORMATION_SERVICE, "lambda", "InvokeFunction",
                 resolveLambdaArn(functionArnOrName, region), region);
+    }
+
+    /**
+     * IoT topic-rule MQTT republish. Requires destination topic resource policy Allow for
+     * {@code iot.amazonaws.com} on {@code iot:Publish} (service-principal gate under enforcement).
+     */
+    public void authorizeIotRepublish(String topic, String region) {
+        if (topic == null || topic.isBlank()) {
+            return;
+        }
+        String topicArn = "arn:aws:iot:" + region + ":" + defaultAccountId() + ":topic/" + topic;
+        iamAuthorizer.authorizeServicePrincipal(IOT_SERVICE, "iot", "Publish", topicArn, region);
     }
 
     /**

@@ -231,3 +231,5 @@ silently if the resource does not exist, matching real SNS behavior.
 ## CTF fork {#ctf-fork}
 
 When `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true` (Compose CTF default; YAML default is `false`, via `AuthPosture.egressBlock`), HTTP(S) subscription deliveries pin-connect: resolve once, reject non-public addresses, then connect to that IP with Host/SNI (no redirects), unless the hostname is on `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` or `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES=true`. Regression: `SafeEgressRebindDeniedTest`.
+
+**Residual (High):** HTTP(S) subscription delivery has no InProcess IAM deputy gate (AWS has no destination principal for arbitrary URLs). SQS and Lambda subscriptions use `InProcessTargetAuthorizer`. HTTP(S) remains egress-only. Regression locking that contract: `SnsHttpSubscriptionEgressOnlyContractTest`.

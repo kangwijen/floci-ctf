@@ -376,6 +376,10 @@ public class IotMqttBrokerService {
             if (!session.endpoint().isConnected() || !hasMatchingSubscription(session.clientId(), topic)) {
                 continue;
             }
+            if (!isAuthorized(session, "iot:Receive", topicArn("topic/" + topic))) {
+                LOG.warnv("IoT MQTT RECEIVE denied: clientId={0} topic={1}", session.clientId(), topic);
+                continue;
+            }
             session.endpoint().publish(topic, Buffer.buffer(safePayload), MqttQoS.AT_MOST_ONCE, false, retained);
         }
     }

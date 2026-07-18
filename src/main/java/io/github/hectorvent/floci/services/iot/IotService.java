@@ -1037,6 +1037,9 @@ public class IotService {
                 if (republish.isObject()) {
                     String targetTopic = republish.path("topic").asText(null);
                     if (targetTopic != null && !targetTopic.isBlank()) {
+                        if (targetAuthorizer != null) {
+                            targetAuthorizer.authorizeIotRepublish(targetTopic, region);
+                        }
                         handlePublish(targetTopic, payload, false);
                         mqttBrokerService.publish(targetTopic, payload);
                     }
