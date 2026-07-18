@@ -16,7 +16,7 @@ Floci implements the EC2 Auto Scaling API — stored-state management for launch
 
 | Operation | Notes |
 |---|---|
-| `CreateLaunchConfiguration` | Stores template: `ImageId`, `InstanceType`, `KeyName`, `SecurityGroups`, `UserData`, `IamInstanceProfile` |
+| `CreateLaunchConfiguration` | Stores template: `ImageId`, `InstanceType`, `KeyName`, `SecurityGroups`, `UserData`, `IamInstanceProfile`. Under IAM enforcement, `IamInstanceProfile` requires `iam:PassRole` on attached roles (`ec2.amazonaws.com`) |
 | `DescribeLaunchConfigurations` | Filtered by name list; returns all if no filter |
 | `DeleteLaunchConfiguration` | Removes the named launch configuration |
 
@@ -92,6 +92,8 @@ Floci runs a background reconciler (10 s fixed rate) that keeps each group's InS
 - **Scale-out**: calls `RunInstances` with the group's launch configuration; new instances are tracked as `Pending` until the EC2 state transitions to `running`, at which point they move to `InService` and are registered with all attached ELB v2 target groups.
 - **Scale-in**: selects InService instances not protected from scale-in, deregisters them from target groups, then calls `TerminateInstances`.
 - Activity records are written on each scale-out and scale-in event.
+
+Under IAM enforcement, reconciler EC2, ELBv2, and SSM side effects are authorized through `InProcessTargetAuthorizer` as the Auto Scaling service-linked role against real resource ARNs. Regression: `AutoScalingLaunchConfigPassRoleTest`, `AutoScalingReconcilerAuthorizerTest`.
 
 ## Launch Source Compatibility
 

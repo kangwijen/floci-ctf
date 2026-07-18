@@ -17,6 +17,7 @@ public class ComputePassRoleGate {
     public static final String ECS_TASKS_SERVICE = "ecs-tasks.amazonaws.com";
     public static final String EC2_SERVICE = "ec2.amazonaws.com";
     public static final String LAMBDA_SERVICE = "lambda.amazonaws.com";
+    public static final String BATCH_SERVICE = "batch.amazonaws.com";
 
     private final InProcessIamAuthorizer iamAuthorizer;
     private final IamService iamService;
@@ -34,6 +35,24 @@ public class ComputePassRoleGate {
 
     public void authorizeLambdaExecutionRole(String roleArn, String region) {
         iamAuthorizer.authorizePassRole(roleArn, LAMBDA_SERVICE, region);
+    }
+
+    /**
+     * Authorizes {@code iam:PassRole} for a Batch compute environment {@code serviceRole}.
+     * Blank values are a no-op.
+     */
+    public void authorizeBatchServiceRole(String serviceRoleArn, String region) {
+        iamAuthorizer.authorizePassRole(serviceRoleArn, BATCH_SERVICE, region);
+    }
+
+    /**
+     * Authorizes {@code iam:PassRole} for Batch job-definition container roles. Job and
+     * execution roles use the ECS tasks service principal, matching AWS Batch on ECS/Fargate.
+     * Blank values are a no-op via {@link InProcessIamAuthorizer#authorizePassRole}.
+     */
+    public void authorizeBatchJobRoles(String jobRoleArn, String executionRoleArn, String region) {
+        iamAuthorizer.authorizePassRole(jobRoleArn, ECS_TASKS_SERVICE, region);
+        iamAuthorizer.authorizePassRole(executionRoleArn, ECS_TASKS_SERVICE, region);
     }
 
     /**

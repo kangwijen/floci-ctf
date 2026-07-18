@@ -10,6 +10,7 @@ import io.github.hectorvent.floci.services.autoscaling.model.*;
 import io.github.hectorvent.floci.services.ec2.Ec2Service;
 import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.ec2.model.LaunchTemplate;
+import io.github.hectorvent.floci.services.iam.ComputePassRoleGate;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -40,6 +41,9 @@ public class AutoScalingService {
 
     @Inject
     Ec2Service ec2Service;
+
+    @Inject
+    ComputePassRoleGate passRoleGate;
 
     // region :: name → resource
     private Map<String, LaunchConfiguration> launchConfigs = new ConcurrentHashMap<>();
@@ -113,6 +117,9 @@ public class AutoScalingService {
                     iamInstanceProfile = source.getIamInstanceProfileArn();
                 }
             }
+        }
+        if (passRoleGate != null) {
+            passRoleGate.authorizeEc2InstanceProfile(iamInstanceProfile, region);
         }
         LaunchConfiguration lc = new LaunchConfiguration();
         lc.setLaunchConfigurationName(name);

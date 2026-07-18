@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.ec2.model.Reservation;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.TargetDescription;
 import io.github.hectorvent.floci.services.elbv2.model.TargetHealth;
+import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.ssm.SsmCommandService;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -37,21 +38,29 @@ public class AutoScalingReconciler {
     private final Ec2Service ec2Service;
     private final ElbV2Service elbV2Service;
     private final SsmCommandService ssmCommandService;
+    private final InProcessTargetAuthorizer targetAuthorizer;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             r -> new Thread(r, "asg-reconciler"));
 
     @Inject
     AutoScalingReconciler(AutoScalingService asgService, Ec2Service ec2Service,
-                          ElbV2Service elbV2Service, SsmCommandService ssmCommandService) {
+                          ElbV2Service elbV2Service, SsmCommandService ssmCommandService,
+                          InProcessTargetAuthorizer targetAuthorizer) {
         this.asgService = asgService;
         this.ec2Service = ec2Service;
         this.elbV2Service = elbV2Service;
         this.ssmCommandService = ssmCommandService;
+        this.targetAuthorizer = targetAuthorizer;
     }
 
     AutoScalingReconciler(AutoScalingService asgService, Ec2Service ec2Service,
                           ElbV2Service elbV2Service) {
-        this(asgService, ec2Service, elbV2Service, null);
+        this(asgService, ec2Service, elbV2Service, null, null);
+    }
+
+    AutoScalingReconciler(AutoScalingService asgService, Ec2Service ec2Service,
+                          ElbV2Service elbV2Service, SsmCommandService ssmCommandService) {
+        this(asgService, ec2Service, elbV2Service, ssmCommandService, null);
     }
 
     @PostConstruct
@@ -162,6 +171,11 @@ public class AutoScalingReconciler {
         if (ssmCommandService == null) {
             return;
         }
+        if (targetAuthorizer != null) {
+            targetAuthorizer.authorizeAutoScalingSsmFailInvocations(
+                    asg.getAutoScalingGroupArn(), asg.getRegion(),
+                    accountId(asg), instanceIds);
+        }
         int failed = ssmCommandService.failActiveInvocationsForInstances(
                 asg.getRegion(),
                 Set.copyOf(instanceIds),
@@ -227,6 +241,10 @@ public class AutoScalingReconciler {
                         .filter(target -> !activeInstanceIds.contains(target.getId()))
                         .collect(Collectors.toList());
                 if (!orphanedTargets.isEmpty()) {
+                    if (targetAuthorizer != null) {
+                        targetAuthorizer.authorizeAutoScalingDeregisterTargets(
+                                asg.getAutoScalingGroupArn(), tgArn, asg.getRegion());
+                    }
                     elbV2Service.deregisterTargets(asg.getRegion(), tgArn, orphanedTargets);
                     LOG.infov("ASG {0}: deregistered orphaned target(s) {1} from TG {2}",
                             asg.getAutoScalingGroupName(),
@@ -253,6 +271,11 @@ public class AutoScalingReconciler {
                 .collect(Collectors.toList());
         deregisterFromTargetGroups(asg, instanceIds);
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeAutoScalingTerminateInstances(
+                        asg.getAutoScalingGroupArn(), asg.getRegion(),
+                        accountId(asg), instanceIds);
+            }
             ec2Service.terminateInstances(asg.getRegion(), instanceIds);
         } catch (Exception e) {
             LOG.warnv("ASG {0}: failed to terminate refreshing instances {1}: {2}",
@@ -285,6 +308,11 @@ public class AutoScalingReconciler {
                 : asg.getAvailabilityZones().get(0);
         String subnetId = asg.getSubnetIds().isEmpty() ? null : asg.getSubnetIds().get(0);
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeAutoScalingRunInstances(
+                        asg.getAutoScalingGroupArn(), asg.getRegion(),
+                        accountId(asg), launchSource.iamInstanceProfile());
+            }
             Reservation reservation = ec2Service.runInstances(
                     asg.getRegion(),
                     launchSource.imageId(),
@@ -296,7 +324,8 @@ public class AutoScalingReconciler {
                     null,
                     propagatedInstanceTags(asg, launchSource),
                     launchSource.userData(),
-                    launchSource.iamInstanceProfile());
+                    launchSource.iamInstanceProfile(),
+                    false);
 
             for (Instance ec2Inst : reservation.getInstances()) {
                 AsgInstance asgInst = new AsgInstance();
@@ -356,6 +385,11 @@ public class AutoScalingReconciler {
         deregisterFromTargetGroups(asg, instanceIds);
 
         try {
+            if (targetAuthorizer != null) {
+                targetAuthorizer.authorizeAutoScalingTerminateInstances(
+                        asg.getAutoScalingGroupArn(), asg.getRegion(),
+                        accountId(asg), instanceIds);
+            }
             ec2Service.terminateInstances(asg.getRegion(), instanceIds);
         } catch (Exception e) {
             LOG.warnv("ASG {0}: failed to terminate instances {1}: {2}",
@@ -373,6 +407,10 @@ public class AutoScalingReconciler {
     private void deregisterFromTargetGroups(AutoScalingGroup asg, List<String> instanceIds) {
         for (String tgArn : asg.getTargetGroupARNs()) {
             try {
+                if (targetAuthorizer != null) {
+                    targetAuthorizer.authorizeAutoScalingDeregisterTargets(
+                            asg.getAutoScalingGroupArn(), tgArn, asg.getRegion());
+                }
                 List<TargetDescription> targets = instanceIds.stream()
                         .map(id -> { TargetDescription td = new TargetDescription(); td.setId(id); return td; })
                         .collect(Collectors.toList());
@@ -387,6 +425,10 @@ public class AutoScalingReconciler {
     private void registerWithTargetGroups(AutoScalingGroup asg, AsgInstance asgInst) {
         for (String tgArn : asg.getTargetGroupARNs()) {
             try {
+                if (targetAuthorizer != null) {
+                    targetAuthorizer.authorizeAutoScalingRegisterTargets(
+                            asg.getAutoScalingGroupArn(), tgArn, asg.getRegion());
+                }
                 TargetDescription td = new TargetDescription();
                 td.setId(asgInst.getInstanceId());
                 elbV2Service.registerTargets(asg.getRegion(), tgArn, List.of(td));
@@ -559,6 +601,18 @@ public class AutoScalingReconciler {
             String launchTemplateId,
             String launchTemplateName,
             String launchTemplateVersion) {}
+
+    private static String accountId(AutoScalingGroup asg) {
+        String arn = asg.getAutoScalingGroupArn();
+        if (arn == null || arn.isBlank()) {
+            return "000000000000";
+        }
+        String[] parts = arn.split(":");
+        if (parts.length > 4 && parts[4] != null && !parts[4].isBlank()) {
+            return parts[4];
+        }
+        return "000000000000";
+    }
 
     // Override for describeAutoScalingGroups with null region (all regions)
     // The service only filters by region when non-null; null means all.

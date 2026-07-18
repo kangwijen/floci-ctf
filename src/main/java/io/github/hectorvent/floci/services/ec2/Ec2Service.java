@@ -664,10 +664,25 @@ public class Ec2Service implements ContainerTeardown {
                                     List<String> securityGroupIds, String subnetId,
                                     String clientToken, List<Tag> instanceTags,
                                     String userData, String iamInstanceProfileArn) {
+        return runInstances(region, imageId, instanceType, minCount, maxCount, keyName,
+                securityGroupIds, subnetId, clientToken, instanceTags, userData,
+                iamInstanceProfileArn, true);
+    }
+
+    /**
+     * @param authorizeCallerPassRole when false, skips caller {@code iam:PassRole} (in-process
+     *                                callers such as Auto Scaling that already authorized via SLR)
+     */
+    public Reservation runInstances(String region, String imageId, String instanceType,
+                                    int minCount, int maxCount, String keyName,
+                                    List<String> securityGroupIds, String subnetId,
+                                    String clientToken, List<Tag> instanceTags,
+                                    String userData, String iamInstanceProfileArn,
+                                    boolean authorizeCallerPassRole) {
         if (imageId == null || imageId.isBlank()) {
             throw new AwsException("MissingParameter", "The request must contain the parameter ImageId", 400);
         }
-        if (passRoleGate != null) {
+        if (authorizeCallerPassRole && passRoleGate != null) {
             passRoleGate.authorizeEc2InstanceProfile(iamInstanceProfileArn, region);
         }
         ensureDefaultResources(region);

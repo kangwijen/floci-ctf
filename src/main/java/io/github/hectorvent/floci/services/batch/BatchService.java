@@ -27,6 +27,7 @@ import io.github.hectorvent.floci.services.batch.model.BatchRetryStrategy;
 import io.github.hectorvent.floci.services.batch.model.BatchRunResult;
 import io.github.hectorvent.floci.services.batch.model.BatchStatus;
 import io.github.hectorvent.floci.services.batch.model.BatchTimeout;
+import io.github.hectorvent.floci.services.iam.ComputePassRoleGate;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -64,13 +65,15 @@ public class BatchService {
     private final EmulatorConfig config;
     private final ObjectMapper objectMapper;
     private final BatchDockerRunner dockerRunner;
+    private final ComputePassRoleGate passRoleGate;
 
     @Inject
     public BatchService(StorageFactory storageFactory,
                         RegionResolver regionResolver,
                         EmulatorConfig config,
                         ObjectMapper objectMapper,
-                        BatchDockerRunner dockerRunner) {
+                        BatchDockerRunner dockerRunner,
+                        ComputePassRoleGate passRoleGate) {
         this(
                 storageFactory.create("batch", "batch-job-definitions.json",
                         new TypeReference<Map<String, BatchJobDefinition>>() {}),
@@ -83,7 +86,8 @@ public class BatchService {
                 regionResolver,
                 config,
                 objectMapper,
-                dockerRunner
+                dockerRunner,
+                passRoleGate
         );
     }
 
@@ -95,6 +99,19 @@ public class BatchService {
                  EmulatorConfig config,
                  ObjectMapper objectMapper,
                  BatchDockerRunner dockerRunner) {
+        this(jobDefinitionStore, jobQueueStore, computeEnvironmentStore, jobStore,
+                regionResolver, config, objectMapper, dockerRunner, null);
+    }
+
+    BatchService(StorageBackend<String, BatchJobDefinition> jobDefinitionStore,
+                 StorageBackend<String, BatchJobQueue> jobQueueStore,
+                 StorageBackend<String, BatchComputeEnvironment> computeEnvironmentStore,
+                 StorageBackend<String, BatchJob> jobStore,
+                 RegionResolver regionResolver,
+                 EmulatorConfig config,
+                 ObjectMapper objectMapper,
+                 BatchDockerRunner dockerRunner,
+                 ComputePassRoleGate passRoleGate) {
         this.jobDefinitionStore = jobDefinitionStore;
         this.jobQueueStore = jobQueueStore;
         this.computeEnvironmentStore = computeEnvironmentStore;
@@ -103,6 +120,7 @@ public class BatchService {
         this.config = config;
         this.objectMapper = objectMapper;
         this.dockerRunner = dockerRunner;
+        this.passRoleGate = passRoleGate;
     }
 
     public synchronized ObjectNode createComputeEnvironment(JsonNode request, String region) {
@@ -112,6 +130,10 @@ public class BatchService {
         if (resolveComputeEnvironmentOptional(name).isPresent()) {
             throw client("Compute environment already exists: " + name);
         }
+        String serviceRole = textOrNull(request, "serviceRole");
+        if (passRoleGate != null) {
+            passRoleGate.authorizeBatchServiceRole(serviceRole, region);
+        }
         BatchComputeEnvironment env = new BatchComputeEnvironment();
         env.setComputeEnvironmentName(name);
         env.setComputeEnvironmentArn(arn(region, "compute-environment/" + name));
@@ -120,7 +142,7 @@ public class BatchService {
         env.setStatus("VALID");
         env.setStatusReason("Compute environment is available");
         env.setComputeResources(map(request.path("computeResources")));
-        env.setServiceRole(textOrNull(request, "serviceRole"));
+        env.setServiceRole(serviceRole);
         env.setTags(stringMap(request.path("tags")));
         validateTags(env.getTags());
         env.setCreatedAt(now());
@@ -243,6 +265,10 @@ public class BatchService {
             throw client("containerProperties is required for container job definitions");
         }
         validateEnvironment(container.getEnvironment());
+        if (passRoleGate != null) {
+            passRoleGate.authorizeBatchJobRoles(
+                    container.getJobRoleArn(), container.getExecutionRoleArn(), region);
+        }
 
         int revision = nextRevision(name);
         BatchJobDefinition def = new BatchJobDefinition();

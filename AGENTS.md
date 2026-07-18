@@ -307,6 +307,8 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `iam:PassRole` missing on create paths (SFN / Scheduler / Pipes) | Closed | PassRole on create for SFN / Scheduler / Pipes (`StepFunctionsService`, `SchedulerService`, `PipesService`) |
 | `authorizePassRole` fail-open when caller unresolved | Closed | Denies missing/unresolved AKID under enforcement (`PassRoleFailsClosedWithoutCallerTest`) |
 | ECS / EC2 PassRole on task and instance profile | Closed | RegisterTaskDefinition / RunTask and RunInstances instance-profile association (`EcsTaskRoleRequiresPassRoleTest`, `Ec2InstanceProfilePassRoleTest`, `ComputePassRoleGateTest`) |
+| Batch PassRole on service / job / execution roles | Closed | CreateComputeEnvironment `serviceRole` and RegisterJobDefinition container roles (`BatchPassRoleTest`, `ComputePassRoleGateTest`) |
+| Auto Scaling PassRole and reconciler deputy | Closed | CreateLaunchConfiguration `IamInstanceProfile` PassRole plus reconciler EC2/ELBv2/SSM via `InProcessTargetAuthorizer` (`AutoScalingLaunchConfigPassRoleTest`, `AutoScalingReconcilerAuthorizerTest`) |
 | Lambda CreateFunction / UpdateFunctionConfiguration PassRole | Closed | Setup-time PassRole on Role (`LambdaCreateFunctionPassRoleTest`). Residual: role trust policy not checked at PassRole (O4) |
 | CloudFormation TemplateURL S3 IAM gap | Closed | Template fetch evaluates caller S3 IAM (`CloudFormationIntegrationTest`) |
 | S3 `BypassGovernanceRetention` without IAM | Closed | Object lock bypass requires `s3:BypassGovernanceRetention` (`S3BypassGovernanceRetentionIamIntegrationTest`) |
