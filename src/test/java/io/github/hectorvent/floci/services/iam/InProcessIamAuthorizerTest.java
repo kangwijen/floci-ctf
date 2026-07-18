@@ -9,9 +9,13 @@ import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.kms.KmsService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +28,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@Tag("security-regression")
 class InProcessIamAuthorizerTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -33,12 +38,14 @@ class InProcessIamAuthorizerTest {
     private static final String QUEUE_ARN = "arn:aws:sqs:us-east-1:222222222222:test-target";
     private static final String LAMBDA_ARN = "arn:aws:lambda:us-east-1:222222222222:function:test-target";
     private static final String EVENTS_SERVICE = "events.amazonaws.com";
+    private static final String AKID = "AKIATESTCALLER";
 
     private EmulatorConfig config;
     private IamService iamService;
     private IamPolicyEvaluator evaluator;
     private ResourceArnBuilder arnBuilder;
     private ResourcePolicyResolver resourcePolicyResolver;
+    private RegionResolver regionResolver;
     private KmsService kmsService;
     private InProcessIamAuthorizer authorizer;
 
@@ -49,6 +56,7 @@ class InProcessIamAuthorizerTest {
         evaluator = mock(IamPolicyEvaluator.class);
         arnBuilder = mock(ResourceArnBuilder.class);
         resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        regionResolver = mock(RegionResolver.class);
         kmsService = mock(KmsService.class);
         authorizer = new InProcessIamAuthorizer(
                 config,
@@ -56,7 +64,7 @@ class InProcessIamAuthorizerTest {
                 evaluator,
                 arnBuilder,
                 resourcePolicyResolver,
-                mock(RegionResolver.class),
+                regionResolver,
                 kmsService);
     }
 
@@ -309,5 +317,27 @@ class InProcessIamAuthorizerTest {
         assertDoesNotThrow(() -> authorizer.authorizeServicePrincipal(
                 EVENTS_SERVICE, "sts", "GetCallerIdentity", LAMBDA_ARN, "us-east-1"));
         verify(evaluator, never()).evaluate(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void authorizeCallerActionMergesExtraCalledViaCondition() {
+        when(config.services().iam().enforcementEnabled()).thenReturn(true);
+        when(config.auth().rootAccessKeyId()).thenReturn(Optional.empty());
+        when(regionResolver.getCallerAccessKeyId()).thenReturn(AKID);
+        when(regionResolver.getAccountId()).thenReturn("222222222222");
+        when(iamService.resolveCallerContext(AKID)).thenReturn(CallerContext.of(List.of()));
+        when(iamService.resolveCallerArn(AKID)).thenReturn(Optional.of(ROLE_ARN));
+        when(resourcePolicyResolver.resolve("iam", ROLE_ARN, "us-east-1")).thenReturn(List.of());
+        when(evaluator.evaluate(any(), any(), eq("iam:CreateRole"), eq(ROLE_ARN), any()))
+                .thenReturn(Decision.ALLOW);
+
+        assertDoesNotThrow(() -> authorizer.authorizeCallerAction(
+                "iam:CreateRole", ROLE_ARN, "us-east-1", "iam",
+                Map.of("aws:calledvia", "cloudformation.amazonaws.com")));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> conditions = ArgumentCaptor.forClass(Map.class);
+        verify(evaluator).evaluate(any(), any(), eq("iam:CreateRole"), eq(ROLE_ARN), conditions.capture());
+        assertEquals("cloudformation.amazonaws.com", conditions.getValue().get("aws:calledvia"));
     }
 }
