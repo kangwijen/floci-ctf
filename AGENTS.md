@@ -204,7 +204,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **Known gaps (prioritize next):**
 
-- CloudFormation provisioner IAM gates privileged create APIs, not every privilege path or resource type.
+- CloudFormation provisioner gates IAM create and AttachRolePolicy with CalledVia. Most non-IAM resource types in the switch remain ungated (registry has SQS and SSM Parameter only).
 - WebSocket IAM is enforced at `$connect` (AWS-shaped). Later routes rely on the established connection.
 
 **Recently closed (CTF security / test stability):**
@@ -306,7 +306,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | CloudFormation TemplateURL S3 IAM gap | Closed | Template fetch evaluates caller S3 IAM (`CloudFormationIntegrationTest`) |
 | S3 `BypassGovernanceRetention` without IAM | Closed | Object lock bypass requires `s3:BypassGovernanceRetention` (`S3BypassGovernanceRetentionIamIntegrationTest`) |
 | WebSocket `$connect` without SigV4 / IAM | Closed | `$connect` requires SigV4 and IAM when enforcement is on (`WebSocketConnectIamGateIntegrationTest`) |
-| CloudFormation provisioner create IAM gates | Closed | Privileged create APIs gated via in-process IAM (`CloudFormationResourceProvisionerIamGateTest`). Residual: not every CFN resource type is gated |
+| CloudFormation provisioner create IAM gates | Closed | Privileged create APIs gated via in-process IAM (`CloudFormationResourceProvisionerIamGateTest`). Residual: most non-IAM CFN types in the switch remain ungated |
+| CloudFormation `iam:AttachRolePolicy` on ManagedPolicyArns / Policy Roles | Closed | Attach gated before attach with `aws:CalledVia=cloudformation.amazonaws.com` (`CloudFormationResourceProvisionerIamGateTest`) |
+| CloudFormation non-IAM registry split (SSM Parameter) | Closed | `AWS::SSM::Parameter` on registry path (`SsmCfnProvisionerTest`), not IAM create arms |
 | EventBridge bus resource policies ignored | Closed | `ResourcePolicyResolver` loads `events` bus policies (`ResourcePolicyResolverTest`) |
 | EventBridge `PutEvents` bus ARN under-scope | Closed | Per-entry `EventBusName` ARNs via `ResourceArnBuilder` (`ResourceArnBuilderTest`) |
 | Lambda `CreateEventSourceMapping` function ARN under-scope | Closed | `FunctionName` from JSON body scopes IAM (`ResourceArnBuilderTest`) |

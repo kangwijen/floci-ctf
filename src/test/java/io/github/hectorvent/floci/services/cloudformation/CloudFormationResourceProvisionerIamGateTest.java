@@ -13,7 +13,9 @@ import io.github.hectorvent.floci.services.iam.model.IamRole;
 import io.github.hectorvent.floci.services.iam.model.IamUser;
 import io.github.hectorvent.floci.services.iam.model.InstanceProfile;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -33,12 +35,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Verifies that privileged IAM resource creation inside CloudFormation stacks (role, user, access
- * key, policy, instance profile) is gated behind {@link InProcessIamAuthorizer}. CloudFormation
- * provisioning runs on a background executor thread that bypasses the JAX-RS
+ * Verifies that privileged IAM create and attach APIs inside CloudFormation stacks (role, user,
+ * access key, policy, instance profile, AttachRolePolicy) are gated behind
+ * {@link InProcessIamAuthorizer} with {@code aws:CalledVia=cloudformation.amazonaws.com}.
+ * CloudFormation provisioning runs on a background executor thread that bypasses the JAX-RS
  * {@code IamEnforcementFilter} entirely, so without this gate any caller able to create a stack
- * could mint arbitrary IAM principals and credentials regardless of their own permissions.
+ * could mint arbitrary IAM principals and attach managed policies regardless of their own
+ * permissions.
  */
+@Tag("security-regression")
 class CloudFormationResourceProvisionerIamGateTest {
 
     private static final String ACCOUNT_ID = "000000000000";
@@ -84,7 +89,18 @@ class CloudFormationResourceProvisionerIamGateTest {
 
     private static void denyNextIamCreate(InProcessIamAuthorizer iamAuthorizer, String action) {
         doThrow(new AwsException("AccessDeniedException", "denied", 403))
-                .when(iamAuthorizer).authorizeCallerAction(eq(action), anyString(), anyString());
+                .when(iamAuthorizer).authorizeCallerAction(
+                        eq(action), anyString(), anyString(), eq("iam"), anyMap());
+    }
+
+    private static void verifyCfnIamGate(InProcessIamAuthorizer iamAuthorizer, String action,
+                                         String resourceArn) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> conditions = ArgumentCaptor.forClass(Map.class);
+        verify(iamAuthorizer).authorizeCallerAction(
+                eq(action), eq(resourceArn), eq(REGION), eq("iam"), conditions.capture());
+        assertEquals(CfnIamConditionContext.CLOUDFORMATION_SERVICE_PRINCIPAL,
+                conditions.getValue().get("aws:calledvia"));
     }
 
     // ── AWS::IAM::Role ───────────────────────────────────────────────────────
@@ -111,9 +127,60 @@ class CloudFormationResourceProvisionerIamGateTest {
                 {"RoleName":"my-role","AssumeRolePolicyDocument":{"Version":"2012-10-17","Statement":[]}}""");
 
         assertEquals("CREATE_COMPLETE", r.getStatus());
-        verify(iamAuthorizer).authorizeCallerAction(eq("iam:CreateRole"),
-                eq("arn:aws:iam::" + ACCOUNT_ID + ":role/my-role"), eq(REGION));
+        verifyCfnIamGate(iamAuthorizer, "iam:CreateRole",
+                "arn:aws:iam::" + ACCOUNT_ID + ":role/my-role");
         verify(iamService).createRole(eq("my-role"), any(), any(), any(), anyInt(), anyMap());
+    }
+
+    @Test
+    void deniesManagedPolicyAttachWhenCallerLacksAttachRolePolicy() {
+        IamRole role = mock(IamRole.class);
+        when(role.getArn()).thenReturn("arn:aws:iam::" + ACCOUNT_ID + ":role/my-role");
+        when(role.getRoleId()).thenReturn("AROA123");
+        when(iamService.createRole(eq("my-role"), any(), any(), any(), anyInt(), anyMap())).thenReturn(role);
+        denyNextIamCreate(iamAuthorizer, "iam:AttachRolePolicy");
+
+        StackResource r = provision("Role1", "AWS::IAM::Role", """
+                {"RoleName":"my-role",
+                 "AssumeRolePolicyDocument":{"Version":"2012-10-17","Statement":[]},
+                 "ManagedPolicyArns":["arn:aws:iam::aws:policy/ReadOnlyAccess"]}""");
+
+        assertEquals("CREATE_FAILED", r.getStatus());
+        verify(iamService, never()).attachRolePolicy(anyString(), anyString());
+    }
+
+    @Test
+    void authorizesAttachRolePolicyBeforeManagedPolicyArnsAttach() {
+        IamRole role = mock(IamRole.class);
+        when(role.getArn()).thenReturn("arn:aws:iam::" + ACCOUNT_ID + ":role/my-role");
+        when(role.getRoleId()).thenReturn("AROA123");
+        when(iamService.createRole(eq("my-role"), any(), any(), any(), anyInt(), anyMap())).thenReturn(role);
+
+        StackResource r = provision("Role1", "AWS::IAM::Role", """
+                {"RoleName":"my-role",
+                 "AssumeRolePolicyDocument":{"Version":"2012-10-17","Statement":[]},
+                 "ManagedPolicyArns":["arn:aws:iam::aws:policy/ReadOnlyAccess"]}""");
+
+        assertEquals("CREATE_COMPLETE", r.getStatus());
+        verifyCfnIamGate(iamAuthorizer, "iam:AttachRolePolicy",
+                "arn:aws:iam::aws:policy/ReadOnlyAccess");
+        verify(iamService).attachRolePolicy("my-role", "arn:aws:iam::aws:policy/ReadOnlyAccess");
+    }
+
+    @Test
+    void deniesPolicyRolesAttachWhenCallerLacksAttachRolePolicy() {
+        IamPolicy policy = mock(IamPolicy.class);
+        when(policy.getArn()).thenReturn("arn:aws:iam::" + ACCOUNT_ID + ":policy/my-policy");
+        when(iamService.createPolicy(eq("my-policy"), any(), isNull(), any(), anyMap())).thenReturn(policy);
+        denyNextIamCreate(iamAuthorizer, "iam:AttachRolePolicy");
+
+        StackResource r = provision("Policy1", "AWS::IAM::Policy", """
+                {"PolicyName":"my-policy",
+                 "PolicyDocument":{"Version":"2012-10-17","Statement":[]},
+                 "Roles":["target-role"]}""");
+
+        assertEquals("CREATE_FAILED", r.getStatus());
+        verify(iamService, never()).attachRolePolicy(anyString(), anyString());
     }
 
     // ── AWS::IAM::User ───────────────────────────────────────────────────────
@@ -139,8 +206,8 @@ class CloudFormationResourceProvisionerIamGateTest {
                 {"UserName":"my-user"}""");
 
         assertEquals("CREATE_COMPLETE", r.getStatus());
-        verify(iamAuthorizer).authorizeCallerAction(eq("iam:CreateUser"),
-                eq("arn:aws:iam::" + ACCOUNT_ID + ":user/my-user"), eq(REGION));
+        verifyCfnIamGate(iamAuthorizer, "iam:CreateUser",
+                "arn:aws:iam::" + ACCOUNT_ID + ":user/my-user");
         verify(iamService).createUser(eq("my-user"), any());
     }
 
@@ -168,8 +235,8 @@ class CloudFormationResourceProvisionerIamGateTest {
                 {"UserName":"existing-user"}""");
 
         assertEquals("CREATE_COMPLETE", r.getStatus());
-        verify(iamAuthorizer).authorizeCallerAction(eq("iam:CreateAccessKey"),
-                eq("arn:aws:iam::" + ACCOUNT_ID + ":user/existing-user"), eq(REGION));
+        verifyCfnIamGate(iamAuthorizer, "iam:CreateAccessKey",
+                "arn:aws:iam::" + ACCOUNT_ID + ":user/existing-user");
         verify(iamService).createAccessKey("existing-user");
     }
 
@@ -196,8 +263,8 @@ class CloudFormationResourceProvisionerIamGateTest {
                 {"PolicyName":"my-policy","PolicyDocument":{"Version":"2012-10-17","Statement":[]}}""");
 
         assertEquals("CREATE_COMPLETE", r.getStatus());
-        verify(iamAuthorizer).authorizeCallerAction(eq("iam:CreatePolicy"),
-                eq("arn:aws:iam::" + ACCOUNT_ID + ":policy/my-policy"), eq(REGION));
+        verifyCfnIamGate(iamAuthorizer, "iam:CreatePolicy",
+                "arn:aws:iam::" + ACCOUNT_ID + ":policy/my-policy");
         verify(iamService).createPolicy(eq("my-policy"), any(), isNull(), any(), anyMap());
     }
 
@@ -224,8 +291,8 @@ class CloudFormationResourceProvisionerIamGateTest {
                 {"InstanceProfileName":"my-profile"}""");
 
         assertEquals("CREATE_COMPLETE", r.getStatus());
-        verify(iamAuthorizer).authorizeCallerAction(eq("iam:CreateInstanceProfile"),
-                eq("arn:aws:iam::" + ACCOUNT_ID + ":instance-profile/my-profile"), eq(REGION));
+        verifyCfnIamGate(iamAuthorizer, "iam:CreateInstanceProfile",
+                "arn:aws:iam::" + ACCOUNT_ID + ":instance-profile/my-profile");
         verify(iamService).createInstanceProfile(eq("my-profile"), any());
     }
 }
