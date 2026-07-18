@@ -53,6 +53,7 @@ public class InProcessTargetAuthorizer {
     public static final String LOGGING_SERVICE = "logging.s3.amazonaws.com";
     public static final String IOT_SERVICE = "iot.amazonaws.com";
     public static final String SECRETS_MANAGER_SERVICE = "secretsmanager.amazonaws.com";
+    public static final String AUTOSCALING_SERVICE = "autoscaling.amazonaws.com";
 
     private final InProcessIamAuthorizer iamAuthorizer;
     private final EmulatorConfig config;
@@ -318,6 +319,92 @@ public class InProcessTargetAuthorizer {
     public void authorizeElbLambdaTarget(String functionArn, String region) {
         iamAuthorizer.authorizeServicePrincipal(
                 ELB_SERVICE, "lambda", "InvokeFunction", functionArn, region);
+    }
+
+    /**
+     * Auto Scaling reconciler scale-out: service-linked role needs {@code ec2:RunInstances}.
+     * Instance-profile PassRole is gated at {@code CreateLaunchConfiguration}; reconciler
+     * launches skip caller PassRole and rely on that create-time check.
+     */
+    public void authorizeAutoScalingRunInstances(String asgArn, String region, String accountId,
+                                                   String iamInstanceProfile) {
+        String slr = autoScalingServiceLinkedRoleArn(accountId);
+        iamAuthorizer.authorizeWithResource(slr, "ec2", "RunInstances", "*", region);
+        if (iamInstanceProfile != null && !iamInstanceProfile.isBlank()) {
+            iamAuthorizer.authorizeWithResource(slr, "iam", "PassRole", iamInstanceProfile, region);
+        }
+    }
+
+    /** Auto Scaling reconciler scale-in / refresh: SLR needs {@code ec2:TerminateInstances}. */
+    public void authorizeAutoScalingTerminateInstances(String asgArn, String region, String accountId,
+                                                         java.util.List<String> instanceIds) {
+        if (instanceIds == null || instanceIds.isEmpty()) {
+            return;
+        }
+        String slr = autoScalingServiceLinkedRoleArn(accountId);
+        String account = accountOrDefault(accountId);
+        for (String instanceId : instanceIds) {
+            if (instanceId == null || instanceId.isBlank()) {
+                continue;
+            }
+            String instanceArn = "arn:aws:ec2:" + region + ":" + account + ":instance/" + instanceId;
+            iamAuthorizer.authorizeWithResource(slr, "ec2", "TerminateInstances", instanceArn, region);
+        }
+    }
+
+    /** Auto Scaling reconciler target registration: SLR needs {@code elasticloadbalancing:RegisterTargets}. */
+    public void authorizeAutoScalingRegisterTargets(String asgArn, String targetGroupArn, String region) {
+        if (targetGroupArn == null || targetGroupArn.isBlank()) {
+            return;
+        }
+        String account = AwsArnUtils.accountOrDefault(targetGroupArn, defaultAccountId());
+        String slr = autoScalingServiceLinkedRoleArn(account);
+        iamAuthorizer.authorizeWithResource(
+                slr, "elasticloadbalancing", "RegisterTargets", targetGroupArn, region);
+    }
+
+    /** Auto Scaling reconciler target deregistration: SLR needs {@code elasticloadbalancing:DeregisterTargets}. */
+    public void authorizeAutoScalingDeregisterTargets(String asgArn, String targetGroupArn, String region) {
+        if (targetGroupArn == null || targetGroupArn.isBlank()) {
+            return;
+        }
+        String account = AwsArnUtils.accountOrDefault(targetGroupArn, defaultAccountId());
+        String slr = autoScalingServiceLinkedRoleArn(account);
+        iamAuthorizer.authorizeWithResource(
+                slr, "elasticloadbalancing", "DeregisterTargets", targetGroupArn, region);
+    }
+
+    /**
+     * Auto Scaling reconciler stale-instance cleanup: SLR needs SSM cancel/fail rights on
+     * affected instances before marking invocations undeliverable.
+     */
+    public void authorizeAutoScalingSsmFailInvocations(String asgArn, String region, String accountId,
+                                                         java.util.List<String> instanceIds) {
+        if (instanceIds == null || instanceIds.isEmpty()) {
+            return;
+        }
+        String slr = autoScalingServiceLinkedRoleArn(accountId);
+        String account = accountOrDefault(accountId);
+        for (String instanceId : instanceIds) {
+            if (instanceId == null || instanceId.isBlank()) {
+                continue;
+            }
+            String instanceArn = "arn:aws:ec2:" + region + ":" + account + ":instance/" + instanceId;
+            iamAuthorizer.authorizeWithResource(slr, "ssm", "CancelCommand", instanceArn, region);
+        }
+    }
+
+    private String autoScalingServiceLinkedRoleArn(String accountId) {
+        String account = accountOrDefault(accountId);
+        return "arn:aws:iam::" + account
+                + ":role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling";
+    }
+
+    private String accountOrDefault(String accountId) {
+        if (accountId != null && !accountId.isBlank()) {
+            return accountId;
+        }
+        return defaultAccountId();
     }
 
     public void authorizeApigwLambdaInvoke(String functionArnOrName, String region) {
