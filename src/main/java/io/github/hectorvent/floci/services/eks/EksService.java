@@ -21,6 +21,7 @@ import io.github.hectorvent.floci.services.eks.model.Nodegroup;
 import io.github.hectorvent.floci.services.eks.model.NodegroupScalingConfig;
 import io.github.hectorvent.floci.services.eks.model.NodegroupStatus;
 import io.github.hectorvent.floci.services.eks.model.ResourcesVpcConfig;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -51,11 +52,13 @@ public class EksService implements TagHandler {
     private final EmulatorConfig config;
     private final RegionResolver regionResolver;
     private final EksClusterManager clusterManager;
+    private final InProcessIamAuthorizer iamAuthorizer;
     private final ScheduledExecutorService poller = Executors.newSingleThreadScheduledExecutor();
 
     @Inject
     public EksService(StorageFactory storageFactory, EmulatorConfig config,
-            RegionResolver regionResolver, EksClusterManager clusterManager) {
+            RegionResolver regionResolver, EksClusterManager clusterManager,
+            InProcessIamAuthorizer iamAuthorizer) {
         this.storage = storageFactory.create("eks", "eks-clusters.json",
                 new TypeReference<Map<String, Cluster>>() {
                 });
@@ -68,6 +71,13 @@ public class EksService implements TagHandler {
         this.config = config;
         this.regionResolver = regionResolver;
         this.clusterManager = clusterManager;
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    public EksService(StorageFactory storageFactory, EmulatorConfig config,
+            RegionResolver regionResolver, EksClusterManager clusterManager) {
+        this(storageFactory, config, regionResolver, clusterManager, null);
     }
 
     @PostConstruct
@@ -98,6 +108,9 @@ public class EksService implements TagHandler {
         }
 
         String region = config.defaultRegion();
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(request.getRoleArn(), "eks.amazonaws.com", region);
+        }
         String accountId = regionResolver.getAccountId();
         String arn = AwsArnUtils.Arn.of("eks", region, accountId, "cluster/" + name).toString();
 
@@ -187,6 +200,11 @@ public class EksService implements TagHandler {
         }
         if (request.getSubnets() == null || request.getSubnets().isEmpty()) {
             throw new AwsException("InvalidParameterException", "subnets are required", 400);
+        }
+
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(request.getNodeRole(), "eks.amazonaws.com",
+                    config.defaultRegion());
         }
 
         String storageKey = nodeGroupKey(clusterName, nodegroupName);
