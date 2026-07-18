@@ -8,6 +8,7 @@ import io.github.hectorvent.floci.core.common.RegionResolver;
 import io.github.hectorvent.floci.core.storage.StorageBackend;
 import io.github.hectorvent.floci.core.storage.StorageFactory;
 import io.github.hectorvent.floci.services.backup.model.*;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -38,6 +39,7 @@ public class BackupService {
 
     private final RegionResolver regionResolver;
     private final int jobCompletionDelaySeconds;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "backup-job-scheduler");
@@ -46,7 +48,8 @@ public class BackupService {
     });
 
     @Inject
-    public BackupService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
+    public BackupService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver,
+                         InProcessIamAuthorizer iamAuthorizer) {
         this.vaultStore     = storageFactory.create("backup", "backup-vaults.json",     new TypeReference<>() {});
         this.planStore      = storageFactory.create("backup", "backup-plans.json",      new TypeReference<>() {});
         this.selectionStore = storageFactory.create("backup", "backup-selections.json", new TypeReference<>() {});
@@ -54,6 +57,12 @@ public class BackupService {
         this.recoveryStore  = storageFactory.create("backup", "backup-recovery-points.json", new TypeReference<>() {});
         this.regionResolver = regionResolver;
         this.jobCompletionDelaySeconds = config.services().backup().jobCompletionDelaySeconds();
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    public BackupService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
+        this(storageFactory, config, regionResolver, null);
     }
 
     @PreDestroy
@@ -158,6 +167,10 @@ public class BackupService {
                                                   String iamRoleArn, List<String> resources,
                                                   List<String> notResources, String creatorRequestId) {
         getBackupPlan(planId);
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(iamRoleArn, "backup.amazonaws.com",
+                    regionResolver.getDefaultRegion());
+        }
         String selectionId = UUID.randomUUID().toString();
         BackupSelection selection = new BackupSelection();
         selection.setSelectionId(selectionId);
@@ -197,6 +210,10 @@ public class BackupService {
     public BackupJob startBackupJob(String vaultName, String resourceArn, String iamRoleArn,
                                      Lifecycle lifecycle, String region) {
         BackupVault vault = describeBackupVault(vaultName, region);
+
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(iamRoleArn, "backup.amazonaws.com", region);
+        }
 
         String jobId = UUID.randomUUID().toString();
         long now = Instant.now().getEpochSecond();

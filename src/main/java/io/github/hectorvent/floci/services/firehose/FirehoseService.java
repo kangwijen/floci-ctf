@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.cloudtrail.model.InProcessAuditContex
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription;
 import io.github.hectorvent.floci.services.firehose.model.DeliveryStreamDescription.S3Destination;
 import io.github.hectorvent.floci.services.firehose.model.Record;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.s3.S3Service;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -36,19 +37,31 @@ public class FirehoseService {
     private final RegionResolver regionResolver;
     private final InProcessCloudTrailRecorder inProcessCloudTrailRecorder;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
     public FirehoseService(StorageFactory storageFactory,
                            S3Service s3Service,
                            RegionResolver regionResolver,
                            InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
-                           InProcessTargetAuthorizer targetAuthorizer) {
+                           InProcessTargetAuthorizer targetAuthorizer,
+                           InProcessIamAuthorizer iamAuthorizer) {
         this.streamStore = storageFactory.create("firehose", "streams.json",
                 new TypeReference<Map<String, DeliveryStreamDescription>>() {});
         this.s3Service = s3Service;
         this.regionResolver = regionResolver;
         this.inProcessCloudTrailRecorder = inProcessCloudTrailRecorder;
         this.targetAuthorizer = targetAuthorizer;
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    public FirehoseService(StorageFactory storageFactory,
+                           S3Service s3Service,
+                           RegionResolver regionResolver,
+                           InProcessCloudTrailRecorder inProcessCloudTrailRecorder,
+                           InProcessTargetAuthorizer targetAuthorizer) {
+        this(storageFactory, s3Service, regionResolver, inProcessCloudTrailRecorder, targetAuthorizer, null);
     }
 
     public String createDeliveryStream(String name, S3Destination s3Config) {
@@ -72,7 +85,14 @@ public class FirehoseService {
     public String createDeliveryStream(String name, String roleArn, S3Destination s3Config,
                                        List<DeliveryStreamDescription.Tag> tags, String deliveryStreamType) {
         validateBufferingHints(s3Config);
-        String arn = AwsArnUtils.Arn.of("firehose", regionResolver.getDefaultRegion(), regionResolver.getAccountId(), "deliverystream/" + name).toString();
+        String region = regionResolver.getDefaultRegion();
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(roleArn, "firehose.amazonaws.com", region);
+            if (s3Config != null) {
+                iamAuthorizer.authorizePassRole(s3Config.getRoleArn(), "firehose.amazonaws.com", region);
+            }
+        }
+        String arn = AwsArnUtils.Arn.of("firehose", region, regionResolver.getAccountId(), "deliverystream/" + name).toString();
         DeliveryStreamDescription description = new DeliveryStreamDescription(name, arn, roleArn, s3Config);
         description.setAccountId(regionResolver.getAccountId());
         description.setTags(tags);
@@ -104,6 +124,10 @@ public class FirehoseService {
                     "A destination update is required for UpdateDestination.", 400);
         }
         validateBufferingHints(update);
+        if (iamAuthorizer != null && update.getRoleArn() != null) {
+            iamAuthorizer.authorizePassRole(update.getRoleArn(), "firehose.amazonaws.com",
+                    regionResolver.getDefaultRegion());
+        }
         S3Destination current = destination.getExtendedS3DestinationDescription();
         if (current == null) {
             update.applyDefaults();

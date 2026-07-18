@@ -216,7 +216,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `PolicyPrincipalMatcher` service principal substring (non-SLR assumed-role session) | Closed | `PolicyPrincipalMatcherTest` |
 | Duck / Athena / S3 Select uses operator S3 keys under IAM enforcement | Closed | `AthenaDuckOperatorS3BypassIntegrationTest` |
 | In-process IAM gaps (IoT rules, Secrets rotation, CodePipeline Lambda invoke, CFN `Custom::`, SFN `ecs:runTask` + ItemReader S3) | Closed (Lambda path) | `InProcessTargetAuthorizerTest` |
-| CodePipeline S3 / CodeBuild / CodeDeploy / nested pipeline role IAM | Residual | Providers now call `InProcessTargetAuthorizer` with the pipeline role (`CodePipelineCodeBuildDeniedTest`, `InProcessTargetAuthorizerTest`). Residual: custom/third-party job workers and non-AWS owners remain ungated |
+| CodePipeline S3 / CodeBuild / CodeDeploy / nested pipeline role IAM | Closed (delivery + create PassRole) | Delivery: `InProcessTargetAuthorizer` (`CodePipelineCodeBuildDeniedTest`). Create/update `roleArn` PassRole: `CodePipelineCreatePassRoleTest`. Residual: custom/third-party job workers remain ungated |
 | ASIA session account not used for IAM resource ARNs | Closed | `IamEnforcementFilterTest` |
 | S3 route-scope overclaim exclusions incomplete | Closed | `IamActionRegistryTest` (exclude `/lambda-url`, not `/lambda` prefix, so buckets like `lambda-*` stay S3-scoped) |
 | EventBridge `StartReplay` allows cross-bus destination | Closed | `EventBridgeReplayIntegrationTest` |
@@ -308,6 +308,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | `authorizePassRole` fail-open when caller unresolved | Closed | Denies missing/unresolved AKID under enforcement (`PassRoleFailsClosedWithoutCallerTest`) |
 | ECS / EC2 PassRole on task and instance profile | Closed | RegisterTaskDefinition / RunTask and RunInstances instance-profile association (`EcsTaskRoleRequiresPassRoleTest`, `Ec2InstanceProfilePassRoleTest`, `ComputePassRoleGateTest`) |
 | Lambda CreateFunction / UpdateFunctionConfiguration PassRole | Closed | Setup-time PassRole on Role (`LambdaCreateFunctionPassRoleTest`). Residual: role trust policy not checked at PassRole (O4) |
+| EventBridge PutRule / Code* / Firehose / Backup / EMR / EKS / CFN Batch PassRole | Closed | High PassRole sweep (`EventBridgePutRulePassRoleTest`, `CodePipelineCreatePassRoleTest`, `CodeDeployServiceRolePassRoleTest`, `CodeBuildServiceRolePassRoleTest`, `FirehoseDeliveryRolePassRoleTest`, `BackupIamRolePassRoleTest`, `EmrExecutionRolePassRoleTest`, `EksClusterRolePassRoleTest`, `CloudFormationBatchPassRoleTest`) |
 | CloudFormation TemplateURL S3 IAM gap | Closed | Template fetch evaluates caller S3 IAM (`CloudFormationIntegrationTest`) |
 | S3 `BypassGovernanceRetention` without IAM | Closed | Object lock bypass requires `s3:BypassGovernanceRetention` (`S3BypassGovernanceRetentionIamIntegrationTest`) |
 | WebSocket `$connect` without SigV4 / IAM | Closed | `$connect` requires SigV4 and IAM when enforcement is on (`WebSocketConnectIamGateIntegrationTest`) |

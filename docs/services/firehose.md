@@ -48,3 +48,14 @@ aws firehose put-record \
   --record '{"Data": "{\"id\": 1, \"amount\": 10.5}"}' \
   --endpoint-url $AWS_ENDPOINT_URL
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled:
+
+| Topic | Behavior |
+|---|---|
+| Create / update role | `CreateDeliveryStream` / `UpdateDestination` `RoleARN` requires `iam:PassRole` (`firehose.amazonaws.com`). |
+| S3 delivery | Stream role identity policy is evaluated on `s3:PutObject` via `InProcessTargetAuthorizer`. |
+
+Regression: `FirehoseDeliveryRolePassRoleTest`, `InProcessTargetAuthorizerTest`.
