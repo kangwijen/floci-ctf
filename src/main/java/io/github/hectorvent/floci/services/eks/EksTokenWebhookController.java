@@ -1,5 +1,7 @@
 package io.github.hectorvent.floci.services.eks;
 
+import io.github.hectorvent.floci.config.EmulatorConfig;
+import io.github.hectorvent.floci.core.common.auth.AuthPosture;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -19,9 +21,9 @@ import java.util.Map;
  * <p>The k3s API server is configured (see {@code EksClusterManager}) to POST a
  * {@code TokenReview} here whenever it receives a bearer token it does not recognise — notably the
  * {@code k8s-aws-v1.<presigned-sts-url>} token produced by {@code aws eks get-token}. Floci accepts
- * the token and maps it to the {@code system:masters} group, which is bound to {@code cluster-admin}
- * by default. This is what makes the native {@code aws eks update-kubeconfig} + {@code kubectl}
- * workflow authenticate against a Floci EKS cluster.
+ * the token and maps it to a Kubernetes user. Under lab defaults the user is placed in
+ * {@code system:masters} (cluster-admin). Under CTF IAM enforcement the mapping is narrowed to
+ * {@code system:authenticated} only (no {@code system:masters}).
  *
  * <p>This is Floci plumbing under the {@code _floci/...} namespace, not an AWS API. With CTF
  * defaults, {@code CtfInternalEndpointFilter} returns 404 for this path. When reachable and IAM
@@ -35,11 +37,23 @@ public class EksTokenWebhookController {
 
     private static final Logger LOG = Logger.getLogger(EksTokenWebhookController.class);
 
+    /** Lab / non-CTF: cluster-admin via system:masters. */
+    static final List<String> LAB_GROUPS = List.of("system:masters");
+
+    /** CTF under IAM enforcement: authenticated but not cluster-admin. */
+    static final List<String> CTF_GROUPS = List.of("system:authenticated");
+
     private final EksTokenValidator tokenValidator;
+    private final AuthPosture authPosture;
 
     @Inject
-    public EksTokenWebhookController(EksTokenValidator tokenValidator) {
+    public EksTokenWebhookController(EksTokenValidator tokenValidator, EmulatorConfig config) {
+        this(tokenValidator, AuthPosture.from(config));
+    }
+
+    EksTokenWebhookController(EksTokenValidator tokenValidator, AuthPosture authPosture) {
         this.tokenValidator = tokenValidator;
+        this.authPosture = authPosture;
     }
 
     @POST
@@ -53,7 +67,8 @@ public class EksTokenWebhookController {
         boolean authenticated = tokenValidator.accepts(token);
 
         if (authenticated) {
-            LOG.debug("EKS token-webhook: authenticated aws-iam token as cluster-admin");
+            List<String> groups = groupsForPosture();
+            LOG.debugv("EKS token-webhook: authenticated aws-iam token groups={0}", groups);
             return Response.ok(Map.of(
                     "apiVersion", apiVersion,
                     "kind", "TokenReview",
@@ -62,7 +77,7 @@ public class EksTokenWebhookController {
                             "user", Map.of(
                                     "username", "floci:aws-iam",
                                     "uid", "floci-aws-iam",
-                                    "groups", List.of("system:masters"))))).build();
+                                    "groups", groups)))).build();
         }
 
         LOG.debug("EKS token-webhook: rejecting unrecognised token");
@@ -70,6 +85,13 @@ public class EksTokenWebhookController {
                 "apiVersion", apiVersion,
                 "kind", "TokenReview",
                 "status", Map.of("authenticated", false))).build();
+    }
+
+    List<String> groupsForPosture() {
+        if (authPosture.iamEnforced()) {
+            return CTF_GROUPS;
+        }
+        return LAB_GROUPS;
     }
 
     @SuppressWarnings("unchecked")
