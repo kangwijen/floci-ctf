@@ -283,7 +283,6 @@ public class CloudFormationResourceProvisioner {
                 case "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy" ->
                         provisionIamPolicy(resource, properties, engine, region, accountId, stackName);
                 case "AWS::IAM::InstanceProfile" -> provisionInstanceProfile(resource, properties, engine, region, accountId, stackName);
-                case "AWS::SSM::Parameter" -> provisionSsmParameter(resource, properties, engine, region, stackName);
                 case "AWS::KMS::Key" -> provisionKmsKey(resource, properties, engine, region, accountId);
                 case "AWS::KMS::Alias" -> provisionKmsAlias(resource, properties, engine, region);
                 case "AWS::SecretsManager::Secret" -> provisionSecret(resource, properties, engine, region, accountId, stackName);
@@ -437,7 +436,6 @@ public class CloudFormationResourceProvisioner {
             case "AWS::IAM::Role" -> deleteRoleSafe(physicalId);
             case "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy" -> deletePolicySafe(physicalId);
             case "AWS::IAM::InstanceProfile" -> iamService.deleteInstanceProfile(physicalId);
-            case "AWS::SSM::Parameter" -> ssmService.deleteParameter(physicalId, region);
             case "AWS::KMS::Key" -> {
             } // KMS keys can't be immediately deleted; skip
             case "AWS::KMS::Alias" -> kmsService.deleteAlias(physicalId, region);
@@ -1861,15 +1859,17 @@ public class CloudFormationResourceProvisioner {
     // ── IAM Role ──────────────────────────────────────────────────────────────
 
     /**
-     * Gates privileged IAM resource creation (role, user, access key, policy, instance profile)
-     * behind the caller's identity policy. CloudFormation provisioning runs on a background
-     * executor thread that bypasses {@link io.github.hectorvent.floci.core.common.IamEnforcementFilter},
-     * so without this check any caller with permission to create a stack could mint new IAM
-     * principals or credentials regardless of their own IAM permissions.
+     * Gates privileged IAM create and attach actions behind the caller's identity policy.
+     * CloudFormation provisioning runs on a background executor thread that bypasses
+     * {@link io.github.hectorvent.floci.core.common.IamEnforcementFilter}, so without this check
+     * any caller with permission to create a stack could mint or attach IAM principals regardless
+     * of their own IAM permissions. Condition context includes
+     * {@code aws:CalledVia=cloudformation.amazonaws.com}.
      */
-    private void authorizeIamCreate(String iamAction, String resourceArn, String region) {
+    private void authorizeIamAction(String iamAction, String resourceArn, String region) {
         if (iamAuthorizer != null) {
-            iamAuthorizer.authorizeCallerAction(iamAction, resourceArn, region);
+            iamAuthorizer.authorizeCallerAction(iamAction, resourceArn, region, "iam",
+                    CfnIamConditionContext.calledViaCloudFormation());
         }
     }
 
@@ -1889,7 +1889,7 @@ public class CloudFormationResourceProvisioner {
         String description = resolveOptional(props, "Description", engine);
 
         String roleArn = AwsArnUtils.Arn.of("iam", "", accountId, "role" + path + roleName).toString();
-        authorizeIamCreate("iam:CreateRole", roleArn, region);
+        authorizeIamAction("iam:CreateRole", roleArn, region);
 
         try {
             var role = iamService.createRole(roleName, path, assumeDoc, description, 3600, Map.of());
@@ -1904,11 +1904,16 @@ public class CloudFormationResourceProvisioner {
             r.getAttributes().put("RoleId", role.getRoleId());
         }
 
-        // Attach managed policies if specified
+        // Attach managed policies if specified. Resource ARN is the policy (matches
+        // ResourceArnBuilder PolicyArn preference and HTTP AttachRolePolicy scoping).
         if (props != null && props.has("ManagedPolicyArns")) {
             for (JsonNode policyArn : props.get("ManagedPolicyArns")) {
+                String resolvedPolicyArn = engine.resolve(policyArn);
+                authorizeIamAction("iam:AttachRolePolicy", resolvedPolicyArn, region);
                 try {
-                    iamService.attachRolePolicy(roleName, engine.resolve(policyArn));
+                    iamService.attachRolePolicy(roleName, resolvedPolicyArn);
+                } catch (AwsException e) {
+                    throw e;
                 } catch (Exception ignored) {
                 }
             }
@@ -1928,17 +1933,21 @@ public class CloudFormationResourceProvisioner {
                 : "{\"Version\":\"2012-10-17\",\"Statement\":[]}";
 
         String policyArn = AwsArnUtils.Arn.of("iam", "", accountId, "policy/" + policyName).toString();
-        authorizeIamCreate("iam:CreatePolicy", policyArn, region);
+        authorizeIamAction("iam:CreatePolicy", policyArn, region);
 
         var policy = iamService.createPolicy(policyName, "/", null, document, Map.of());
         r.setPhysicalId(policy.getArn());
         r.getAttributes().put("Arn", policy.getArn());
 
-        // Attach to roles if specified
+        // Attach to roles if specified. Resource ARN is the managed policy being attached.
         if (props != null && props.has("Roles")) {
             for (JsonNode role : props.get("Roles")) {
+                String roleName = engine.resolve(role);
+                authorizeIamAction("iam:AttachRolePolicy", policy.getArn(), region);
                 try {
-                    iamService.attachRolePolicy(engine.resolve(role), policy.getArn());
+                    iamService.attachRolePolicy(roleName, policy.getArn());
+                } catch (AwsException e) {
+                    throw e;
                 } catch (Exception ignored) {
                 }
             }
@@ -1959,7 +1968,7 @@ public class CloudFormationResourceProvisioner {
             name = generatePhysicalName(stackName, r.getLogicalId(), 128, false);
         }
         String profileArn = AwsArnUtils.Arn.of("iam", "", accountId, "instance-profile/" + name).toString();
-        authorizeIamCreate("iam:CreateInstanceProfile", profileArn, region);
+        authorizeIamAction("iam:CreateInstanceProfile", profileArn, region);
         try {
             var profile = iamService.createInstanceProfile(name, "/");
             r.setPhysicalId(name);
@@ -1968,26 +1977,6 @@ public class CloudFormationResourceProvisioner {
             r.setPhysicalId(name);
             r.getAttributes().put("Arn", AwsArnUtils.Arn.of("iam", "", accountId, "instance-profile/" + name).toString());
         }
-    }
-
-    // ── SSM Parameter ─────────────────────────────────────────────────────────
-
-    private void provisionSsmParameter(StackResource r, JsonNode props, CloudFormationTemplateEngine engine,
-                                       String region, String stackName) {
-        String name = resolveOptional(props, "Name", engine);
-        if (name == null || name.isBlank()) {
-            name = generatePhysicalName(stackName, r.getLogicalId(), 2048, false);
-        }
-        String value = resolveOptional(props, "Value", engine);
-        if (value == null) {
-            value = "";
-        }
-        String type = resolveOptional(props, "Type", engine);
-        if (type == null) {
-            type = "String";
-        }
-        ssmService.putParameter(name, value, type, null, true, region);
-        r.setPhysicalId(name);
     }
 
     // ── KMS ───────────────────────────────────────────────────────────────────
@@ -2521,7 +2510,7 @@ public class CloudFormationResourceProvisioner {
             userName = generatePhysicalName(stackName, r.getLogicalId(), 64, false);
         }
         String userArn = AwsArnUtils.Arn.of("iam", "", accountId, "user/" + userName).toString();
-        authorizeIamCreate("iam:CreateUser", userArn, region);
+        authorizeIamAction("iam:CreateUser", userArn, region);
         var user = iamService.createUser(userName, "/");
         r.setPhysicalId(userName);
         r.getAttributes().put("Arn", user.getArn());
@@ -2532,7 +2521,7 @@ public class CloudFormationResourceProvisioner {
         String userName = resolveOptional(props, "UserName", engine);
         if (userName != null) {
             String userArn = AwsArnUtils.Arn.of("iam", "", accountId, "user/" + userName).toString();
-            authorizeIamCreate("iam:CreateAccessKey", userArn, region);
+            authorizeIamAction("iam:CreateAccessKey", userArn, region);
             var key = iamService.createAccessKey(userName);
             r.setPhysicalId(key.getAccessKeyId());
             r.getAttributes().put("SecretAccessKey", key.getSecretAccessKey());

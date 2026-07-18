@@ -262,7 +262,9 @@ When IAM enforcement is enabled:
 
 | Topic | Behavior |
 |---|---|
-| `TemplateURL` | Fetching a template from S3 evaluates the caller's S3 IAM (GetObject on the template object). |
-| Resource provisioner | Privileged create APIs for common resource types gate through in-process IAM as the stack role / caller. Residual: not every CloudFormation resource type is gated. |
+| `TemplateURL` | Fetching a template from S3 evaluates the caller S3 IAM (GetObject on the template object). |
+| Resource provisioner | Privileged IAM create APIs and AttachRolePolicy gate through in-process IAM as the stack role / caller. Residual: most non-IAM types in the switch remain ungated. |
+| IAM role / policy attach | `ManagedPolicyArns` on `AWS::IAM::Role` and `Roles` on `AWS::IAM::Policy` require `iam:AttachRolePolicy` before attach. Condition context includes `aws:CalledVia=cloudformation.amazonaws.com`. |
+| Registry split | Non-IAM types such as `AWS::SSM::Parameter` provision via `SsmCfnProvisioner` on the resource registry, separate from IAM create/attach arms. |
 
-Regression: `CloudFormationResourceProvisionerIamGateTest`, `CloudFormationIntegrationTest`.
+Regression: `CloudFormationResourceProvisionerIamGateTest`, `SsmCfnProvisionerTest`, `CfnIamConditionContextTest`, `CloudFormationIntegrationTest`.

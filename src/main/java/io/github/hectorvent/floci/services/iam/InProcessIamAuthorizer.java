@@ -156,7 +156,18 @@ public class InProcessIamAuthorizer {
      * different service, e.g. {@code s3:GetObject} on a CloudFormation {@code TemplateURL}.
      */
     public void authorizeCallerAction(String iamAction, String resourceArn, String region, String credentialScope) {
-        authorizeExplicitCaller(regionResolver.getCallerAccessKeyId(), iamAction, resourceArn, region, credentialScope);
+        authorizeCallerAction(iamAction, resourceArn, region, credentialScope, Map.of());
+    }
+
+    /**
+     * Same as {@link #authorizeCallerAction(String, String, String, String)}, with extra condition
+     * context keys merged into the evaluation map (for example CloudFormation
+     * {@code aws:CalledVia}).
+     */
+    public void authorizeCallerAction(String iamAction, String resourceArn, String region,
+                                      String credentialScope, Map<String, String> extraConditions) {
+        authorizeExplicitCaller(regionResolver.getCallerAccessKeyId(), iamAction, resourceArn, region,
+                credentialScope, extraConditions);
     }
 
     /**
@@ -168,6 +179,15 @@ public class InProcessIamAuthorizer {
      */
     public void authorizeExplicitCaller(String akid, String iamAction, String resourceArn, String region,
                                         String credentialScope) {
+        authorizeExplicitCaller(akid, iamAction, resourceArn, region, credentialScope, Map.of());
+    }
+
+    /**
+     * Same as {@link #authorizeExplicitCaller(String, String, String, String, String)}, with extra
+     * condition context keys merged into the evaluation map.
+     */
+    public void authorizeExplicitCaller(String akid, String iamAction, String resourceArn, String region,
+                                        String credentialScope, Map<String, String> extraConditions) {
         if (!config.services().iam().enforcementEnabled()) {
             return;
         }
@@ -193,6 +213,9 @@ public class InProcessIamAuthorizer {
         Optional<String> callerArn = iamService.resolveCallerArn(akid);
         Map<String, String> conditionCtx = buildConditionContext(
                 callerArn.orElse("arn:aws:iam::" + accountId + ":root"), accountId);
+        if (extraConditions != null && !extraConditions.isEmpty()) {
+            conditionCtx.putAll(extraConditions);
+        }
 
         Decision decision = evaluator.evaluate(caller, resourcePolicies, iamAction, resource, conditionCtx);
         if (decision == Decision.DENY) {
