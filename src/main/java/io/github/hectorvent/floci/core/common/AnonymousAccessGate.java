@@ -9,12 +9,12 @@ import io.github.hectorvent.floci.services.apigateway.model.MethodConfig;
 import io.github.hectorvent.floci.services.iam.IamActionRegistry;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator;
 import io.github.hectorvent.floci.services.iam.IamPolicyEvaluator.Decision;
-import io.github.hectorvent.floci.services.iam.ResourceArnBuilder;
 import io.github.hectorvent.floci.services.iam.ResourcePolicyResolver;
 import io.github.hectorvent.floci.services.iam.model.CallerContext;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.lambda.model.LambdaUrlConfig;
+import io.github.hectorvent.floci.services.s3.S3Service;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -26,8 +26,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * AWS-intentional anonymous invoke paths under strict IAM: public S3 reads,
- * API Gateway {@code authorizationType=NONE}, and Lambda function URLs with {@code AuthType=NONE}.
+ * AWS-intentional anonymous invoke paths under strict IAM: public S3 reads
+ * (bucket policy ∪ public object ACL), API Gateway {@code authorizationType=NONE},
+ * and Lambda function URLs with {@code AuthType=NONE}.
  */
 @ApplicationScoped
 public class AnonymousAccessGate {
@@ -41,8 +42,8 @@ public class AnonymousAccessGate {
 
     private final ApiGatewayService apiGatewayService;
     private final LambdaService lambdaService;
+    private final S3Service s3Service;
     private final IamActionRegistry actionRegistry;
-    private final ResourceArnBuilder arnBuilder;
     private final ResourcePolicyResolver resourcePolicyResolver;
     private final IamPolicyEvaluator evaluator;
     private final RegionResolver regionResolver;
@@ -53,8 +54,8 @@ public class AnonymousAccessGate {
     @Inject
     public AnonymousAccessGate(ApiGatewayService apiGatewayService,
                                LambdaService lambdaService,
+                               S3Service s3Service,
                                IamActionRegistry actionRegistry,
-                               ResourceArnBuilder arnBuilder,
                                ResourcePolicyResolver resourcePolicyResolver,
                                IamPolicyEvaluator evaluator,
                                RegionResolver regionResolver,
@@ -63,8 +64,8 @@ public class AnonymousAccessGate {
                                EmulatorConfig config) {
         this.apiGatewayService = apiGatewayService;
         this.lambdaService = lambdaService;
+        this.s3Service = s3Service;
         this.actionRegistry = actionRegistry;
-        this.arnBuilder = arnBuilder;
         this.resourcePolicyResolver = resourcePolicyResolver;
         this.evaluator = evaluator;
         this.regionResolver = regionResolver;
@@ -91,16 +92,15 @@ public class AnonymousAccessGate {
         if (!"s3:GetObject".equals(action) && !"s3:HeadObject".equals(action)) {
             return false;
         }
-        String region = regionResolver.getDefaultRegion();
-        String accountId = accountResolver.defaultAccountId();
-        String resource = arnBuilder.build("s3", ctx, region, accountId);
-        List<String> resourcePolicies = resourcePolicyResolver.resolve("s3", resource, region);
-        if (resourcePolicies.isEmpty()) {
+        String path = SecurityBypassPaths.normalizePath(ctx.getUriInfo().getPath());
+        String stripped = path.startsWith("/") ? path.substring(1) : path;
+        int slash = stripped.indexOf('/');
+        if (slash <= 0 || slash >= stripped.length() - 1) {
             return false;
         }
-        Map<String, String> conditionCtx = anonymousConditionContext(accountId);
-        return evaluator.evaluate(CallerContext.of(List.of()), resourcePolicies, action, resource, conditionCtx)
-                == Decision.ALLOW;
+        String bucket = stripped.substring(0, slash);
+        String key = stripped.substring(slash + 1);
+        return s3Service.allowsAnonymousPublicRead(bucket, key, action);
     }
 
     private boolean allowsAnonymousExecuteApi(ContainerRequestContext ctx) {

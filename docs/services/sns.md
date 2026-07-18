@@ -47,6 +47,10 @@
 
 When IAM enforcement is on:
 
+### IAM resource ARN from JSON bodies
+
+`ResourceArnBuilder` JSON SNS extraction matches the Query/form builder: `TopicArn` / `TargetArn`, then `SubscriptionArn`, `ResourceArn`, `PlatformApplicationArn`, `EndpointArn`, then `Name` for CreateTopic-style calls. Regression: `ResourceArnBuilderTest` (`snsJsonUsesSubscriptionArnWhenTopicArnAbsent`, `snsJsonUsesEndpointArnWhenTopicArnAbsent`, `snsJsonUsesNameWhenNoArnFieldsPresent`).
+
 ### No default open topic policy
 
 Upstream Floci attaches a permissive default topic policy when none is set. The CTF fork **omits** that policy when `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`. `GetTopicAttributes` returns no `Policy` attribute until the operator sets one. `sns:Publish` (and other data-plane actions) require an explicit identity policy **or** topic resource policy Allow.

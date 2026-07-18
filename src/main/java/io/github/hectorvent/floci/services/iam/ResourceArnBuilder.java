@@ -341,9 +341,21 @@ public class ResourceArnBuilder {
     }
 
     private String buildSnsArnFromJson(JsonNode node, String region, String accountId) {
-        String topicArn = firstArn(jsonText(node, "TopicArn"), jsonText(node, "TargetArn"));
-        if (topicArn != null) {
-            return topicArn;
+        // Match form/query builder field order: TopicArn / TargetArn, then subscription /
+        // platform / endpoint ARNs, then CreateTopic Name.
+        String arn = firstArn(
+                jsonText(node, "TopicArn"),
+                jsonText(node, "TargetArn"),
+                jsonText(node, "SubscriptionArn"),
+                jsonText(node, "ResourceArn"),
+                jsonText(node, "PlatformApplicationArn"),
+                jsonText(node, "EndpointArn"));
+        if (arn != null) {
+            return arn;
+        }
+        String topicName = jsonText(node, "Name");
+        if (topicName != null && !topicName.isBlank() && !topicName.startsWith("arn:")) {
+            return AwsArnUtils.Arn.of("sns", region, accountId, topicName).toString();
         }
         return AwsArnUtils.Arn.of("sns", region, accountId, "*").toString();
     }
