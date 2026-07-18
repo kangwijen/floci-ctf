@@ -19,6 +19,7 @@ import io.github.hectorvent.floci.services.codepipeline.model.CodePipelineExecut
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelinePipeline;
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelinePipeline.TransitionState;
 import io.github.hectorvent.floci.services.codepipeline.model.CodePipelineStoredItem;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.lambda.model.InvocationType;
@@ -63,6 +64,7 @@ public class CodePipelineService {
     private final LambdaService lambdaService;
     private final S3Service s3Service;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final InProcessIamAuthorizer iamAuthorizer;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, Object> pipelineLocks = new ConcurrentHashMap<>();
     private final Map<String, byte[]> runtimeArtifacts = new ConcurrentHashMap<>();
@@ -72,7 +74,8 @@ public class CodePipelineService {
     public CodePipelineService(StorageFactory storageFactory, ObjectMapper mapper,
                                CodeBuildService codeBuildService, CodeDeployService codeDeployService,
                                LambdaService lambdaService, S3Service s3Service,
-                               InProcessTargetAuthorizer targetAuthorizer) {
+                               InProcessTargetAuthorizer targetAuthorizer,
+                               InProcessIamAuthorizer iamAuthorizer) {
         this.pipelineStore = (AccountAwareStorageBackend<CodePipelinePipeline>) storageFactory.create(
                 "codepipeline", "codepipeline-pipelines.json", new TypeReference<Map<String, CodePipelinePipeline>>() {});
         this.executionStore = (AccountAwareStorageBackend<CodePipelineExecution>) storageFactory.create(
@@ -85,6 +88,16 @@ public class CodePipelineService {
         this.lambdaService = lambdaService;
         this.s3Service = s3Service;
         this.targetAuthorizer = targetAuthorizer;
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    CodePipelineService(StorageFactory storageFactory, ObjectMapper mapper,
+                        CodeBuildService codeBuildService, CodeDeployService codeDeployService,
+                        LambdaService lambdaService, S3Service s3Service,
+                        InProcessTargetAuthorizer targetAuthorizer) {
+        this(storageFactory, mapper, codeBuildService, codeDeployService, lambdaService, s3Service,
+                targetAuthorizer, null);
     }
 
     public JsonNode handle(String action, JsonNode request, String region, String account) {
@@ -163,6 +176,7 @@ public class CodePipelineService {
     private ObjectNode createPipeline(JsonNode request, String region, String account) {
         JsonNode declaration = request.get("pipeline");
         String name = validatePipelineDeclaration(declaration);
+        authorizePipelineRoleArn(declaration, region);
         if (pipelineStore.getForAccount(account, pipelineKey(region, name)).isPresent()) {
             throw new AwsException("PipelineNameInUseException", "Pipeline name already exists: " + name, 400);
         }
@@ -190,6 +204,7 @@ public class CodePipelineService {
     private ObjectNode updatePipeline(JsonNode request, String region, String account) {
         JsonNode declaration = request.get("pipeline");
         String name = validatePipelineDeclaration(declaration);
+        authorizePipelineRoleArn(declaration, region);
         CodePipelinePipeline pipeline = requirePipeline(account, region, name);
         int version = pipeline.getVersion() == null ? 1 : pipeline.getVersion() + 1;
         pipeline.setVersion(version);
@@ -1124,6 +1139,16 @@ public class CodePipelineService {
                 .sorted(Comparator.comparing(CodePipelineStoredItem::getCreated,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
+    }
+
+    private void authorizePipelineRoleArn(JsonNode declaration, String region) {
+        if (iamAuthorizer == null || declaration == null) {
+            return;
+        }
+        String roleArn = textOrNull(declaration.path("roleArn"));
+        if (roleArn != null) {
+            iamAuthorizer.authorizePassRole(roleArn, "codepipeline.amazonaws.com", region);
+        }
     }
 
     private String validatePipelineDeclaration(JsonNode declaration) {
