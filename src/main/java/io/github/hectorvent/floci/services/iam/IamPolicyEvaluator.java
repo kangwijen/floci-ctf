@@ -33,7 +33,8 @@ import java.util.Map;
  * <ol>
  *   <li>Explicit Deny in ANY policy → DENY</li>
  *   <li>identityAllow OR resourceAllow (default)</li>
- *   <li>Same-account KMS with a loaded key policy: identityAllow AND resourceAllow</li>
+ *   <li>Same-account KMS with a loaded key policy: key-policy path (direct Allow or
+ *       account-root IAM delegation plus identityAllow)</li>
  *   <li>AND (no session policy OR sessionAllow)</li>
  *   <li>AND (no boundary OR boundaryAllow)</li>
  *   <li>→ ALLOW</li>

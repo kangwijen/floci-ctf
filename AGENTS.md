@@ -167,7 +167,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **EMR `JobFlowIds[]` multi-cluster evaluation:** `TerminateJobFlows` and similar calls with multiple `JobFlowIds[]` entries build one cluster ARN per ID (`ResourceArnBuilder.buildAllEmrClusterResources`). `IamEnforcementFilter` evaluates identity policy against every derived ARN; explicit Deny on any cluster denies the request.
 
-**Resource policies:** S3, Lambda, SQS, SNS, Secrets Manager, and EventBridge bus policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Same-account KMS with a loaded key policy uses identity AND key-policy Allow (see [kms.md](./docs/services/kms.md#ctf-fork)). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
+**Resource policies:** S3, Lambda, SQS, SNS, Secrets Manager, and EventBridge bus policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Same-account KMS with a loaded key policy uses key-policy primary semantics (direct principal Allow, or account-root IAM delegation plus identity). See [kms.md](./docs/services/kms.md#ctf-fork). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
 **Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
 

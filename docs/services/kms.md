@@ -66,7 +66,7 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evalua
 
 **ReEncrypt IAM:** Under enforcement, `ReEncrypt` evaluates `kms:ReEncryptFrom` on the source CMK (from `CiphertextBlob`) and `kms:ReEncryptTo` on `DestinationKeyId`. Both must allow. Regression: `IamEnforcementFilterTest` (`@Tag("security-regression")`).
 
-**Same-account key policy:** When a key policy document is loaded for a same-account CMK, evaluation requires identity Allow AND key-policy Allow (closes identity-only CMK use). Default CreateKey policies use account-root `kms:*` (Enable IAM User Permissions), so identity policies remain the usual grant path. Residual (Medium): Floci is slightly stricter than AWS when a key policy names the caller principal directly without an identity Allow (AWS may allow key-policy-only, Floci still requires identity Allow). Regression: `KmsKeyPolicyAndIdentityTest`.
+**Same-account key policy:** When a key policy document is loaded for a same-account CMK, identity alone is not enough. A direct key-policy Allow for the caller principal grants access. An account-root Enable IAM User Permissions Allow (`kms:*` on `:root`) requires a matching identity Allow. Default CreateKey policies use that root delegation pattern. Regression: `KmsKeyPolicyAndIdentityTest`.
 
 ### CloudTrail audit (HTTP)
 

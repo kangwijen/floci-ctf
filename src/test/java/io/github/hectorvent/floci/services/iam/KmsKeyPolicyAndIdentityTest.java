@@ -12,8 +12,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * O21: Same-account KMS data-plane requires key policy Allow AND identity Allow
- * when a key policy document is present (AWS CMK semantics).
+ * O21: Same-account KMS requires a key-policy path (direct principal Allow, or
+ * account-root IAM delegation plus identity Allow). Identity alone is not enough.
  */
 @Tag("security-regression")
 class KmsKeyPolicyAndIdentityTest {
@@ -61,6 +61,24 @@ class KmsKeyPolicyAndIdentityTest {
 
         Decision decision = evaluator.evaluate(
                 CallerContext.of(List.of(identity)),
+                List.of(keyPolicy),
+                "kms:Encrypt",
+                KEY_ARN,
+                Map.of("aws:principalarn", CALLER, "aws:principalaccount", ACCOUNT));
+
+        assertEquals(Decision.ALLOW, decision);
+    }
+
+    @Test
+    void kmsEncryptAllowedWhenKeyPolicyDirectlyNamesCallerWithoutIdentity() {
+        String keyPolicy = """
+                {"Version":"2012-10-17","Statement":[
+                  {"Effect":"Allow","Principal":{"AWS":"%s"},
+                   "Action":"kms:Encrypt","Resource":"*"}
+                ]}""".formatted(CALLER);
+
+        Decision decision = evaluator.evaluate(
+                CallerContext.of(List.of()),
                 List.of(keyPolicy),
                 "kms:Encrypt",
                 KEY_ARN,
