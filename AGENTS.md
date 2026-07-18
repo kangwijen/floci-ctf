@@ -416,6 +416,8 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | S3 access log Remote IP vs CloudTrail `sourceIPAddress` | Closed | Shared `ClientSourceIpResolver`; `S3AccessLogSourceIpParityIntegrationTest`; [s3.md](./docs/services/s3.md#access-logging) |
 | `dynamodb:PutItem` scoped IAM | Closed | `DynamoDbPutItemScopedIntegrationTest` |
 | `sns:Publish` scoped IAM | Closed | `SnsPublishScopedIamIntegrationTest` |
+| DocumentDB Mongo wire AuthProxy (E-FO-03) | Closed | Real-mode clusters publish AuthProxy port; IAM mode requires PLAIN + SigV4 token (`DocDbAuthProxyBindTest`, `DocDbAuthProxyIamGateTest`). Residual: full `MONGODB-AWS` / TLS product parity |
+| OpenSearch domain HTTP AuthProxy (E-FO-04) | Closed | Host HTTP gated by SigV4 IAM or FGAC Basic before side effects (`OpenSearchDomainAuthProxyBindTest`, `OpenSearchDataPlaneGateTest`) |
 
 **Still open (downstream / out of emulator scope):** None from the prior SigV4a / SAML metadata / ECR data-plane / presigned POST operator backlog.
 
@@ -435,6 +437,8 @@ Requires `FLOCI_CLOUDTRAIL_AUDIT_ENABLED=true` on the emulator (Compose default)
 | HTTP `:4566` | Yes (`SigV4ValidationFilter` + `IamEnforcementFilter`) |
 | S3 presigned query URLs | Yes (`PreSignedUrlFilter` SigV4; IAM or root credential secrets only) |
 | RDS / ElastiCache / MemoryDB Redis TCP | Partial (token SigV4, not full IAM per query) |
+| DocumentDB Mongo TCP | Partial (AuthProxy bind; IAM uses PLAIN + SigV4 token via `RdsSigV4Validator`; not full `MONGODB-AWS` / TLS). `DocDbAuthProxyBindTest`, `DocDbAuthProxyIamGateTest` |
+| OpenSearch domain HTTP | Yes when IAM enforcement or FGAC enabled (`OpenSearchDataPlane` SigV4 / Basic gate). `OpenSearchDomainAuthProxyBindTest`, `OpenSearchDataPlaneGateTest` |
 | Cognito OAuth | Partial (client credentials on `/oauth2/token`; Cognito Bearer cannot call SigV4 data plane) |
 | SFN / APIGW AWS integrations in-process | Yes when enforcement on (`InProcessIamAuthorizer` on JSON-body calls); CloudTrail audit via `InProcessCloudTrailRecorder` when audit enabled |
 | Pipes / Scheduler in-process | Yes (`InProcessTargetAuthorizer`: pipe/schedule `roleArn` on source poll with extended SQS/Kinesis/DynamoDB Streams actions, target delivery, SQS `DeleteMessage` on ack) |
