@@ -155,6 +155,7 @@ public class Ec2ContainerManager {
                         // needs network administration privileges in the local
                         // container to attach that link-local address.
                         .withPrivileged(true)
+                        .withOperatorManaged(true)
                         .withCmd(image.systemd() ? List.of("/sbin/init") : List.of("tail", "-f", "/dev/null"));
                 if (image.systemd()) {
                     specBuilder

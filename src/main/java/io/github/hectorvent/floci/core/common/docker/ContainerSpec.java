@@ -30,6 +30,8 @@ import java.util.Map;
  * @param workingDir Working directory inside the container (overrides image WORKDIR)
  * @param user User the container process runs as, formatted "uid[:gid]" (null = image USER)
  * @param groupAdd Supplementary group IDs added to the container process
+ * @param operatorManaged When true, {@link ContainerSpecHardening} allows privileged and
+ *                       docker.sock binds for Floci-owned launches (EC2, EKS/k3s)
  */
 public record ContainerSpec(
         String image,
@@ -50,14 +52,16 @@ public record ContainerSpec(
         List<String> dnsServers,
         String workingDir,
         String user,
-        List<String> groupAdd
+        List<String> groupAdd,
+        boolean operatorManaged
 ) {
     /**
      * Creates a minimal spec with just the image name.
      * All other fields will be null or empty lists.
      */
     public ContainerSpec(String image) {
-        this(image, null, List.of(), null, null, null, Map.of(), List.of(), null, List.of(), List.of(), List.of(), null, false, null, List.of(), null, null, List.of());
+        this(image, null, List.of(), null, null, null, Map.of(), List.of(), null, List.of(), List.of(), List.of(),
+                null, false, null, List.of(), null, null, List.of(), false);
     }
 
     /**
