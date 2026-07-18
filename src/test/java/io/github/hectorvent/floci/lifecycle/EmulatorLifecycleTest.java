@@ -9,6 +9,7 @@ import io.github.hectorvent.floci.lifecycle.inithook.InitializationHook;
 import io.github.hectorvent.floci.lifecycle.inithook.InitializationHooksRunner;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheContainerManager;
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheMemcachedContainerManager;
+import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheMemcachedProxyManager;
 import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheProxyManager;
 import io.github.hectorvent.floci.services.docdb.container.DocDbContainerManager;
 import io.github.hectorvent.floci.services.neptune.container.NeptuneContainerManager;
@@ -64,6 +65,7 @@ class EmulatorLifecycleTest {
     @Mock private ElastiCacheContainerManager elastiCacheContainerManager;
     @Mock private ElastiCacheMemcachedContainerManager elastiCacheMemcachedContainerManager;
     @Mock private ElastiCacheProxyManager elastiCacheProxyManager;
+    @Mock private ElastiCacheMemcachedProxyManager elastiCacheMemcachedProxyManager;
     @Mock private RdsContainerManager rdsContainerManager;
     @Mock private RdsProxyManager rdsProxyManager;
     @Mock private io.github.hectorvent.floci.services.memorydb.container.MemoryDbContainerManager memoryDbContainerManager;
@@ -112,7 +114,8 @@ class EmulatorLifecycleTest {
         emulatorLifecycle = new EmulatorLifecycle(
                 storageFactory, serviceRegistry, config,
                 elastiCacheContainerManager, elastiCacheMemcachedContainerManager,
-                elastiCacheProxyManager, rdsContainerManager, rdsProxyManager,
+                elastiCacheProxyManager, elastiCacheMemcachedProxyManager,
+                rdsContainerManager, rdsProxyManager,
                 memoryDbContainerManager, memoryDbProxyManager,
                 docDbContainerManager, neptuneContainerManager, neptuneProxyManager,
                 rabbitMqManager, rdsService,

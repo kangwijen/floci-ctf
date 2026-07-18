@@ -8,26 +8,34 @@ import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheCont
 import io.github.hectorvent.floci.services.elasticache.container.ElastiCacheMemcachedContainerManager;
 import io.github.hectorvent.floci.services.elasticache.model.CacheCluster;
 import io.github.hectorvent.floci.services.elasticache.model.CacheClusterStatus;
+import io.github.hectorvent.floci.services.elasticache.proxy.ElastiCacheMemcachedProxyManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ElastiCacheMemcachedServiceTest {
 
     private ElastiCacheMemcachedService service;
+    private ElastiCacheMemcachedProxyManager proxyManager;
 
     @BeforeEach
     void setUp() {
         ElastiCacheMemcachedContainerManager containerManager = mock(ElastiCacheMemcachedContainerManager.class);
+        proxyManager = mock(ElastiCacheMemcachedProxyManager.class);
         StorageFactory storageFactory = mock(StorageFactory.class);
         EmulatorConfig config = mock(EmulatorConfig.class);
 
@@ -36,13 +44,17 @@ class ElastiCacheMemcachedServiceTest {
         when(config.services()).thenReturn(servicesConfig);
         when(servicesConfig.elasticache()).thenReturn(ecConfig);
         when(ecConfig.defaultMemcachedImage()).thenReturn("memcached:1.6");
+        when(ecConfig.proxyBasePort()).thenReturn(6379);
+        when(ecConfig.proxyMaxPort()).thenReturn(6399);
         when(config.hostname()).thenReturn(Optional.of("localhost"));
+        when(proxyManager.authRequired()).thenReturn(false);
+        doNothing().when(proxyManager).startProxy(anyString(), anyInt(), anyString(), anyInt());
 
         when(storageFactory.create(anyString(), anyString(), any())).thenAnswer(inv -> new InMemoryStorage<>());
         when(containerManager.start(anyString(), anyString()))
                 .thenReturn(new ElastiCacheContainerHandle("cid", "cluster", "localhost", 11211));
 
-        service = new ElastiCacheMemcachedService(containerManager, storageFactory, config);
+        service = new ElastiCacheMemcachedService(containerManager, proxyManager, storageFactory, config);
     }
 
     @Test
@@ -53,6 +65,16 @@ class ElastiCacheMemcachedServiceTest {
         assertEquals(CacheClusterStatus.AVAILABLE, cluster.getCacheClusterStatus());
         assertEquals("memcached", cluster.getEngine());
         assertEquals("localhost", cluster.getConfigurationEndpoint().address());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void createClusterPublishesProxyPortNotContainerPort() {
+        CacheCluster cluster = service.createCacheCluster("proxied-cluster");
+
+        assertNotEquals(11211, cluster.getConfigurationEndpoint().port());
+        assertEquals(cluster.getProxyPort(), cluster.getConfigurationEndpoint().port());
+        verify(proxyManager).startProxy(anyString(), anyInt(), anyString(), anyInt());
     }
 
     @Test
@@ -100,6 +122,7 @@ class ElastiCacheMemcachedServiceTest {
     @Test
     void createClusterUsesContainerHostWhenHostnameNotConfigured() {
         ElastiCacheMemcachedContainerManager containerManager = mock(ElastiCacheMemcachedContainerManager.class);
+        ElastiCacheMemcachedProxyManager pm = mock(ElastiCacheMemcachedProxyManager.class);
         StorageFactory storageFactory = mock(StorageFactory.class);
         EmulatorConfig config = mock(EmulatorConfig.class);
 
@@ -108,14 +131,18 @@ class ElastiCacheMemcachedServiceTest {
         when(config.services()).thenReturn(servicesConfig);
         when(servicesConfig.elasticache()).thenReturn(ecConfig);
         when(ecConfig.defaultMemcachedImage()).thenReturn("memcached:1.6");
+        when(ecConfig.proxyBasePort()).thenReturn(6379);
+        when(ecConfig.proxyMaxPort()).thenReturn(6399);
         when(config.hostname()).thenReturn(Optional.empty());
+        when(pm.authRequired()).thenReturn(false);
+        doNothing().when(pm).startProxy(anyString(), anyInt(), anyString(), anyInt());
 
         when(storageFactory.create(anyString(), anyString(), any())).thenAnswer(inv -> new InMemoryStorage<>());
         when(containerManager.start(anyString(), anyString()))
                 .thenReturn(new ElastiCacheContainerHandle("cid", "cluster", "172.20.0.10", 11211));
 
         ElastiCacheMemcachedService containerModeService =
-                new ElastiCacheMemcachedService(containerManager, storageFactory, config);
+                new ElastiCacheMemcachedService(containerManager, pm, storageFactory, config);
 
         CacheCluster cluster = containerModeService.createCacheCluster("container-cluster");
 

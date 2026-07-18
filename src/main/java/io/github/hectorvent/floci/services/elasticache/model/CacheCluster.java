@@ -18,6 +18,7 @@ public class CacheCluster {
     private transient String containerId;
     private transient String containerHost;
     private transient int containerPort;
+    private transient int proxyPort;
 
     public CacheCluster() {}
 
@@ -58,4 +59,7 @@ public class CacheCluster {
 
     public int getContainerPort() { return containerPort; }
     public void setContainerPort(int containerPort) { this.containerPort = containerPort; }
+
+    public int getProxyPort() { return proxyPort; }
+    public void setProxyPort(int proxyPort) { this.proxyPort = proxyPort; }
 }

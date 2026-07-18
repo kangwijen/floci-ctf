@@ -4,7 +4,7 @@
 **Management Endpoint:** `POST http://localhost:4566/`
 **Data Endpoint:** `localhost:<proxy-port>` (TCP)
 
-Floci manages real Valkey/Redis Docker containers and proxies TCP connections to them. This means any Redis client works — including IAM authentication.
+Floci manages real Valkey/Redis Docker containers and proxies TCP connections to them. This means any Redis client works — including IAM authentication. Memcached clusters use the same AuthProxy pattern: the host endpoint is a Floci proxy port; the Docker Memcached port stays on the container network. Under IAM enforcement, Memcached clients must send an ASCII `auth <SigV4-token>` line before data commands (Redis AUTH analogue).
 
 ## Supported Management Actions
 
