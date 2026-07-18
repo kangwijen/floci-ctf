@@ -49,6 +49,10 @@ For the upstream API shape, see the AWS RDS Data API documentation:
 
 The RDS Data API also requires the RDS service itself to be enabled because it resolves `resourceArn` values to local RDS containers.
 
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, `rds-data:ExecuteStatement` is scoped to the `resourceArn` in the JSON body. Regression: `RdsDataIamScopedIntegrationTest`.
+
 ## Example
 
 ```bash

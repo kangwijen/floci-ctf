@@ -6,6 +6,7 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -48,6 +49,7 @@ class RdsDataIamScopedIntegrationTest {
     }
 
     @Test
+    @Tag("security-regression")
     void executeOnAllowedClusterPassesIam() {
         given()
                 .header("Authorization", CtfLabIamTestSupport.scopedAuth(playerAkid, "rds-data"))
@@ -67,6 +69,7 @@ class RdsDataIamScopedIntegrationTest {
     }
 
     @Test
+    @Tag("security-regression")
     void executeOnDecoyClusterDenied() {
         given()
                 .header("Authorization", CtfLabIamTestSupport.scopedAuth(playerAkid, "rds-data"))

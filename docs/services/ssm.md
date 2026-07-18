@@ -50,6 +50,10 @@
 
 If the target is not a Floci EC2 container, or if the document is not supported for direct execution, Floci falls back to the SSM agent polling flow. In that mode, `SendCommand` queues an ec2messages payload and the invocation completes after an agent calls `SendReply`.
 
+## CTF fork {#ctf-fork}
+
+`SendCommand` is authorized on the HTTP control plane (`IamEnforcementFilter` / SigV4). The async Docker exec path (`SsmDirectCommandExecutor` via `SsmCommandService.runDirectCommandAsync`) does **not** re-authorize IAM at exec time. Residual: a principal that loses `ssm:SendCommand` after the HTTP accept can still complete an already-accepted direct container exec. Agent-polling (`GetMessages` / `SendReply`) remains a separate path.
+
 Direct command output follows the AWS inline output limits: first 24,000 characters of stdout and first 8,000 characters of stderr. Commands that exceed `TimeoutSeconds` are constrained inside the target container when the container has the `timeout` command available, and terminal timeout results are marked `TimedOut` with `StatusDetails` set to `Execution Timed Out`; commands with nonzero exit codes are marked `Failed`.
 
 ## Configuration
