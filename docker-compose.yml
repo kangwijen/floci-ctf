@@ -11,6 +11,10 @@ services:
       # See docs/configuration/ports.md.
       - "4566:4566"
     volumes:
+      # Default: direct RW docker.sock. LAN/internet exposure of Floci with this mount
+      # is host-root equivalent. Prefer the optional API allowlist override:
+      #   docker compose -f docker-compose.yml -f docker-compose.socket-proxy.yml up
+      # See docs/configuration/docker-compose.md (Docker socket proxy).
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
     environment:
