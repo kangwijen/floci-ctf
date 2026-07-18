@@ -217,7 +217,7 @@ Implementation: `IamUnrestrictedActions` in `core.common`, used by `IamEnforceme
 
 **GetCallerIdentity identity shape:** `StsQueryHandler` resolves the signing access key via `IamService.resolveCallerIdentity` (IAM user ARN, assumed-role ARN, federated user, configured root AKID, or 12-digit account id). It does not always return account `:root`. Regression: `StsGetCallerIdentityIntegrationTest`.
 
-**AssumeRole trust policies:** `AssumeRoleTrustPolicyEvaluator` checks role trust documents before credentials are issued, including `sts:ExternalId` conditions and `Principal.AWS` matching.
+**AssumeRole trust policies:** `AssumeRoleTrustPolicyEvaluator` checks role trust documents before credentials are issued, including `sts:ExternalId` conditions and `Principal.AWS` matching. Same-account callers need trust Allow (identity Deny still blocks). Cross-account callers also need identity Allow on the role ARN (`StsAssumeRoleCrossAccountIdentityAllowIntegrationTest`). Full cross-account condition-key parity is not claimed.
 
 **Scoped resource ARNs:** `ResourceArnBuilder` maps each request to an AWS-shaped resource ARN for `IamPolicyEvaluator` (see [Service Authorization Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html)). Covered scopes include:
 

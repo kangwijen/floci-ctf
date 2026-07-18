@@ -258,6 +258,9 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Lambda execution-role creds on Compose bridge (link-local `extra_hosts`, explicit port in `FULL_URI`, no `RELATIVE_URI` on 9171) | Closed | `ContainerLauncherTest`, `ContainerCredentialsUriBuilderTest`, `ContainerCredentialsHostSetupTest`, `LambdaContainerCredentialsIamIntegrationTest` |
 | ECR registry reconcile on Compose bridge (`5100` published, adopt path backend port, `list-images` after host `docker push`) | Closed | `EcrDockerPushIntegrationTest`, `EcrRegistryManagerTest` |
 | STS `AssumeRole` same-account caller identity (trust-only unless explicit Deny) | Closed | `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest` |
+| STS `AssumeRole` cross-account caller identity Allow required under CTF | Closed | `StsAssumeRoleCrossAccountIdentityAllowIntegrationTest` |
+| EventBridge `PutEvents` foreign bus-policy Principal does not authorize default-account IAM user | Closed | `EventBridgePutEventsForeignPrincipalDenyIntegrationTest` |
+| SNS / SQS foreign-account Principal does not authorize default-account IAM user | Closed | `SnsForeignPrincipalDenyIntegrationTest`, `SqsForeignPrincipalDenyIntegrationTest` |
 | IAM policy glob matching exponential backtracking DoS | Closed | `IamPolicyEvaluatorTest`, `IamEnforcementIntegrationTest` |
 | Predictable IAM/STS/container credentials from `ThreadLocalRandom` | Closed | `IamService`, `StsQueryHandler`, `ContainerCredentialsHttpServer`, `Ec2MetadataServer`, `EcsContainerCredentialsServer` (`SecureRandom`) |
 | KMS `GenerateDataKey` / grant tokens from `ThreadLocalRandom` | Closed | `KmsService` (`secureRandom`) |

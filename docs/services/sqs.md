@@ -152,7 +152,9 @@ Identity policies must scope `sqs:ReceiveMessage` to the queue ARN derived from 
 
 `sqs:ReceiveMessage` succeeds when the queue resource policy alone Allow the caller principal, even if the IAM user has no identity policy on that queue. Identity OR resource Allow applies (explicit Deny on either side still wins).
 
-Regression: `SqsResourcePolicyOnlyAllowIntegrationTest`.
+Regression: `SqsResourcePolicyOnlyAllowIntegrationTest`. A queue policy that names only a
+foreign-account Principal does not authorize a default-account IAM user
+(`SqsForeignPrincipalDenyIntegrationTest`).
 
 ### `ListQueues` IAM
 

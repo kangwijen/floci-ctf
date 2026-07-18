@@ -44,9 +44,11 @@ is off; with `FLOCI_SERVICES_IAM_STRICT_ENFORCEMENT_ENABLED=true` (Compose CTF) 
 (`StsAssumeRoleMissingRoleStrictIntegrationTest`). Same-account `AssumeRole` succeeds on trust
 policy alone unless the caller has an explicit identity Deny on `sts:AssumeRole` for the role ARN.
 Cross-account calls require both trust Allow and caller identity Allow. Regression:
-`StsAssumeRoleCallerIdentityPolicyIntegrationTest`. Strict mode still requires registered access
-keys; integration tests must use operator root or IAM users with `create-access-key`, not fake
-account-id AKIDs.
+`StsAssumeRoleCallerIdentityPolicyIntegrationTest` (same-account Deny) and
+`StsAssumeRoleCrossAccountIdentityAllowIntegrationTest` (cross-account identity Allow required).
+Strict mode still requires registered access keys; integration tests must use operator root or
+IAM users with `create-access-key`, not fake account-id AKIDs. Full cross-account condition-key
+parity remains incomplete (see `docs/services/iam.md`).
 
 **OIDC/federated condition matching (CTF Stage 4):**
 
@@ -92,7 +94,7 @@ When IAM enforcement is enabled:
 |---|---|
 | `GetCallerIdentity` | Returns the **calling principal ARN**, not account `:root` for IAM user access keys (`arn:aws:iam::ACCOUNT:user/name`) or temporary assumed-role sessions (`arn:aws:sts::ACCOUNT:assumed-role/role/session`). Operator requests signed with `FLOCI_AUTH_ROOT_ACCESS_KEY_ID` still return `arn:aws:iam::ACCOUNT:root`. Policy-exempt like AWS (no Allow required; explicit Deny does not block). Regression: `StsGetCallerIdentityIntegrationTest` |
 | `GetSessionToken` | Returned session credentials are limited to the intersection of the caller's IAM policies and any optional inline session policy; session policy alone cannot expand permissions. Parent user permission boundaries apply. Regression: `StsGetSessionTokenIntersectionIntegrationTest` |
-| `AssumeRole` | Same-account: trust policy Allow is sufficient unless caller identity explicitly Denies `sts:AssumeRole` on the role. Cross-account: caller identity must Allow the role ARN in addition to trust Allow. WebIdentity/SAML trust evaluated; federated token validation via `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` or IAM strict posture. Missing roles denied under strict IAM. Regression: `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest`, `StsAssumeRoleMissingRoleStrictIntegrationTest` |
+| `AssumeRole` | Same-account: trust policy Allow is sufficient unless caller identity explicitly Denies `sts:AssumeRole` on the role. Cross-account: caller identity must Allow the role ARN in addition to trust Allow. WebIdentity/SAML trust evaluated; federated token validation via `FLOCI_CTF_VALIDATE_FEDERATED_TOKENS` or IAM strict posture. Missing roles denied under strict IAM. Regression: `StsAssumeRoleCallerIdentityPolicyIntegrationTest`, `StsAssumeRoleCrossAccountIdentityAllowIntegrationTest`, `AssumeRoleTrustPolicyIntegrationTest`, `StsAssumeRoleMissingRoleStrictIntegrationTest` |
 | `AssumeRoleWithWebIdentity` / `AssumeRoleWithSAML` | Authenticated by JWT or SAML assertion in the form body, not SigV4. Under strict IAM, `IamEnforcementFilter` skips the missing-Authorization gate; trust and federated crypto run in `StsQueryHandler`. Unsigned tokens denied under strict. Regression: `StsWebIdentityStrictUnsignedIntegrationTest`, `StsWebIdentityTrustIntegrationTest`, `SamlWrappedAssertionRejectedTest` |
 | `GetFederationToken` | Federated principal name is extracted from the assertion for trust matching |
 
