@@ -71,7 +71,7 @@ volumes:
 ```
 
 !!! warning "Docker socket"
-    Lambda, ElastiCache, RDS, OpenSearch, and MSK require access to the Docker socket (`/var/run/docker.sock`) to spawn and manage containers. If you don't use these services, you can omit that volume.
+    Lambda, ElastiCache, RDS, OpenSearch, and MSK require access to the Docker socket (`/var/run/docker.sock`) to spawn and manage containers. If you don't use these services, you can omit that volume. A RW socket mount still means Floci can drive the host Docker Engine. Non-operator container specs cannot request privileged mode or bind-mount the socket (`ContainerSpecHardening`). An optional socket proxy (Phase D.2) further limits Engine API surface. LAN or internet exposure of port `4566` with a RW sock remains host-root equivalent until both gates are in place.
 
 !!! note "ECR port"
     With CTF IAM registry auth, publish `5100` from challenge Compose when host `docker push`/`pull` is required. Without the auth proxy, the `registry:2` sidecar binds its own host port — do not add `5100-5199` to the Floci service. See [Ports Reference](./ports.md#ctf-fork-this-repository).

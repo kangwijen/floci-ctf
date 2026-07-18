@@ -95,6 +95,8 @@ public class ContainerLifecycleManager {
     public String create(ContainerSpec spec) {
         LOG.debugv("Creating container from spec: image={0}, name={1}", spec.image(), spec.name());
 
+        ContainerSpecHardening.validate(spec);
+
         imageCacheService.ensureImageExists(spec.image());
 
         HostConfig hostConfig = buildHostConfig(spec);

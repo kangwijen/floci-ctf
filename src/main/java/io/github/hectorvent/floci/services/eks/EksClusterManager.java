@@ -122,6 +122,7 @@ public class EksClusterManager {
                 .withNamedVolume(volumeName, "/var/lib/rancher/k3s")
                 .withDockerNetwork(config.services().eks().dockerNetwork())
                 .withPrivileged(true)
+                .withOperatorManaged(true)
                 .withLogRotation();
 
         // Wire a token-authentication webhook so `aws eks get-token` bearer tokens are validated by

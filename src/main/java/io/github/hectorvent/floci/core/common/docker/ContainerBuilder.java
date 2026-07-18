@@ -122,6 +122,7 @@ public class ContainerBuilder {
         private final List<String> extraHosts = new ArrayList<>();
         private LogConfig logConfig;
         private boolean privileged;
+        private boolean operatorManaged;
         private String cgroupnsMode;
         private String user;
         private final List<String> groupAdd = new ArrayList<>();
@@ -352,10 +353,20 @@ public class ContainerBuilder {
 
         /**
          * Runs the container in privileged mode (required for k3s and similar containers
-         * that need full system access).
+         * that need full system access). Non-operator specs are rejected by
+         * {@link ContainerSpecHardening} unless {@link #withOperatorManaged(boolean)} is set.
          */
         public Builder withPrivileged(boolean privileged) {
             this.privileged = privileged;
+            return this;
+        }
+
+        /**
+         * Marks this spec as Floci-owned (EC2, EKS/k3s). Operator-managed specs may use
+         * privileged mode and docker.sock binds; workload specs may not.
+         */
+        public Builder withOperatorManaged(boolean operatorManaged) {
+            this.operatorManaged = operatorManaged;
             return this;
         }
 
@@ -432,7 +443,8 @@ public class ContainerBuilder {
                     List.copyOf(dnsServers),
                     workingDir,
                     user,
-                    List.copyOf(groupAdd)
+                    List.copyOf(groupAdd),
+                    operatorManaged
             );
         }
     }
