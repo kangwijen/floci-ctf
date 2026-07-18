@@ -209,6 +209,24 @@ class IotMqttBrokerServiceTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Tag("security-regression")
+    void fanOutReceiveRequiresIotReceiveAction() {
+        var evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        var subscribeOnly = IotMqttBrokerService.ConnectPrincipal.scoped("cert:sub-only", List.of("""
+                {"Version":"2012-10-17","Statement":[
+                  {"Effect":"Allow","Action":"iot:Subscribe","Resource":"*"}
+                ]}"""));
+        var withReceive = IotMqttBrokerService.ConnectPrincipal.scoped("cert:recv", List.of("""
+                {"Version":"2012-10-17","Statement":[
+                  {"Effect":"Allow","Action":["iot:Subscribe","iot:Receive"],"Resource":"*"}
+                ]}"""));
+
+        String topicArn = "arn:aws:iot:us-east-1:000000000000:topic/sensors/temp";
+        assertFalse(subscribeOnly.isAuthorized(evaluator, "iot:Receive", topicArn));
+        assertTrue(withReceive.isAuthorized(evaluator, "iot:Receive", topicArn));
+    }
+
+    @Test
     void connectPrincipalScopedWithNullPolicyDocumentsTreatedAsEmpty() {
         var principal = IotMqttBrokerService.ConnectPrincipal.scoped("cert:test", null);
         assertTrue(principal.policyDocuments().isEmpty());

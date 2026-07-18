@@ -286,9 +286,13 @@ class InProcessTargetAuthorizerTest {
     }
 
     @Test
-    void eventBridgeReplayDoesNotEvaluatePolicies() {
+    @Tag("security-regression")
+    void eventBridgeReplayAuthorizesPutEventsOnDestinationBus() {
         authorizer.authorizeEventBridgeReplay(EVENT_BUS_ARN, REGION);
-        verifyNoInteractions(iamAuthorizer);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.EVENTS_SERVICE), eq("events"), eq("PutEvents"),
+                eq(EVENT_BUS_ARN), eq(REGION));
     }
 
     @Test
@@ -434,6 +438,22 @@ class InProcessTargetAuthorizerTest {
     void iotDeliverySkipsBlankResource() {
         authorizer.authorizeIotDelivery("lambda", null, REGION);
 
+        verifyNoInteractions(iamAuthorizer);
+    }
+
+    @Test
+    @Tag("security-regression")
+    void iotRepublishAuthorizesPublishOnTopic() {
+        authorizer.authorizeIotRepublish("devices/telemetry", REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.IOT_SERVICE), eq("iot"), eq("Publish"),
+                eq("arn:aws:iot:" + REGION + ":" + ACCOUNT + ":topic/devices/telemetry"), eq(REGION));
+    }
+
+    @Test
+    void iotRepublishSkipsBlankTopic() {
+        authorizer.authorizeIotRepublish("  ", REGION);
         verifyNoInteractions(iamAuthorizer);
     }
 
