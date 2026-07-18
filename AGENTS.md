@@ -167,7 +167,7 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 
 **EMR `JobFlowIds[]` multi-cluster evaluation:** `TerminateJobFlows` and similar calls with multiple `JobFlowIds[]` entries build one cluster ARN per ID (`ResourceArnBuilder.buildAllEmrClusterResources`). `IamEnforcementFilter` evaluates identity policy against every derived ARN; explicit Deny on any cluster denies the request.
 
-**Resource policies:** S3, Lambda, SQS, SNS, KMS, Secrets Manager, and EventBridge bus policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
+**Resource policies:** S3, Lambda, SQS, SNS, Secrets Manager, and EventBridge bus policies merge on HTTP (identity OR resource Allow; explicit Deny wins). Same-account KMS with a loaded key policy uses identity AND key-policy Allow (see [kms.md](./docs/services/kms.md#ctf-fork)). Account `:root` in a resource policy does **not** authorize every IAM user. With IAM enforcement on, SNS topics get **no** open default topic policy.
 
 **Not on HTTP:** in-process Step Functions / API Gateway integrations, Cognito OAuth (`/oauth2/*`). S3 presigned POST bypasses `IamEnforcementFilter` missing-auth; `S3Controller` validates policy conditions and SigV4 policy signature when form fields are present.
 
@@ -318,7 +318,10 @@ When IAM enforcement is on, identity policies use AWS-shaped **resource ARNs** f
 | Pipes Lambda enrichment IAM | Closed | Enrichment invoke uses `InProcessTargetAuthorizer` (`PipesTargetInvokerTest`) |
 | Pipes Kafka source IAM | Closed | Kafka poll path authorizes via `InProcessTargetAuthorizer` (`PipesPollerTest`) |
 | DynamoDB BatchWrite/Get and Transact wildcard fallback | Closed | Multi-table / nested table ARNs evaluated (`ResourceArnBuilderTest`, DynamoDB handler tests) |
-| Secrets Manager `BatchGetSecretValue` multi-secret IAM | Closed | Each secret id evaluated (`ResourceArnBuilderTest`, Secrets Manager tests) |
+| Secrets Manager `BatchGetSecretValue` multi-secret IAM | Closed | Each `SecretIdList` id and each `Filters` match evaluated (`ResourceArnBuilderTest`, `SecretsBatchFiltersIamTest`) |
+| KMS Disabled / PendingDeletion crypto ops | Closed | Encrypt/Decrypt/GenerateDataKey reject unusable keys (`KmsServiceTest`) |
+| KMS ReEncrypt dual IAM (From + To) | Closed | `kms:ReEncryptFrom` on source CMK and `kms:ReEncryptTo` on destination (`IamEnforcementFilterTest`) |
+| KMS same-account key-policy primary | Closed | Direct key-policy Allow or account-root IAM delegation plus identity (`KmsKeyPolicyAndIdentityTest`) |
 | WebSocket HTTP_PROXY after stage-var substitution | Closed | `OutboundUrlGuard` runs on the resolved URL (`WebSocketIntegrationInvokerSubstitutionTest`) |
 
 **CTF profile vs lab defaults:** Main `application.yml` stays permissive for unit tests. Compose and CTF runs use `QUARKUS_PROFILE=ctf` (`application-ctf.yml`). Plain `docker run` without that profile or CTF `FLOCI_*` env is unsupported for CTF. Compat CI omits the profile on purpose.

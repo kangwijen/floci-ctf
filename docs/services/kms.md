@@ -60,7 +60,13 @@ When `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, HTTP data-plane calls evalua
 
 **Ciphertext format:** New symmetric `Encrypt` results use a `kms:v3:` envelope with AES-256-GCM, a fresh 96-bit nonce, and the key's symmetric material. Encryption context is authenticated additional data, so changing the ciphertext, authentication tag, or context makes `Decrypt` fail with `InvalidCiphertextException`. Existing `kms:v2:` and `kms:` envelopes remain readable for persisted data compatibility.
 
-**Decrypt `KeyId`:** IAM scopes `kms:Decrypt` and `kms:ReEncrypt*` to the CMK embedded in `CiphertextBlob` when present. When both `KeyId` (or `SourceKeyId` for ReEncrypt) and `CiphertextBlob` are supplied and they resolve to different CMKs, Decrypt returns `IncorrectKeyException` (400), matching AWS semantics.
+**Decrypt `KeyId`:** IAM scopes `kms:Decrypt` to the CMK embedded in `CiphertextBlob` when present. When both `KeyId` (or `SourceKeyId` for ReEncrypt) and `CiphertextBlob` are supplied and they resolve to different CMKs, Decrypt returns `IncorrectKeyException` (400), matching AWS semantics.
+
+**Key state:** `Encrypt`, `Decrypt`, and `GenerateDataKey` reject CMKs in `Disabled` (`DisabledException`) or `PendingDeletion` (`KMSInvalidStateException`) state, matching [AWS KMS key states](https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html). Regression: `KmsServiceTest` (`@Tag("security-regression")`).
+
+**ReEncrypt IAM:** Under enforcement, `ReEncrypt` evaluates `kms:ReEncryptFrom` on the source CMK (from `CiphertextBlob`) and `kms:ReEncryptTo` on `DestinationKeyId`. Both must allow. Regression: `IamEnforcementFilterTest` (`@Tag("security-regression")`).
+
+**Same-account key policy:** When a key policy document is loaded for a same-account CMK, evaluation requires identity Allow AND key-policy Allow (closes identity-only CMK use). Default CreateKey policies use account-root `kms:*` (Enable IAM User Permissions), so identity policies remain the usual grant path. Residual (Medium): Floci is slightly stricter than AWS when a key policy names the caller principal directly without an identity Allow (AWS may allow key-policy-only, Floci still requires identity Allow). Regression: `KmsKeyPolicyAndIdentityTest`.
 
 ### CloudTrail audit (HTTP)
 

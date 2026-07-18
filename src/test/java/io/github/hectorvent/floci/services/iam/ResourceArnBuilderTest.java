@@ -1,11 +1,13 @@
 package io.github.hectorvent.floci.services.iam;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.UriInfo;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -17,7 +19,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
@@ -502,6 +506,40 @@ class ResourceArnBuilderTest {
         assertEquals(List.of(
                 "arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-??????",
                 "arn:aws:secretsmanager:us-east-1:222222222222:secret:flag-secret-??????"), arns);
+    }
+
+    @Test
+    @Tag("security-regression")
+    void secretsBuildAllBatchResourcesIncludesEveryFilterMatch() {
+        SecretsManagerService secrets = Mockito.mock(SecretsManagerService.class);
+        io.github.hectorvent.floci.services.secretsmanager.model.Secret allowed =
+                new io.github.hectorvent.floci.services.secretsmanager.model.Secret();
+        allowed.setName("allowed/secret");
+        allowed.setArn("arn:aws:secretsmanager:us-east-1:222222222222:secret:allowed/secret-AbCdEf");
+        io.github.hectorvent.floci.services.secretsmanager.model.Secret flag =
+                new io.github.hectorvent.floci.services.secretsmanager.model.Secret();
+        flag.setName("flag-secret");
+        flag.setArn("arn:aws:secretsmanager:us-east-1:222222222222:secret:flag-secret-XyZ123");
+        when(secrets.listSecrets(eq(REGION), any())).thenReturn(List.of(allowed, flag));
+        ResourceArnBuilder withStore = new ResourceArnBuilder(new ObjectMapper(), secrets);
+
+        ContainerRequestContext ctx = jsonBodyCtx("""
+                {"Filters":[{"Key":"name","Values":["allowed/","flag-"]}]}""");
+        List<String> arns = withStore.buildAllSecretsManagerBatchResources(ctx, REGION, ACCOUNT);
+
+        assertEquals(2, arns.size());
+        assertTrue(arns.stream().anyMatch(a -> a.contains(":secret:allowed/secret-")));
+        assertTrue(arns.stream().anyMatch(a -> a.contains(":secret:flag-secret-")));
+    }
+
+    @Test
+    @Tag("security-regression")
+    void kmsDestinationKeyArnFromDestinationKeyId() {
+        ContainerRequestContext ctx = jsonBodyCtx(
+                "{\"DestinationKeyId\":\"11111111-1111-1111-1111-111111111111\","
+                        + "\"CiphertextBlob\":\"a21zOnYzOjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMDpub25jZTpjaXBoZXI=\"}");
+        String dest = builder.buildKmsDestinationKeyArn(ctx, REGION, ACCOUNT);
+        assertEquals("arn:aws:kms:us-east-1:222222222222:key/11111111-1111-1111-1111-111111111111", dest);
     }
 
     @Test

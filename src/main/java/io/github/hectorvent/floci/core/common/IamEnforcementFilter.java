@@ -304,6 +304,10 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
             evaluateSecretsManagerBatchAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
         }
+        if (isKmsReEncrypt(credentialScope, ctx)) {
+            evaluateKmsReEncryptDualAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
+            return;
+        }
         if (isEmrMultiClusterRequest(credentialScope, ctx)) {
             evaluateEmrMultiClusterAndAbortIfDenied(ctx, credentialScope, akid, region, accountId, strict);
             return;
@@ -511,10 +515,82 @@ public class IamEnforcementFilter implements ContainerRequestFilter {
         try {
             var node = EMR_BODY_MAPPER.readTree(body);
             var list = node.get("SecretIdList");
-            return list != null && list.isArray() && list.size() > 1;
+            if (list != null && list.isArray() && list.size() > 1) {
+                return true;
+            }
+            // Filters path must not fall through to secret:* — authorize each matched secret.
+            var filters = node.get("Filters");
+            return filters != null && filters.isArray() && !filters.isEmpty();
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static boolean isKmsReEncrypt(String credentialScope, ContainerRequestContext ctx) {
+        if (!"kms".equals(credentialScope)) {
+            return false;
+        }
+        String target = ctx.getHeaderString("X-Amz-Target");
+        return target != null && target.endsWith(".ReEncrypt");
+    }
+
+    /**
+     * AWS ReEncrypt requires {@code kms:ReEncryptFrom} on the source CMK (CiphertextBlob)
+     * and {@code kms:ReEncryptTo} on {@code DestinationKeyId}.
+     */
+    private void evaluateKmsReEncryptDualAndAbortIfDenied(ContainerRequestContext ctx,
+                                                          String credentialScope,
+                                                          String akid,
+                                                          String region,
+                                                          String accountId,
+                                                          boolean strict) {
+        CallerContext caller = iamService.resolveCallerContext(akid);
+        if (caller == null) {
+            LOG.infov("IAM enforcement DENY: unknown access key {0}", akid);
+            ctx.abortWith(accessDeniedResponse("kms:ReEncryptFrom", credentialScope, ctx.getMediaType()));
+            return;
+        }
+
+        String sourceResource = arnBuilder.build("kms", ctx, region, accountId);
+        if (denyUnresolvedResource(ctx, sourceResource, "kms:ReEncryptFrom", credentialScope, akid, strict)) {
+            return;
+        }
+        String destResource = arnBuilder.buildKmsDestinationKeyArn(ctx, region, accountId);
+        if (denyUnresolvedResource(ctx, destResource, "kms:ReEncryptTo", credentialScope, akid, strict)) {
+            return;
+        }
+
+        if (!authorizeKmsAction(caller, "kms:ReEncryptFrom", sourceResource, akid, accountId, region, ctx)
+                || !authorizeKmsAction(caller, "kms:ReEncryptTo", destResource, akid, accountId, region, ctx)) {
+            return;
+        }
+    }
+
+    private boolean authorizeKmsAction(CallerContext caller,
+                                       String action,
+                                       String resource,
+                                       String akid,
+                                       String accountId,
+                                       String region,
+                                       ContainerRequestContext ctx) {
+        List<String> resourcePolicies = resourcePolicyResolver.resolve("kms", resource, region);
+        Map<String, String> conditionCtx = buildConditionContext(akid, accountId, "kms", action, ctx, region);
+        Decision decision = evaluator.evaluate(caller, resourcePolicies, action, resource, conditionCtx);
+        if (decision == Decision.DENY
+                && kmsService.isGrantAuthorized(
+                        conditionCtx.get("aws:principalarn"),
+                        conditionCtx.get("aws:principalaccount"),
+                        resource,
+                        action,
+                        region)) {
+            return true;
+        }
+        if (decision == Decision.DENY) {
+            LOG.infov("IAM enforcement DENY: akid={0} action={1} resource={2}", akid, action, resource);
+            ctx.abortWith(accessDeniedResponse(action, "kms", ctx.getMediaType()));
+            return false;
+        }
+        return true;
     }
 
     private void evaluateDynamoDbRequestItemsAndAbortIfDenied(ContainerRequestContext ctx,

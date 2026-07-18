@@ -13,6 +13,7 @@ import io.github.hectorvent.floci.services.kms.model.KmsMessageType;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -1210,6 +1211,76 @@ class KmsServiceTest {
 
         assertEquals("DisabledException", ex.getErrorCode());
         assertEquals(400, ex.getHttpStatus());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void encryptRejectsDisabledKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        kmsService.disableKey(key.getKeyId(), REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.encrypt(key.getKeyId(), "hi".getBytes(StandardCharsets.UTF_8), REGION));
+        assertEquals("DisabledException", ex.getErrorCode());
+        assertEquals(400, ex.getHttpStatus());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void encryptRejectsPendingDeletionKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        kmsService.scheduleKeyDeletion(key.getKeyId(), 7, REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.encrypt(key.getKeyId(), "hi".getBytes(StandardCharsets.UTF_8), REGION));
+        assertEquals("KMSInvalidStateException", ex.getErrorCode());
+        assertEquals(400, ex.getHttpStatus());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void decryptRejectsDisabledKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        byte[] ciphertext = kmsService.encrypt(key.getKeyId(), "secret".getBytes(StandardCharsets.UTF_8), REGION);
+        kmsService.disableKey(key.getKeyId(), REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.decrypt(ciphertext, REGION));
+        assertEquals("DisabledException", ex.getErrorCode());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void decryptRejectsPendingDeletionKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        byte[] ciphertext = kmsService.encrypt(key.getKeyId(), "secret".getBytes(StandardCharsets.UTF_8), REGION);
+        kmsService.scheduleKeyDeletion(key.getKeyId(), 7, REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.decrypt(ciphertext, REGION));
+        assertEquals("KMSInvalidStateException", ex.getErrorCode());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void generateDataKeyRejectsDisabledKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        kmsService.disableKey(key.getKeyId(), REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.generateDataKey(key.getKeyId(), "AES_256", 0, REGION));
+        assertEquals("DisabledException", ex.getErrorCode());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void generateDataKeyRejectsPendingDeletionKey() {
+        KmsKey key = kmsService.createKey(null, REGION);
+        kmsService.scheduleKeyDeletion(key.getKeyId(), 7, REGION);
+
+        AwsException ex = assertThrows(AwsException.class, () ->
+                kmsService.generateDataKey(key.getKeyId(), "AES_256", 0, REGION));
+        assertEquals("KMSInvalidStateException", ex.getErrorCode());
     }
 
     @Test

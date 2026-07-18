@@ -15,6 +15,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.container.ContainerRequestContext;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -656,6 +657,76 @@ class IamEnforcementFilterTest {
         IamEnforcementFilter filter = buildFilter(
                 containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
                 "AKIALOGS", "logs");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest, never()).abortWith(any());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void kmsReEncryptDeniesWhenDestinationKeyLacksReEncryptTo() {
+        String sourceKeyId = "550e8400-e29b-41d4-a716-446655440000";
+        String destKeyId = "11111111-1111-1111-1111-111111111111";
+        String blob = java.util.Base64.getEncoder().encodeToString(
+                ("kms:v3:" + sourceKeyId + ":bm9uY2U:Y2lwaGVy").getBytes(StandardCharsets.UTF_8));
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper());
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"CiphertextBlob":"%s","DestinationKeyId":"%s"}""".formatted(blob, destKeyId));
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("TrentService.ReEncrypt");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("kms", containerRequest)).thenReturn("kms:ReEncrypt");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIAKMSRE"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":"kms:ReEncryptFrom",
+                           "Resource":"arn:aws:kms:us-east-1:222222222222:key/%s"},
+                          {"Effect":"Allow","Action":"kms:ReEncryptTo",
+                           "Resource":"arn:aws:kms:us-east-1:222222222222:key/%s"}
+                        ]}""".formatted(sourceKeyId, sourceKeyId))));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("kms"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIAKMSRE", "kms");
+
+        filter.filter(containerRequest);
+
+        verify(containerRequest).abortWith(any());
+    }
+
+    @Test
+    @Tag("security-regression")
+    void kmsReEncryptAllowsWhenBothFromAndToAreGranted() {
+        String sourceKeyId = "550e8400-e29b-41d4-a716-446655440000";
+        String destKeyId = "11111111-1111-1111-1111-111111111111";
+        String blob = java.util.Base64.getEncoder().encodeToString(
+                ("kms:v3:" + sourceKeyId + ":bm9uY2U:Y2lwaGVy").getBytes(StandardCharsets.UTF_8));
+        IamPolicyEvaluator evaluator = new IamPolicyEvaluator(new ObjectMapper());
+        ResourceArnBuilder arnBuilder = new ResourceArnBuilder(new ObjectMapper());
+        ContainerRequestContext containerRequest = jsonBodyRequestCtx("""
+                {"CiphertextBlob":"%s","DestinationKeyId":"%s"}""".formatted(blob, destKeyId));
+        when(containerRequest.getHeaderString("X-Amz-Target")).thenReturn("TrentService.ReEncrypt");
+
+        IamActionRegistry actionRegistry = mock(IamActionRegistry.class);
+        when(actionRegistry.resolve("kms", containerRequest)).thenReturn("kms:ReEncrypt");
+        IamService iamService = mock(IamService.class);
+        when(iamService.resolveCallerContext("AKIAKMSRE"))
+                .thenReturn(CallerContext.of(List.of("""
+                        {"Version":"2012-10-17","Statement":[
+                          {"Effect":"Allow","Action":["kms:ReEncryptFrom","kms:ReEncryptTo"],
+                           "Resource":"arn:aws:kms:us-east-1:222222222222:key/*"}
+                        ]}""")));
+        ResourcePolicyResolver resourcePolicyResolver = mock(ResourcePolicyResolver.class);
+        when(resourcePolicyResolver.resolve(eq("kms"), anyString(), eq("us-east-1"))).thenReturn(List.of());
+
+        IamEnforcementFilter filter = buildFilter(
+                containerRequest, actionRegistry, arnBuilder, evaluator, iamService, resourcePolicyResolver,
+                "AKIAKMSRE", "kms");
 
         filter.filter(containerRequest);
 

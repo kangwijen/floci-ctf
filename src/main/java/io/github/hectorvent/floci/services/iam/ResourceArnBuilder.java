@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.lambda.LambdaFunctionStore;
 import io.github.hectorvent.floci.services.lambda.model.LambdaAlias;
 import io.github.hectorvent.floci.services.lambda.model.LambdaFunction;
 import io.github.hectorvent.floci.services.secretsmanager.SecretsManagerService;
+import io.github.hectorvent.floci.services.secretsmanager.model.Secret;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -1215,22 +1216,73 @@ public class ResourceArnBuilder {
     }
 
     /**
-     * Builds secret ARNs for every entry in {@code SecretIdList} (BatchGetSecretValue).
+     * Builds secret ARNs for every entry in {@code SecretIdList}, or every secret matched by
+     * {@code Filters}, for {@code BatchGetSecretValue} multi-resource IAM evaluation.
      */
     public List<String> buildAllSecretsManagerBatchResources(ContainerRequestContext ctx,
                                                             String region, String accountId) {
         JsonNode node = readJsonBodyNode(ctx);
         JsonNode list = node.get("SecretIdList");
-        if (list == null || !list.isArray() || list.isEmpty()) {
-            return List.of();
-        }
-        List<String> arns = new ArrayList<>(list.size());
-        for (JsonNode entry : list) {
-            if (entry != null && entry.isTextual() && !entry.asText().isBlank()) {
-                arns.add(secretsManagerArnFromSecretId(entry.asText(), region, accountId));
+        if (list != null && list.isArray() && !list.isEmpty()) {
+            List<String> arns = new ArrayList<>(list.size());
+            for (JsonNode entry : list) {
+                if (entry != null && entry.isTextual() && !entry.asText().isBlank()) {
+                    arns.add(secretsManagerArnFromSecretId(entry.asText(), region, accountId));
+                }
             }
+            return Collections.unmodifiableList(arns);
         }
-        return Collections.unmodifiableList(arns);
+        JsonNode filtersNode = node.get("Filters");
+        if (filtersNode != null && filtersNode.isArray() && !filtersNode.isEmpty()
+                && secretsManagerService != null) {
+            List<SecretsManagerService.Filter> filters = parseSecretsManagerFilters(filtersNode);
+            List<Secret> matched = secretsManagerService.listSecrets(region, filters);
+            LinkedHashSet<String> arns = new LinkedHashSet<>();
+            for (Secret secret : matched) {
+                if (secret.getArn() != null && !secret.getArn().isBlank()) {
+                    arns.add(secret.getArn());
+                } else if (secret.getName() != null && !secret.getName().isBlank()) {
+                    arns.add(secretsManagerArnFromSecretId(secret.getName(), region, accountId));
+                }
+            }
+            return List.copyOf(arns);
+        }
+        return List.of();
+    }
+
+    private static List<SecretsManagerService.Filter> parseSecretsManagerFilters(JsonNode filtersNode) {
+        List<SecretsManagerService.Filter> filters = new ArrayList<>();
+        for (JsonNode filterNode : filtersNode) {
+            if (filterNode == null || !filterNode.isObject()) {
+                continue;
+            }
+            String key = filterNode.path("Key").asText(null);
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            List<String> values = new ArrayList<>();
+            JsonNode valuesNode = filterNode.get("Values");
+            if (valuesNode != null && valuesNode.isArray()) {
+                for (JsonNode value : valuesNode) {
+                    if (value != null && value.isTextual() && !value.asText().isBlank()) {
+                        values.add(value.asText());
+                    }
+                }
+            }
+            filters.add(new SecretsManagerService.Filter(key, values));
+        }
+        return filters;
+    }
+
+    /**
+     * Destination CMK ARN for {@code kms:ReEncryptTo} (ReEncrypt {@code DestinationKeyId}).
+     */
+    public String buildKmsDestinationKeyArn(ContainerRequestContext ctx, String region, String accountId) {
+        String destKeyId = readJsonStringField(ctx, "DestinationKeyId");
+        if (destKeyId == null || destKeyId.isBlank()) {
+            return AwsArnUtils.Arn.of("kms", region, accountId, "key/*").toString();
+        }
+        return kmsKeyArn(destKeyId, region, accountId);
     }
 
     /**
