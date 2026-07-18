@@ -61,7 +61,9 @@ Regression: `SnsTopicNoDefaultPolicyIntegrationTest` (`getTopicAttributesOmitsDe
 
 A topic policy principal `arn:aws:iam::ACCOUNT:root` does **not** authorize every IAM user in the account. Participants still need an identity policy Allow on `sns:Publish` (or another principal explicitly named in the topic policy). This matches AWS: `:root` in a resource policy is not a wildcard for all IAM users.
 
-Regression: `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`.
+Regression: `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`. A topic policy that
+names only a foreign-account Principal similarly does not authorize a default-account IAM user
+(`SnsForeignPrincipalDenyIntegrationTest`).
 
 ### CloudTrail audit (HTTP)
 
@@ -103,7 +105,7 @@ aws sns set-topic-attributes --topic-arn "$TOPIC_ARN" --attribute-name Policy --
 aws sns subscribe --topic-arn "$TOPIC_ARN" --protocol sqs --notification-endpoint "$QUEUE_URL"
 ```
 
-**Regression tests:** `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SnsSubscribeReceiveIamIntegrationTest` (including `fanOutWithExplicitTopicAndQueueResourcePolicies` for operator topic + queue policies, participant `sns:Subscribe`, publish, and queue receive).
+**Regression tests:** `SnsTopicNoDefaultPolicyIntegrationTest`, `SnsTopicRootPrincipalDoesNotAllowIamUserIntegrationTest`, `SnsForeignPrincipalDenyIntegrationTest`, `SnsSubscribeReceiveIamIntegrationTest` (including `fanOutWithExplicitTopicAndQueueResourcePolicies` for operator topic + queue policies, participant `sns:Subscribe`, publish, and queue receive).
 
 ## Examples
 
