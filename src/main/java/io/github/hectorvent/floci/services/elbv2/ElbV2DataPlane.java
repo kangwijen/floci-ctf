@@ -320,9 +320,7 @@ public class ElbV2DataPlane {
         TargetDescription target = candidates.get(idx);
         int targetPort = ElbV2HealthChecker.effectivePort(target, tg);
         String host = ElbV2TargetResolver.resolveHost(ec2Service, tg, target);
-        if ("ip".equalsIgnoreCase(tg.getTargetType())
-                && !ElbV2TargetResolver.isRegisteredInstance(ec2Service, tg, target.getId())
-                && outboundUrlGuard != null) {
+        if (shouldGuardTargetEgress(tg, target.getId()) && outboundUrlGuard != null) {
             try {
                 outboundUrlGuard.validateHttpUrl("http://" + targetHost(host));
             } catch (IllegalArgumentException | io.github.hectorvent.floci.core.common.AwsException e) {
@@ -331,6 +329,22 @@ public class ElbV2DataPlane {
             }
         }
         proxyRequest(req, host, targetPort);
+    }
+
+    /**
+     * IP and instance targets that are not a known EC2 instance must pass
+     * {@link OutboundUrlGuard} before {@link #proxyRequest} (SSRF / metadata pin).
+     * Registered instance bridge IPs stay internal and are not egress-checked.
+     */
+    boolean shouldGuardTargetEgress(TargetGroup tg, String targetId) {
+        if (tg == null) {
+            return false;
+        }
+        String type = tg.getTargetType();
+        if (!"ip".equalsIgnoreCase(type) && !"instance".equalsIgnoreCase(type)) {
+            return false;
+        }
+        return !ElbV2TargetResolver.isRegisteredInstance(ec2Service, tg, targetId);
     }
 
     private void invokeLambdaTarget(io.vertx.core.http.HttpServerRequest req, String functionArn, String region) {

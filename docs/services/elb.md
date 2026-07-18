@@ -171,4 +171,4 @@ Listener sockets bind on the Floci host. Publish any listener ports you need fro
 
 ## CTF fork {#ctf-fork}
 
-When `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true` (Compose CTF default; YAML default is `false`), registered **IP** target types that resolve to non-public addresses are rejected unless allowlisted via `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` or overridden with `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES=true`. Instance and Lambda target IDs are not treated as outbound HTTP hosts.
+When `FLOCI_CTF_BLOCK_PRIVATE_OUTBOUND_URLS=true` (Compose CTF default; YAML default is `false`), registered **IP** and unregistered **instance** target IDs that resolve to non-public addresses are rejected unless allowlisted via `FLOCI_CTF_OUTBOUND_URL_HOST_ALLOWLIST` or overridden with `FLOCI_CTF_OUTBOUND_ALLOW_PRIVATE_ADDRESSES=true`. Registered EC2 instance bridge IPs stay internal and are not egress-checked. Lambda target IDs are not treated as outbound HTTP hosts. Regression: `ElbV2InstanceTargetEgressDeniedTest`.
