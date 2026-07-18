@@ -107,6 +107,6 @@ When IAM enforcement is enabled:
 |---|---|
 | Bus resource policies | `PutPermission` / bus `Policy` documents are loaded by `ResourcePolicyResolver` for `events` and merge with identity policy (explicit Deny wins). |
 | `PutEvents` | Each distinct `EventBusName` in `Entries[]` becomes a resource ARN. Multi-bus batches evaluate every bus. |
-| `StartReplay` | Destination must be the same bus (cross-bus replay denied). |
+| `StartReplay` | Destination must be the same bus (cross-bus replay denied). Replay also authorizes `events.amazonaws.com` `events:PutEvents` on the destination bus resource policy via `InProcessTargetAuthorizer.authorizeEventBridgeReplay`. |
 
-Regression: `ResourcePolicyResolverTest`, `ResourceArnBuilderTest`, `EventBridgeReplayIntegrationTest`, `EventBridgePermissionIntegrationTest`.
+Regression: `ResourcePolicyResolverTest`, `ResourceArnBuilderTest`, `EventBridgeReplayIntegrationTest`, `EventBridgePermissionIntegrationTest`, `InProcessTargetAuthorizerTest.eventBridgeReplayAuthorizesPutEventsOnDestinationBus`.
