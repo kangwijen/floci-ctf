@@ -5,6 +5,7 @@
 #
 # Effect:
 #   - Host docker.sock is mounted only into docker-socket-proxy (not into floci).
+#   - floci volumes use Compose !override so the base sock bind is replaced.
 #   - Floci talks to the daemon via tcp://docker-socket-proxy:2375.
 #   - Allowlist covers create / start / stop / inspect (plus IMAGES + NETWORKS
 #     so Floci can pull and attach FLOCI_SERVICES_DOCKER_NETWORK).
@@ -49,8 +50,11 @@ services:
   floci:
     depends_on:
       - docker-socket-proxy
-    volumes:
-      # Replace default sock mount: data only. Docker API via proxy TCP.
+    # Compose merges volumes by target path. Without !override, the base
+    # /var/run/docker.sock bind from docker-compose.yml would remain.
+    # See: https://docs.docker.com/reference/compose-file/merge/#reset-value
+    volumes: !override
+      # Data only. Docker API via proxy TCP (no host sock in floci).
       - ./data:/app/data
     environment:
       FLOCI_DOCKER_DOCKER_HOST: tcp://docker-socket-proxy:2375

@@ -87,7 +87,7 @@ docker compose -f docker-compose.yml -f docker-compose.socket-proxy.yml up
 | Piece | Behavior |
 |-------|----------|
 | `docker-socket-proxy` | Mounts `/var/run/docker.sock`; `CONTAINERS` + `POST` + `ALLOW_START` + `ALLOW_STOP` (+ `IMAGES` / `NETWORKS` for Floci pull/attach). No host port publish. |
-| `floci` override | Sets `FLOCI_DOCKER_DOCKER_HOST=tcp://docker-socket-proxy:2375` and drops the direct sock volume. |
+| `floci` override | Sets `FLOCI_DOCKER_DOCKER_HOST=tcp://docker-socket-proxy:2375` and replaces volumes with `volumes: !override` (data only) so the base RW sock mount is not kept by Compose merge. |
 | Still denied by default | `BUILD`, `AUTH`, `SECRETS`, `SWARM`, `VOLUMES`, `EXEC`, `SYSTEM`, and other proxy sections left at `0`. |
 
 Regression: `DockerSocketProxyComposeTest` (`@Tag("security-regression")`).
