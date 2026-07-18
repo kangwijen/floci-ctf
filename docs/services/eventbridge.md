@@ -107,6 +107,7 @@ When IAM enforcement is enabled:
 |---|---|
 | Bus resource policies | `PutPermission` / bus `Policy` documents are loaded by `ResourcePolicyResolver` for `events` and merge with identity policy (explicit Deny wins). |
 | `PutEvents` | Each distinct `EventBusName` in `Entries[]` becomes a resource ARN. Multi-bus batches evaluate every bus. |
+| Rule target delivery | With rule `RoleArn`, identity policy on the role. Without `RoleArn`, `events.amazonaws.com` destination resource policy, including Batch `SubmitJob` and Firehose `PutRecord`. |
 | `StartReplay` | Destination must be the same bus (cross-bus replay denied). |
 
-Regression: `ResourcePolicyResolverTest`, `ResourceArnBuilderTest`, `EventBridgeReplayIntegrationTest`, `EventBridgePermissionIntegrationTest`.
+Regression: `ResourcePolicyResolverTest`, `ResourceArnBuilderTest`, `EventBridgeReplayIntegrationTest`, `EventBridgePermissionIntegrationTest`, `InProcessTargetAuthorizerTest` (Batch/Firehose no-role service principal).

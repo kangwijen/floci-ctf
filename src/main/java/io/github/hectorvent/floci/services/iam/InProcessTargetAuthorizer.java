@@ -521,6 +521,8 @@ public class InProcessTargetAuthorizer {
             iamAuthorizer.authorizeWithResource(roleArn, "firehose", "PutRecord", targetArn, region);
         } else if (targetArn.contains(":batch:") && targetArn.contains(":job-queue/")) {
             iamAuthorizer.authorizeWithResource(roleArn, "batch", "SubmitJob", targetArn, region);
+        } else if (targetArn.contains(":ecs:")) {
+            iamAuthorizer.authorizeWithResource(roleArn, "ecs", "RunTask", targetArn, region);
         } else {
             denyUnmappedTarget(roleArn, targetArn);
         }
@@ -548,6 +550,12 @@ public class InProcessTargetAuthorizer {
         } else if (targetArn.contains(":events:") && targetArn.contains(":event-bus/")) {
             iamAuthorizer.authorizeServicePrincipal(
                     servicePrincipal, "events", "PutEvents", targetArn, region);
+        } else if (targetArn.contains(":firehose:")) {
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "firehose", "PutRecord", targetArn, region);
+        } else if (targetArn.contains(":batch:") && targetArn.contains(":job-queue/")) {
+            iamAuthorizer.authorizeServicePrincipal(
+                    servicePrincipal, "batch", "SubmitJob", targetArn, region);
         } else {
             denyUnmappedTarget(servicePrincipal, targetArn);
         }

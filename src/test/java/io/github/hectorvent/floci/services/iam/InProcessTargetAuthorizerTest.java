@@ -40,6 +40,10 @@ class InProcessTargetAuthorizerTest {
             "arn:aws:states:" + REGION + ":" + ACCOUNT + ":stateMachine:example-sm";
     private static final String FIREHOSE_ARN =
             "arn:aws:firehose:" + REGION + ":" + ACCOUNT + ":deliverystream/example-stream";
+    private static final String BATCH_JOB_QUEUE_ARN =
+            "arn:aws:batch:" + REGION + ":" + ACCOUNT + ":job-queue/example-queue";
+    private static final String ECS_CLUSTER_ARN =
+            "arn:aws:ecs:" + REGION + ":" + ACCOUNT + ":cluster/example-cluster";
     private static final String BUCKET_ARN = "arn:aws:s3:::delivery-bucket";
 
     private InProcessIamAuthorizer iamAuthorizer;
@@ -198,6 +202,15 @@ class InProcessTargetAuthorizerTest {
     }
 
     @Test
+    @Tag("security-regression")
+    void schedulerTargetMapsEcsClusterToRunTask() {
+        authorizer.authorizeSchedulerTarget(ROLE_ARN, ECS_CLUSTER_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeWithResource(
+                eq(ROLE_ARN), eq("ecs"), eq("RunTask"), eq(ECS_CLUSTER_ARN), eq(REGION));
+    }
+
+    @Test
     void eventBridgeTargetWithRoleMapsLambdaToInvokeFunction() {
         authorizer.authorizeEventBridgeTarget(ROLE_ARN, LAMBDA_ARN, REGION);
 
@@ -226,6 +239,26 @@ class InProcessTargetAuthorizerTest {
         verify(iamAuthorizer).authorizeServicePrincipal(
                 eq(InProcessTargetAuthorizer.EVENTS_SERVICE), eq("sqs"), eq("SendMessage"),
                 eq(SQS_ARN), eq(REGION));
+    }
+
+    @Test
+    @Tag("security-regression")
+    void eventBridgeTargetWithoutRoleUsesServicePrincipalForBatch() {
+        authorizer.authorizeEventBridgeTarget(null, BATCH_JOB_QUEUE_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.EVENTS_SERVICE), eq("batch"), eq("SubmitJob"),
+                eq(BATCH_JOB_QUEUE_ARN), eq(REGION));
+    }
+
+    @Test
+    @Tag("security-regression")
+    void eventBridgeTargetWithoutRoleUsesServicePrincipalForFirehose() {
+        authorizer.authorizeEventBridgeTarget(null, FIREHOSE_ARN, REGION);
+
+        verify(iamAuthorizer).authorizeServicePrincipal(
+                eq(InProcessTargetAuthorizer.EVENTS_SERVICE), eq("firehose"), eq("PutRecord"),
+                eq(FIREHOSE_ARN), eq(REGION));
     }
 
     @Test
@@ -375,6 +408,7 @@ class InProcessTargetAuthorizerTest {
     }
 
     @Test
+    @Tag("security-regression")
     void cognitoLambdaInvokeUsesServicePrincipal() {
         authorizer.authorizeCognitoLambdaInvoke(LAMBDA_ARN, REGION);
 

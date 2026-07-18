@@ -35,7 +35,7 @@ background dispatcher fires schedule targets on time. Supported expressions:
 window are skipped. The dispatcher ticks every
 `floci.services.scheduler.tick-interval-seconds` (default `10`).
 
-Supported target types: SQS, Lambda, SNS, EventBridge `PutEvents`. Universal `sns:publish` targets forward `MessageAttributes` with the message, subject, FIFO message group ID, and deduplication ID.
+Supported target types: SQS, Lambda, SNS, ECS `RunTask`, EventBridge `PutEvents`. Universal `sns:publish` targets forward `MessageAttributes` with the message, subject, FIFO message group ID, and deduplication ID.
 
 ## Configuration
 
@@ -145,6 +145,7 @@ When IAM enforcement is enabled:
 | Topic | Behavior |
 |---|---|
 | Create schedule with `Target.RoleArn` | Caller needs `iam:PassRole` on that role. |
+| Target delivery | Schedule role identity is evaluated via `InProcessTargetAuthorizer` (`authorizeSchedulerTarget`), including ECS cluster ARNs as `ecs:RunTask`. |
 | Universal targets | Delivery authorizes the concrete target ARN (not a service-wide wildcard) via `InProcessTargetAuthorizer`. |
 
-Regression: `ScheduleInvokerTest`.
+Regression: `ScheduleInvokerTest`, `InProcessTargetAuthorizerTest` (`schedulerTargetMapsEcsClusterToRunTask`).
