@@ -2181,7 +2181,13 @@ public class CloudFormationResourceProvisioner {
         req.put("computeEnvironmentName", name);
         putResolvedText(req, "type", props, "Type", engine);
         putResolvedText(req, "state", props, "State", engine);
-        putResolvedText(req, "serviceRole", props, "ServiceRole", engine);
+        String serviceRole = resolveOptional(props, "ServiceRole", engine);
+        if (iamAuthorizer != null && serviceRole != null && !serviceRole.isBlank()) {
+            iamAuthorizer.authorizePassRole(serviceRole, "batch.amazonaws.com", region);
+        }
+        if (serviceRole != null) {
+            req.put("serviceRole", serviceRole);
+        }
         putResolvedObject(req, "computeResources", props, "ComputeResources", engine);
         putTagsObject(req, props, engine);
 
@@ -2234,6 +2240,7 @@ public class CloudFormationResourceProvisioner {
             req.set("containerProperties", batchContainerProperties(
                     engine.resolveNode(props.get("ContainerProperties")), engine));
         }
+        authorizeBatchContainerRoles(req.path("containerProperties"), region);
         putStringMapFromObject(req, "parameters", props, "Parameters", engine);
         if (props != null && props.has("RetryStrategy")) {
             req.set("retryStrategy", batchRetryStrategy(engine.resolveNode(props.get("RetryStrategy"))));
@@ -2272,6 +2279,28 @@ public class CloudFormationResourceProvisioner {
             order.put("computeEnvironment", item.path("ComputeEnvironment").asText(null));
         }
         return out;
+    }
+
+    private void authorizeBatchContainerRoles(JsonNode containerProperties, String region) {
+        if (iamAuthorizer == null || containerProperties == null || !containerProperties.isObject()) {
+            return;
+        }
+        String jobRoleArn = textOrNull(containerProperties.path("jobRoleArn"));
+        String executionRoleArn = textOrNull(containerProperties.path("executionRoleArn"));
+        if (jobRoleArn != null) {
+            iamAuthorizer.authorizePassRole(jobRoleArn, "batch.amazonaws.com", region);
+        }
+        if (executionRoleArn != null) {
+            iamAuthorizer.authorizePassRole(executionRoleArn, "ecs-tasks.amazonaws.com", region);
+        }
+    }
+
+    private static String textOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String text = node.asText(null);
+        return text == null || text.isBlank() ? null : text;
     }
 
     private ObjectNode batchContainerProperties(JsonNode resolved, CloudFormationTemplateEngine engine) {

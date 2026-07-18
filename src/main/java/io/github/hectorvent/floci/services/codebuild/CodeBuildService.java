@@ -14,6 +14,7 @@ import io.github.hectorvent.floci.services.codebuild.model.ProjectEnvironment;
 import io.github.hectorvent.floci.services.codebuild.model.ProjectSource;
 import io.github.hectorvent.floci.services.codebuild.model.ReportGroup;
 import io.github.hectorvent.floci.services.codebuild.model.SourceCredential;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -45,12 +46,20 @@ public class CodeBuildService {
     private final CodeBuildRunner runner;
     private final EmulatorConfig config;
     private final StorageFactory storageFactory;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
-    public CodeBuildService(CodeBuildRunner runner, EmulatorConfig config, StorageFactory storageFactory) {
+    public CodeBuildService(CodeBuildRunner runner, EmulatorConfig config, StorageFactory storageFactory,
+                            InProcessIamAuthorizer iamAuthorizer) {
         this.runner = runner;
         this.config = config;
         this.storageFactory = storageFactory;
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    public CodeBuildService(CodeBuildRunner runner, EmulatorConfig config, StorageFactory storageFactory) {
+        this(runner, config, storageFactory, null);
     }
 
     @PostConstruct
@@ -138,6 +147,9 @@ public class CodeBuildService {
         if (serviceRole == null || serviceRole.isBlank()) {
             throw new AwsException("InvalidInputException", "serviceRole is required", 400);
         }
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(serviceRole, "codebuild.amazonaws.com", region);
+        }
         if (artifacts == null || artifacts.getType() == null) {
             throw new AwsException("InvalidInputException", "artifacts.type is required", 400);
         }
@@ -199,6 +211,9 @@ public class CodeBuildService {
         if (serviceRole != null) {
             if (serviceRole.isBlank()) {
                 throw new AwsException("InvalidInputException", "serviceRole is required", 400);
+            }
+            if (iamAuthorizer != null) {
+                iamAuthorizer.authorizePassRole(serviceRole, "codebuild.amazonaws.com", region);
             }
             project.setServiceRole(serviceRole);
         }

@@ -11,6 +11,7 @@ import io.github.hectorvent.floci.services.emr.model.EmrInstanceFleet;
 import io.github.hectorvent.floci.services.emr.model.EmrInstanceGroup;
 import io.github.hectorvent.floci.services.emr.model.EmrStep;
 import io.github.hectorvent.floci.services.emr.model.SecurityConfiguration;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -36,15 +37,23 @@ public class EmrService {
     private final StorageBackend<String, SecurityConfiguration> secConfigStore;
     private final RegionResolver regionResolver;
     private final String defaultReleaseLabel;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
-    public EmrService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
+    public EmrService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver,
+                      InProcessIamAuthorizer iamAuthorizer) {
         this.clusterStore = storageFactory.create("emr", "emr-clusters.json",
                 new TypeReference<Map<String, EmrCluster>>() {});
         this.secConfigStore = storageFactory.create("emr", "emr-security-configs.json",
                 new TypeReference<Map<String, SecurityConfiguration>>() {});
         this.regionResolver = regionResolver;
         this.defaultReleaseLabel = config.services().emr().defaultReleaseLabel();
+        this.iamAuthorizer = iamAuthorizer;
+    }
+
+    /** Test constructor without PassRole gate. */
+    public EmrService(StorageFactory storageFactory, EmulatorConfig config, RegionResolver regionResolver) {
+        this(storageFactory, config, regionResolver, null);
     }
 
     // ──────────────────────────── Cluster lifecycle ────────────────────────────
@@ -57,6 +66,7 @@ public class EmrService {
                     "1 validation error detected: Value null at 'name' failed to satisfy constraint: "
                             + "Member must not be null", 400);
         }
+        authorizeStepExecutionRoles(cluster.getSteps(), region);
         String id = "j-" + randomId(13);
         cluster.setId(id);
         cluster.setRegion(region);
@@ -168,6 +178,7 @@ public class EmrService {
     public List<String> addJobFlowSteps(String clusterId, List<EmrStep> steps) {
         EmrCluster cluster = clusterStore.get(clusterId).orElseThrow(() -> new AwsException(
                 "InvalidRequestException", "Cluster id '" + clusterId + "' is not valid.", 400));
+        authorizeStepExecutionRoles(steps, cluster.getRegion());
         List<String> ids = new ArrayList<>();
         for (EmrStep step : steps) {
             initStep(step);
@@ -318,6 +329,18 @@ public class EmrService {
     }
 
     // ──────────────────────────── Helpers ────────────────────────────
+
+    private void authorizeStepExecutionRoles(List<EmrStep> steps, String region) {
+        if (iamAuthorizer == null || steps == null) {
+            return;
+        }
+        for (EmrStep step : steps) {
+            if (step != null) {
+                iamAuthorizer.authorizePassRole(step.getExecutionRoleArn(),
+                        "elasticmapreduce.amazonaws.com", region);
+            }
+        }
+    }
 
     private EmrCluster requireCluster(String id) {
         if (id == null) {

@@ -264,7 +264,8 @@ When IAM enforcement is enabled:
 |---|---|
 | `TemplateURL` | Fetching a template from S3 evaluates the caller S3 IAM (GetObject on the template object). |
 | Resource provisioner | Privileged IAM create APIs and AttachRolePolicy gate through in-process IAM as the stack role / caller. Residual: most non-IAM types in the switch remain ungated. |
+| PassRole on RoleArn arms | `AWS::Events::Rule` inherits EventBridge `putRule` PassRole. `AWS::EKS::Cluster` / nodegroup inherit `EksService` PassRole. `AWS::Batch::ComputeEnvironment` `ServiceRole` and job-definition container `JobRoleArn` / `ExecutionRoleArn` call `authorizePassRole` in the provisioner. |
 | IAM role / policy attach | `ManagedPolicyArns` on `AWS::IAM::Role` and `Roles` on `AWS::IAM::Policy` require `iam:AttachRolePolicy` before attach. Condition context includes `aws:CalledVia=cloudformation.amazonaws.com`. |
 | Registry split | Non-IAM types such as `AWS::SSM::Parameter` provision via `SsmCfnProvisioner` on the resource registry, separate from IAM create/attach arms. |
 
-Regression: `CloudFormationResourceProvisionerIamGateTest`, `SsmCfnProvisionerTest`, `CfnIamConditionContextTest`, `CloudFormationIntegrationTest`.
+Regression: `CloudFormationResourceProvisionerIamGateTest`, `CloudFormationBatchPassRoleTest`, `SsmCfnProvisionerTest`, `CfnIamConditionContextTest`, `CloudFormationIntegrationTest`.

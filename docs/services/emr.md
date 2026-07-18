@@ -60,3 +60,7 @@ aws emr add-steps --cluster-id "$CLUSTER_ID" \
 # Terminate
 aws emr terminate-clusters --cluster-ids "$CLUSTER_ID"
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, step `ExecutionRoleArn` on `RunJobFlow` / `AddJobFlowSteps` requires `iam:PassRole` (`elasticmapreduce.amazonaws.com`). Regression: `EmrExecutionRolePassRoleTest`.

@@ -17,6 +17,7 @@ import io.github.hectorvent.floci.services.eventbridge.model.ReplayState;
 import io.github.hectorvent.floci.services.eventbridge.model.Rule;
 import io.github.hectorvent.floci.services.eventbridge.model.RuleState;
 import io.github.hectorvent.floci.services.eventbridge.model.Target;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.resourcegroupstagging.ResourceGroupsTaggingService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -54,6 +55,7 @@ public class EventBridgeService {
     private final ReplayDispatcher replayDispatcher;
     private final InProcessTargetAuthorizer targetAuthorizer;
     private final ResourceGroupsTaggingService resourceGroupsTaggingService;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
     public EventBridgeService(StorageFactory storageFactory,
@@ -64,7 +66,8 @@ public class EventBridgeService {
                               EventBridgeInvoker invoker,
                               ReplayDispatcher replayDispatcher,
                               InProcessTargetAuthorizer targetAuthorizer,
-                              ResourceGroupsTaggingService resourceGroupsTaggingService) {
+                              ResourceGroupsTaggingService resourceGroupsTaggingService,
+                              InProcessIamAuthorizer iamAuthorizer) {
         this(
                 storageFactory.create("eventbridge", "eventbridge-buses.json",
                         new TypeReference<Map<String, EventBus>>() {}),
@@ -79,7 +82,7 @@ public class EventBridgeService {
                 storageFactory.create("eventbridge", "eventbridge-replays.json",
                         new TypeReference<Map<String, Replay>>() {}),
                 regionResolver, objectMapper, ruleScheduler, invoker, replayDispatcher,
-                targetAuthorizer, resourceGroupsTaggingService
+                targetAuthorizer, resourceGroupsTaggingService, iamAuthorizer
         );
     }
 
@@ -96,6 +99,25 @@ public class EventBridgeService {
                        ReplayDispatcher replayDispatcher,
                        InProcessTargetAuthorizer targetAuthorizer,
                        ResourceGroupsTaggingService resourceGroupsTaggingService) {
+        this(busStore, ruleStore, targetStore, archiveStore, archivedEventStore, replayStore,
+                regionResolver, objectMapper, ruleScheduler, invoker, replayDispatcher,
+                targetAuthorizer, resourceGroupsTaggingService, null);
+    }
+
+    EventBridgeService(StorageBackend<String, EventBus> busStore,
+                       StorageBackend<String, Rule> ruleStore,
+                       StorageBackend<String, List<Target>> targetStore,
+                       StorageBackend<String, Archive> archiveStore,
+                       StorageBackend<String, List<ArchivedEvent>> archivedEventStore,
+                       StorageBackend<String, Replay> replayStore,
+                       RegionResolver regionResolver,
+                       ObjectMapper objectMapper,
+                       RuleScheduler ruleScheduler,
+                       EventBridgeInvoker invoker,
+                       ReplayDispatcher replayDispatcher,
+                       InProcessTargetAuthorizer targetAuthorizer,
+                       ResourceGroupsTaggingService resourceGroupsTaggingService,
+                       InProcessIamAuthorizer iamAuthorizer) {
         this.busStore = busStore;
         this.ruleStore = ruleStore;
         this.targetStore = targetStore;
@@ -109,6 +131,7 @@ public class EventBridgeService {
         this.replayDispatcher = replayDispatcher;
         this.targetAuthorizer = targetAuthorizer;
         this.resourceGroupsTaggingService = resourceGroupsTaggingService;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     @PostConstruct
@@ -263,6 +286,10 @@ public class EventBridgeService {
                         String roleArn, Map<String, String> tags, String region) {
         String effectiveBus = resolvedBusName(busName);
         ensureBusExists(effectiveBus, region);
+
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(roleArn, "events.amazonaws.com", region);
+        }
 
         String key = ruleKey(region, effectiveBus, name);
         Rule rule = ruleStore.get(key).orElse(new Rule());

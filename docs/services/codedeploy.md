@@ -63,9 +63,10 @@ Floci implements the CodeDeploy API — stored-state management for applications
 | Surface | Behavior |
 |---|---|
 | Lifecycle hook IAM | `InProcessTargetAuthorizer.authorizeCodeDeployLambdaInvoke` runs before hook invoke. `AccessDenied` / `AccessDeniedException` marks the lifecycle event `Failed` and fails the deployment (does not complete as `Succeeded`). |
+| Deployment group `serviceRoleArn` | Create/update requires `iam:PassRole` (`codedeploy.amazonaws.com`). |
 | Missing hook function | Non-AccessDenied invoke failures may still complete as `Succeeded` for lab convenience when the hook Lambda is absent. |
 
-Regression: `CodeDeployHookDenyFailsDeploymentTest`, `CodeDeployIamScopedIntegrationTest`.
+Regression: `CodeDeployHookDenyFailsDeploymentTest`, `CodeDeployIamScopedIntegrationTest`, `CodeDeployServiceRolePassRoleTest`.
 
 ### Tagging
 

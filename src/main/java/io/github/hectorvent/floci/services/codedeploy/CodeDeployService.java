@@ -19,6 +19,7 @@ import io.github.hectorvent.floci.services.ecs.EcsService;
 import io.github.hectorvent.floci.services.ecs.model.TaskSet;
 import io.github.hectorvent.floci.services.elbv2.ElbV2Service;
 import io.github.hectorvent.floci.services.elbv2.model.TargetGroup;
+import io.github.hectorvent.floci.services.iam.InProcessIamAuthorizer;
 import io.github.hectorvent.floci.services.iam.InProcessTargetAuthorizer;
 import io.github.hectorvent.floci.services.lambda.LambdaService;
 import io.github.hectorvent.floci.services.ssm.SsmCommandService;
@@ -56,12 +57,14 @@ public class CodeDeployService {
     private final RegionResolver regionResolver;
     private final StorageFactory storageFactory;
     private final InProcessTargetAuthorizer targetAuthorizer;
+    private final InProcessIamAuthorizer iamAuthorizer;
 
     @Inject
     public CodeDeployService(LambdaService lambdaService, EcsService ecsService,
                              ElbV2Service elbV2Service, SsmCommandService ssmCommandService,
                              Ec2Service ec2Service, ObjectMapper mapper, RegionResolver regionResolver,
-                             StorageFactory storageFactory, InProcessTargetAuthorizer targetAuthorizer) {
+                             StorageFactory storageFactory, InProcessTargetAuthorizer targetAuthorizer,
+                             InProcessIamAuthorizer iamAuthorizer) {
         this.lambdaService = lambdaService;
         this.ecsService = ecsService;
         this.elbV2Service = elbV2Service;
@@ -72,6 +75,7 @@ public class CodeDeployService {
         this.regionResolver = regionResolver;
         this.storageFactory = storageFactory;
         this.targetAuthorizer = targetAuthorizer;
+        this.iamAuthorizer = iamAuthorizer;
     }
 
     CodeDeployService(LambdaService lambdaService, EcsService ecsService,
@@ -79,7 +83,15 @@ public class CodeDeployService {
                       Ec2Service ec2Service, ObjectMapper mapper, RegionResolver regionResolver,
                       StorageFactory storageFactory) {
         this(lambdaService, ecsService, elbV2Service, ssmCommandService, ec2Service, mapper, regionResolver,
-                storageFactory, null);
+                storageFactory, null, null);
+    }
+
+    CodeDeployService(LambdaService lambdaService, EcsService ecsService,
+                      ElbV2Service elbV2Service, SsmCommandService ssmCommandService,
+                      Ec2Service ec2Service, ObjectMapper mapper, RegionResolver regionResolver,
+                      StorageFactory storageFactory, InProcessTargetAuthorizer targetAuthorizer) {
+        this(lambdaService, ecsService, elbV2Service, ssmCommandService, ec2Service, mapper, regionResolver,
+                storageFactory, targetAuthorizer, null);
     }
 
     // ---- Durable (persisted) ----
@@ -399,6 +411,9 @@ public class CodeDeployService {
                                                   String deploymentConfigName, String serviceRoleArn,
                                                   Map<String, Object> fields) {
         getApplication(region, appName);
+        if (iamAuthorizer != null) {
+            iamAuthorizer.authorizePassRole(serviceRoleArn, "codedeploy.amazonaws.com", region);
+        }
         Map<String, Map<String, DeploymentGroup>> appGroups = deploymentGroupsFor(region);
         Map<String, DeploymentGroup> groupStore = appGroups.computeIfAbsent(appName, a -> new ConcurrentHashMap<>());
         if (groupStore.containsKey(groupName)) {
@@ -439,7 +454,12 @@ public class CodeDeployService {
                 .computeIfAbsent(appName, a -> new ConcurrentHashMap<>());
 
         if (deploymentConfigName != null) { group.setDeploymentConfigName(deploymentConfigName); }
-        if (serviceRoleArn != null) { group.setServiceRoleArn(serviceRoleArn); }
+        if (serviceRoleArn != null) {
+            if (iamAuthorizer != null) {
+                iamAuthorizer.authorizePassRole(serviceRoleArn, "codedeploy.amazonaws.com", region);
+            }
+            group.setServiceRoleArn(serviceRoleArn);
+        }
         applyGroupFields(group, fields);
 
         if (newGroupName != null && !newGroupName.equals(currentGroupName)) {

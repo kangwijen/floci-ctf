@@ -38,8 +38,9 @@ The following providers execute against local Floci services:
 
 When IAM enforcement is on, S3, CodeBuild, CodeDeploy, Lambda, and nested CodePipeline actions
 authorize with the pipeline (or action) role via `InProcessTargetAuthorizer` before side effects.
-Custom/third-party job workers remain ungated (residual). Regression: `CodePipelineCodeBuildDeniedTest`,
-`InProcessTargetAuthorizerTest`.
+Custom/third-party job workers remain ungated (residual). `CreatePipeline` / `UpdatePipeline`
+`roleArn` requires `iam:PassRole` (`codepipeline.amazonaws.com`). Regression:
+`CodePipelineCodeBuildDeniedTest`, `CodePipelineCreatePassRoleTest`, `InProcessTargetAuthorizerTest`.
 
 AWS-managed providers without a corresponding Floci execution adapter fail the action with an
 AWS-shaped action error. Floci does not call real AWS accounts or third-party SaaS providers.

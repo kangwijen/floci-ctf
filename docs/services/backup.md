@@ -181,3 +181,7 @@ aws backup untag-resource \
   --resource-arn arn:aws:backup:us-east-1:000000000000:backup-vault:my-vault \
   --tag-key-list team
 ```
+
+## CTF fork {#ctf-fork}
+
+When IAM enforcement is enabled, `CreateBackupSelection` and `StartBackupJob` `IamRoleArn` require `iam:PassRole` (`backup.amazonaws.com`). Regression: `BackupIamRolePassRoleTest`, `BackupIamScopedIntegrationTest`.
